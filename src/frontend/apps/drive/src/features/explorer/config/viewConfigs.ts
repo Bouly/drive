@@ -23,6 +23,12 @@ export const VIEW_CONFIGS: Record<DefaultRoute | "folder", ViewConfig> = {
     defaultOrdering: "-type,-updated_at",
     folderMode: "folders_first",
   },
+  // The graph page has no item list; this entry only satisfies the record type.
+  [DefaultRoute.GRAPH]: {
+    defaultOrdering: "-updated_at",
+    folderMode: "mixed",
+    sortable: false,
+  },
   folder: {
     defaultOrdering: "-type,title",
     folderMode: "folders_first",

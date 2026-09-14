@@ -402,7 +402,8 @@
           "recent": "Recents",
           "my_files": "My files",
           "shared_with_me": "Shared with me",
-          "favorites": "Starred"
+          "favorites": "Starred",
+          "graph": "Graph"
         },
         "trash": {
           "title": "Trash",
@@ -705,6 +706,39 @@
         "title": "User reconciliation",
         "success": "Your email address has been confirmed. To complete the merge of your accounts, please click the confirmation links sent to all the addresses you provided.",
         "error": "An error occurred during email validation."
+      },
+      "graph": {
+        "title": "File graph",
+        "demo_badge": "Demo · sample data",
+        "hint": "Each dot is a file. Lines join files whose content is close; dashed lines are unexpected connections between different topics. Drag, zoom, click a file to see its links.",
+        "search_placeholder": "Find a file",
+        "results_one": "{{count}} result",
+        "results_other": "{{count}} results",
+        "zoom_in": "Zoom in",
+        "zoom_out": "Zoom out",
+        "recenter": "Recenter",
+        "legend": "Legend",
+        "surprise_link": "Unexpected connection",
+        "close": "Close",
+        "category": "Type",
+        "cluster": "Topic",
+        "size": "Size",
+        "last_update": "Updated",
+        "created_by": "Created by",
+        "connections_one": "{{count}} connection",
+        "connections_other": "{{count}} connections",
+        "categories": {
+          "folder": "Folder",
+          "doc": "Document",
+          "calc": "Spreadsheet",
+          "powerpoint": "Presentation",
+          "pdf": "PDF",
+          "image": "Image",
+          "video": "Video",
+          "audio": "Audio",
+          "archive": "Archive",
+          "other": "Other"
+        }
       }
     }
   },
@@ -1111,7 +1145,8 @@
                 "cancel_button": "Annuler"
               }
             }
-          }
+          },
+          "graph": "Graphe"
         },
         "trash": {
           "title": "Corbeille",
@@ -1414,6 +1449,39 @@
         "title": "Réconciliation de comptes",
         "success": "Votre adresse e-mail a été confirmée. Pour finaliser la fusion de vos comptes, cliquez sur les liens de confirmation envoyés à toutes les adresses que vous avez fournies.",
         "error": "Une erreur s'est produite lors de la validation de l'e-mail."
+      },
+      "graph": {
+        "title": "Graphe des fichiers",
+        "demo_badge": "Démo · données fictives",
+        "hint": "Chaque point est un fichier. Les traits relient les fichiers proches par leur contenu ; en pointillé, les rapprochements inattendus entre sujets différents. Déplacez, zoomez, cliquez sur un fichier pour voir ses liens.",
+        "search_placeholder": "Rechercher un fichier",
+        "results_one": "{{count}} résultat",
+        "results_other": "{{count}} résultats",
+        "zoom_in": "Zoom avant",
+        "zoom_out": "Zoom arrière",
+        "recenter": "Recentrer",
+        "legend": "Légende",
+        "surprise_link": "Rapprochement inattendu",
+        "close": "Fermer",
+        "category": "Type",
+        "cluster": "Sujet",
+        "size": "Taille",
+        "last_update": "Modifié le",
+        "created_by": "Créé par",
+        "connections_one": "{{count}} connexion",
+        "connections_other": "{{count}} connexions",
+        "categories": {
+          "folder": "Dossier",
+          "doc": "Document",
+          "calc": "Tableur",
+          "powerpoint": "Présentation",
+          "pdf": "PDF",
+          "image": "Image",
+          "video": "Vidéo",
+          "audio": "Audio",
+          "archive": "Archive",
+          "other": "Autre"
+        }
       }
     }
   },
@@ -1820,7 +1888,8 @@
           "recent": "Recenten",
           "my_files": "Mijn bestanden",
           "shared_with_me": "Gedeeld met mij",
-          "favorites": "Favorieten"
+          "favorites": "Favorieten",
+          "graph": "Grafiek"
         },
         "trash": {
           "title": "Prullenbak",
@@ -2123,6 +2192,39 @@
         "title": "Accountreconciliatie",
         "success": "Uw e-mailadres is bevestigd. Klik op de bevestigingslinks die naar alle door u opgegeven adressen zijn verzonden om het samenvoegen van uw accounts te voltooien.",
         "error": "Er is een fout opgetreden tijdens de e-mailvalidatie."
+      },
+      "graph": {
+        "title": "Bestandsgrafiek",
+        "demo_badge": "Demo · voorbeeldgegevens",
+        "hint": "Elke stip is een bestand. Lijnen verbinden bestanden met vergelijkbare inhoud; stippellijnen zijn onverwachte verbanden tussen verschillende onderwerpen. Sleep, zoom en klik op een bestand om zijn verbanden te zien.",
+        "search_placeholder": "Bestand zoeken",
+        "results_one": "{{count}} resultaat",
+        "results_other": "{{count}} resultaten",
+        "zoom_in": "Inzoomen",
+        "zoom_out": "Uitzoomen",
+        "recenter": "Centreren",
+        "legend": "Legenda",
+        "surprise_link": "Onverwacht verband",
+        "close": "Sluiten",
+        "category": "Type",
+        "cluster": "Onderwerp",
+        "size": "Grootte",
+        "last_update": "Gewijzigd op",
+        "created_by": "Gemaakt door",
+        "connections_one": "{{count}} verband",
+        "connections_other": "{{count}} verbanden",
+        "categories": {
+          "folder": "Map",
+          "doc": "Document",
+          "calc": "Spreadsheet",
+          "powerpoint": "Presentatie",
+          "pdf": "PDF",
+          "image": "Afbeelding",
+          "video": "Video",
+          "audio": "Audio",
+          "archive": "Archief",
+          "other": "Overig"
+        }
       }
     }
   }

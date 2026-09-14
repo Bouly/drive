@@ -3,6 +3,7 @@ import { MyFilesIcon } from "@/features/ui/components/icon/MyFilesIcon";
 import { SharedWithMeIcon } from "@/features/ui/components/icon/SharedWithMeIcon";
 import { StarredIcon } from "@/features/ui/components/icon/StarredIcon";
 import { TrashIcon } from "@/features/ui/components/icon/TrashIcon";
+import { GraphIcon } from "@/features/ui/components/icon/GraphIcon";
 import { JSX } from "react";
 import { IconProps } from "@gouvfr-lasuite/ui-components";
 
@@ -12,6 +13,7 @@ export enum DefaultRoute {
   SHARED_WITH_ME = "shared-with-me",
   FAVORITES = "favorites",
   TRASH = "trash",
+  GRAPH = "graph",
 }
 export type DefaultRouteData = {
   id: DefaultRoute;
@@ -37,6 +39,12 @@ export const ORDERED_DEFAULT_ROUTES: DefaultRouteData[] = [
     label: "explorer.tree.shared_with_me",
     route: "/explorer/items/shared-with-me",
     icon: SharedWithMeIcon,
+  },
+  {
+    id: DefaultRoute.GRAPH,
+    label: "explorer.tree.graph",
+    route: "/explorer/graph",
+    icon: GraphIcon,
   },
   {
     id: DefaultRoute.FAVORITES,
