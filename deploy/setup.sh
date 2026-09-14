@@ -156,10 +156,17 @@ WOPI_ONLYOFFICE_OPTIONS={"ForceConvertExtensions": ["doc", "xls", "ppt"], "Conve
 WOPI_ONLYOFFICE_CONVERT_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
 EOF
 
-  mkdir -p onlyoffice
-  sed "s#http://localhost:9981#https://${OFFICE_DOMAIN}#" \
-    ../docker/onlyoffice/local-development.json > onlyoffice/local-production-linux.json
-
   chmod 600 env/onlyoffice.env
   echo "OnlyOffice configured on https://${OFFICE_DOMAIN}"
 fi
+
+# Regenerated on every run (no secret inside) so config changes ship with deploys.
+# "New document" in Drive creates OpenDocument files (odt/ods/odp): the dev
+# stack edits them with Collabora, here OnlyOffice must accept them too.
+mkdir -p onlyoffice
+sed \
+  -e "s#http://localhost:9981#https://${OFFICE_DOMAIN}#" \
+  -e 's#"wordEdit": \[#"wordEdit": ["odt", #' \
+  -e 's#"cellEdit": \[#"cellEdit": ["ods", #' \
+  -e 's#"slideEdit": \[#"slideEdit": ["odp", #' \
+  ../docker/onlyoffice/local-development.json > onlyoffice/local-production-linux.json

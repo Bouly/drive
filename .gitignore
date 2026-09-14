@@ -94,3 +94,4 @@ src/backend/demo/reconciliation_demo.csv
 /deploy/env/
 /deploy/keycloak/
 /deploy/onlyoffice/
+/deploy/.onlyoffice.sum

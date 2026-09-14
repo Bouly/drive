@@ -12,8 +12,17 @@ fi
 
 COMPOSE=(docker compose -f compose.prod.yaml)
 
+# Refresh generated config (idempotent: secrets are only created once).
+./setup.sh "$(sed -n 's/^DRIVE_DOMAIN=drive\.//p' .env)"
+
 "${COMPOSE[@]}" build backend frontend
 "${COMPOSE[@]}" up -d postgresql redis minio kc_postgresql keycloak
+# OnlyOffice only reads its config at boot: restart it when the file changed.
+sum=$(sha256sum onlyoffice/local-production-linux.json | cut -d' ' -f1)
+if [[ "$(cat .onlyoffice.sum 2>/dev/null)" != "$sum" ]]; then
+  "${COMPOSE[@]}" stop onlyoffice
+  echo "$sum" > .onlyoffice.sum
+fi
 # OnlyOffice takes a few minutes on first boot; the WOPI discovery below needs it up.
 "${COMPOSE[@]}" up -d --wait --wait-timeout 900 onlyoffice
 "${COMPOSE[@]}" run --rm createbuckets
