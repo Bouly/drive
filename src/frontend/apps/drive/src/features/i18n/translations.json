@@ -738,7 +738,9 @@
           "audio": "Audio",
           "archive": "Archive",
           "other": "Other"
-        }
+        },
+        "theme_dark": "Dark background",
+        "theme_light": "Light background"
       }
     }
   },
@@ -1481,7 +1483,9 @@
           "audio": "Audio",
           "archive": "Archive",
           "other": "Autre"
-        }
+        },
+        "theme_dark": "Fond sombre",
+        "theme_light": "Fond clair"
       }
     }
   },
@@ -2224,7 +2228,9 @@
           "audio": "Audio",
           "archive": "Archief",
           "other": "Overig"
-        }
+        },
+        "theme_dark": "Donkere achtergrond",
+        "theme_light": "Lichte achtergrond"
       }
     }
   }

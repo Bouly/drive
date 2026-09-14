@@ -1,9 +1,34 @@
 .file-graph {
+  // Panel colors follow the stage theme (light by default, dark modifier below).
+  --fg-panel: rgba(255, 255, 255, 0.92);
+  --fg-panel-border: rgba(203, 210, 220, 0.8);
+  --fg-panel-shadow: rgba(15, 23, 42, 0.08);
+  --fg-text: #1e293b;
+  --fg-muted: #64748b;
+  --fg-faint: #94a3b8;
+  --fg-hover: #f1f4f9;
+  --fg-active: #e8efff;
+  --fg-dot-ring: #fff;
+  --fg-stage: #f7f8fb;
+
   display: flex;
   flex-direction: column;
   height: calc(100vh - 52px);
   min-height: 480px;
-  background: #f7f8fb;
+  background: var(--fg-stage);
+
+  &--dark {
+    --fg-panel: rgba(17, 24, 39, 0.82);
+    --fg-panel-border: rgba(148, 163, 184, 0.18);
+    --fg-panel-shadow: rgba(0, 0, 0, 0.45);
+    --fg-text: #e6ebf5;
+    --fg-muted: #a5b0c2;
+    --fg-faint: #6b7688;
+    --fg-hover: rgba(255, 255, 255, 0.06);
+    --fg-active: rgba(79, 140, 255, 0.22);
+    --fg-dot-ring: #0b1020;
+    --fg-stage: #0b1020;
+  }
 
   &__header {
     display: flex;
@@ -113,11 +138,12 @@
   &__legend,
   &__card {
     position: absolute;
-    border: 1px solid rgba(203, 210, 220, 0.8);
+    border: 1px solid var(--fg-panel-border);
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.92);
-    backdrop-filter: blur(6px);
-    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.08);
+    background: var(--fg-panel);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 28px var(--fg-panel-shadow);
+    color: var(--fg-text);
   }
 
   &__legend {
@@ -139,22 +165,22 @@
     background: transparent;
     font: inherit;
     font-size: 12.5px;
-    color: #1e293b;
+    color: var(--fg-text);
     text-align: left;
     cursor: pointer;
 
     &:hover {
-      background: #f1f4f9;
+      background: var(--fg-hover);
     }
 
     &--active {
-      background: #e8efff;
+      background: var(--fg-active);
       font-weight: 600;
     }
 
     &--static {
       cursor: default;
-      color: #64748b;
+      color: var(--fg-muted);
 
       &:hover {
         background: transparent;
@@ -166,7 +192,7 @@
     margin-left: auto;
     padding-left: 12px;
     font-size: 11px;
-    color: #94a3b8;
+    color: var(--fg-faint);
   }
 
   &__dot {
@@ -174,19 +200,20 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    box-shadow: 0 0 0 1.5px #fff;
+    box-shadow: 0 0 0 1.5px var(--fg-dot-ring);
 
     &--large {
       width: 14px;
       height: 14px;
       margin-bottom: 8px;
+      box-shadow: 0 0 0 1.5px var(--fg-dot-ring), 0 0 14px currentColor;
     }
   }
 
   &__dash {
     flex: none;
     width: 18px;
-    border-top: 2px dashed #d64ea6;
+    border-top: 2px dashed #ff4fb0;
   }
 
   &__card {
@@ -196,6 +223,7 @@
     max-height: calc(100% - 32px);
     overflow: auto;
     padding: 16px 18px;
+    animation: file-graph-card-in 220ms ease-out;
   }
 
   &__close {
@@ -206,11 +234,11 @@
     background: transparent;
     font-size: 22px;
     line-height: 1;
-    color: #64748b;
+    color: var(--fg-muted);
     cursor: pointer;
 
     &:hover {
-      color: #1e293b;
+      color: var(--fg-text);
     }
   }
 
@@ -219,7 +247,7 @@
     font-size: 16px;
     font-weight: 700;
     line-height: 1.3;
-    color: #1e293b;
+    color: var(--fg-text);
     overflow-wrap: anywhere;
   }
 
@@ -229,7 +257,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: #64748b;
+    color: var(--fg-muted);
   }
 
   &__meta {
@@ -240,12 +268,12 @@
     font-size: 13px;
 
     dt {
-      color: #64748b;
+      color: var(--fg-muted);
     }
 
     dd {
       margin: 0;
-      color: #1e293b;
+      color: var(--fg-text);
     }
   }
 
@@ -270,12 +298,12 @@
     background: transparent;
     font: inherit;
     font-size: 13px;
-    color: #1e293b;
+    color: var(--fg-text);
     text-align: left;
     cursor: pointer;
 
     &:hover {
-      background: #f1f4f9;
+      background: var(--fg-hover);
     }
   }
 
@@ -291,10 +319,10 @@
     flex: none;
     font-size: 11px;
     font-weight: 600;
-    color: #64748b;
+    color: var(--fg-muted);
 
     &--surprise {
-      color: #d64ea6;
+      color: #ff4fb0;
     }
   }
 
@@ -302,7 +330,7 @@
     margin: 0 8px 6px 26px;
     font-size: 12px;
     line-height: 1.4;
-    color: #64748b;
+    color: var(--fg-muted);
   }
 
   @media (max-width: 720px) {
@@ -322,5 +350,23 @@
     &__legend {
       display: none;
     }
+  }
+}
+
+@keyframes file-graph-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-graph__card {
+    animation: none;
   }
 }

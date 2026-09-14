@@ -7,38 +7,85 @@ import { ForceSimulation, SimLink, SimNode } from "../simulation";
 
 /** One color per file family; keys are ui-kit MimeCategory values plus "folder". */
 const CATEGORY_COLORS: Record<string, string> = {
-  docs: "#2f6fed",
-  doc: "#2f6fed",
-  calc: "#1f9d55",
-  powerpoint: "#f0842c",
-  pdf: "#e0342c",
-  image: "#8a4fd6",
-  video: "#16a2b8",
-  audio: "#b8860b",
-  archive: "#a67c52",
-  folder: "#5c6b8a",
-  other: "#8b95a5",
+  docs: "#4f8cff",
+  doc: "#4f8cff",
+  calc: "#2fbf71",
+  powerpoint: "#ff9a3c",
+  pdf: "#ff5c5c",
+  image: "#b07cff",
+  video: "#2ec4d6",
+  audio: "#e3b341",
+  archive: "#c49a6c",
+  folder: "#8a9bb8",
+  other: "#9aa5b5",
 };
 const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
-const SURPRISE_COLOR = "#d64ea6";
-const LINK_COLOR = "70, 82, 104";
-const LABEL_COLOR = "#1e293b";
+const SURPRISE_COLOR = "#ff4fb0";
+
+type Theme = {
+  bg: string;
+  dot: string;
+  link: string;
+  label: string;
+  labelHalo: string;
+  clusterLabel: string;
+  clusterHull: string;
+  ring: string;
+  glow: boolean;
+};
+const THEMES: Record<"dark" | "light", Theme> = {
+  dark: {
+    bg: "#0b1020",
+    dot: "rgba(148, 163, 184, 0.14)",
+    link: "170, 184, 210",
+    label: "#e6ebf5",
+    labelHalo: "rgba(11, 16, 32, 0.85)",
+    clusterLabel: "rgba(226, 232, 240, 0.35)",
+    clusterHull: "255, 255, 255",
+    ring: "rgba(11, 16, 32, 0.9)",
+    glow: true,
+  },
+  light: {
+    bg: "#f7f8fb",
+    dot: "rgba(30, 41, 59, 0.10)",
+    link: "70, 82, 104",
+    label: "#1e293b",
+    labelHalo: "rgba(247, 248, 251, 0.92)",
+    clusterLabel: "rgba(30, 41, 59, 0.28)",
+    clusterHull: "47, 111, 237",
+    ring: "#ffffff",
+    glow: false,
+  },
+};
+const THEME_STORAGE_KEY = "drive-graph-theme";
+
 /** How much depth shifts a node when panning: the fake-3D parallax. */
-const PARALLAX = 0.08;
+const PARALLAX = 0.1;
 const MIN_SCALE = 0.35;
 const MAX_SCALE = 3.5;
+const INTRO_DURATION = 700;
+const INTRO_STAGGER = 14;
+/** Per-frame convergence of emphasis and camera animations (0..1). */
+const EASE = 0.22;
 
 type Neighbor = { node: number; link: GraphLink };
 
 type View = { scale: number; ox: number; oy: number };
 
-type ScreenNode = SimNode & { sx: number; sy: number; sr: number; depth: number };
+type ScreenNode = SimNode & { sx: number; sy: number; sr: number; depth: number; intro: number };
 
 const normalize = (text: string) =>
   text
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[̀-ͯ]/g, "");
+
+const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
+
+const hexToRgb = (hex: string) => {
+  const value = parseInt(hex.slice(1), 16);
+  return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
+};
 
 const categoryOf = (file: GraphFile) => {
   if (file.mimetype === FOLDER_MIMETYPE) {
@@ -49,6 +96,14 @@ const categoryOf = (file: GraphFile) => {
   return category === "docs" ? "doc" : category;
 };
 
+const readStoredTheme = (): "dark" | "light" => {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+};
+
 const buildModel = () => {
   const data = buildFakeGraph();
   const index = new Map(data.files.map((file, i) => [file.id, i]));
@@ -57,6 +112,7 @@ const buildModel = () => {
   const neighbors: Neighbor[][] = data.files.map(() => []);
 
   const links: SimLink[] = [];
+  const linkMeta: GraphLink[] = [];
   for (const link of data.links) {
     const source = index.get(link.source);
     const target = index.get(link.target);
@@ -73,6 +129,7 @@ const buildModel = () => {
       length: link.kind === "surprise" ? 210 : 52 + (1 - link.weight) * 60,
       strength: link.kind === "surprise" ? 0.012 : 0.05 + link.weight * 0.06,
     });
+    linkMeta.push(link);
   }
 
   // Clusters sit on a ring; nodes start near their cluster with a bit of noise.
@@ -109,7 +166,10 @@ const buildModel = () => {
     simulation.tick();
   }
 
-  return { data, index, nodes, links, neighbors, categories, simulation };
+  // Emphasis (0 dimmed .. 1 lit) per node, eased frame by frame.
+  const emphasis = nodes.map(() => 1);
+
+  return { data, index, nodes, links, linkMeta, neighbors, categories, simulation, emphasis };
 };
 
 type Model = ReturnType<typeof buildModel>;
@@ -121,17 +181,24 @@ export const FileGraph = () => {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<View>({ scale: 1, ox: 0, oy: 0 });
+  const viewTargetRef = useRef<View | null>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
   const hoverRef = useRef<number | null>(null);
   const frameRef = useRef<number | null>(null);
   const patternRef = useRef<CanvasPattern | null>(null);
   const screenRef = useRef<ScreenNode[]>([]);
+  const introStartRef = useRef<number | null>(null);
   // Mirrors of the React state read by the render loop.
-  const uiRef = useRef({ selected: null as number | null, query: "", category: null as string | null });
+  const uiRef = useRef({ selected: null as number | null, category: null as string | null, theme: "dark" as "dark" | "light" });
 
   const [selected, setSelected] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    setTheme(readStoredTheme());
+  }, []);
 
   const matches = useMemo(() => {
     const needle = normalize(query.trim());
@@ -173,18 +240,37 @@ export const FileGraph = () => {
     return null;
   }, [model]);
 
-  const draw = useCallback(() => {
+  /** Draws one frame. Returns true while an animation still needs frames. */
+  const draw = useCallback((): boolean => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!canvas || !ctx) {
-      return;
+      return false;
     }
+    let animating = false;
+    const now = performance.now();
+    const theme = THEMES[uiRef.current.theme];
     const { width, height } = sizeRef.current;
+
+    // Camera easing towards its target.
+    const target = viewTargetRef.current;
+    if (target) {
+      const view = viewRef.current;
+      view.scale += (target.scale - view.scale) * EASE;
+      view.ox += (target.ox - view.ox) * EASE;
+      view.oy += (target.oy - view.oy) * EASE;
+      if (Math.abs(target.scale - view.scale) < 0.001 && Math.abs(target.ox - view.ox) < 0.3 && Math.abs(target.oy - view.oy) < 0.3) {
+        viewRef.current = { ...target };
+        viewTargetRef.current = null;
+      } else {
+        animating = true;
+      }
+    }
     const { scale, ox, oy } = viewRef.current;
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    ctx.fillStyle = "#f7f8fb";
+    ctx.fillStyle = theme.bg;
     ctx.fillRect(0, 0, width, height);
     if (patternRef.current) {
       ctx.fillStyle = patternRef.current;
@@ -194,62 +280,157 @@ export const FileGraph = () => {
     const focus = hoverRef.current ?? uiRef.current.selected;
     const lit = litNodes();
     const nodes = model.nodes;
-    const screen: ScreenNode[] = nodes.map((node) => {
+    const introStart = introStartRef.current ?? now;
+    const screen: ScreenNode[] = nodes.map((node, i) => {
       const depth = (node.z + 1) / 2;
       const parallax = 1 + PARALLAX * node.z;
+      const intro = easeOutCubic(Math.min(1, Math.max(0, (now - introStart - i * INTRO_STAGGER) / INTRO_DURATION)));
+      if (intro < 1) {
+        animating = true;
+      }
+      // Emphasis eases towards 1 (lit or nothing lit) or 0 (dimmed).
+      const wanted = lit === null || lit.has(i) ? 1 : 0;
+      const current = model.emphasis[i];
+      if (Math.abs(wanted - current) > 0.01) {
+        model.emphasis[i] = current + (wanted - current) * EASE;
+        animating = true;
+      } else {
+        model.emphasis[i] = wanted;
+      }
       return {
         ...node,
         depth,
+        intro,
         sx: width / 2 + (node.x * scale + ox) * parallax,
         sy: height / 2 + (node.y * scale + oy) * parallax,
-        sr: node.r * scale * (0.72 + 0.5 * depth),
+        sr: node.r * scale * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro),
       };
     });
     screenRef.current = screen;
+    const dimOf = (i: number) => 0.14 + 0.86 * model.emphasis[i];
+
+    // Soft hull and name behind each cluster.
+    const clusters = model.data.clusters.map(() => ({ x: 0, y: 0, n: 0, spread: 0, intro: 0 }));
+    screen.forEach((node) => {
+      const c = clusters[node.cluster];
+      c.x += node.sx;
+      c.y += node.sy;
+      c.n++;
+      c.intro = Math.max(c.intro, node.intro);
+    });
+    clusters.forEach((c) => {
+      if (c.n) {
+        c.x /= c.n;
+        c.y /= c.n;
+      }
+    });
+    screen.forEach((node) => {
+      const c = clusters[node.cluster];
+      c.spread = Math.max(c.spread, Math.hypot(node.sx - c.x, node.sy - c.y));
+    });
+    clusters.forEach((c, i) => {
+      if (!c.n) {
+        return;
+      }
+      const radius = c.spread + 40 * scale;
+      const hull = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
+      hull.addColorStop(0, `rgba(${theme.clusterHull}, ${0.07 * c.intro})`);
+      hull.addColorStop(1, `rgba(${theme.clusterHull}, 0)`);
+      ctx.fillStyle = hull;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      const size = Math.round(12 * Math.min(1.3, Math.max(0.85, Math.sqrt(scale))));
+      ctx.font = `700 ${size}px Marianne, system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillStyle = theme.clusterLabel;
+      ctx.globalAlpha = c.intro;
+      ctx.fillText(model.data.clusters[i].label.toUpperCase(), c.x, c.y - radius + size * 1.6);
+      ctx.globalAlpha = 1;
+    });
 
     ctx.lineCap = "round";
-    for (const link of model.links) {
+    model.links.forEach((link, li) => {
       const a = screen[link.source];
       const b = screen[link.target];
-      const meta = model.neighbors[link.source].find((n) => n.node === link.target)?.link;
-      const surprise = meta?.kind === "surprise";
-      const weight = meta?.weight ?? 0.5;
-      const isLit = lit ? lit.has(link.source) && lit.has(link.target) : true;
+      const meta = model.linkMeta[li];
+      const surprise = meta.kind === "surprise";
       const touchesFocus = focus !== null && (link.source === focus || link.target === focus);
       const depth = (a.depth + b.depth) / 2;
-      let alpha = (0.18 + 0.32 * depth) * (lit && !isLit ? 0.18 : 1);
-      let lineWidth = Math.min(2.6, (0.7 + weight * 1.4) * Math.sqrt(scale));
+      const intro = Math.min(a.intro, b.intro);
+      const dim = Math.min(dimOf(link.source), dimOf(link.target));
+      let alpha = (0.16 + 0.34 * depth) * dim * intro;
+      let lineWidth = Math.min(2.6, (0.7 + meta.weight * 1.4) * Math.sqrt(scale));
       if (touchesFocus) {
         alpha = 0.95;
         lineWidth *= 1.7;
       }
-      ctx.strokeStyle = surprise ? SURPRISE_COLOR : `rgb(${LINK_COLOR})`;
-      ctx.globalAlpha = surprise ? Math.min(1, alpha * 1.6) : alpha;
-      ctx.lineWidth = surprise ? lineWidth + 0.5 : lineWidth;
-      ctx.setLineDash(surprise ? [7, 5] : []);
+      if (surprise) {
+        ctx.strokeStyle = SURPRISE_COLOR;
+        ctx.globalAlpha = Math.min(1, alpha * 1.6);
+        ctx.lineWidth = lineWidth + 0.5;
+        ctx.setLineDash([7, 5]);
+      } else if (touchesFocus) {
+        ctx.strokeStyle = CATEGORY_COLORS[model.categories[focus]] ?? CATEGORY_COLORS.other;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash([]);
+      } else {
+        ctx.strokeStyle = `rgb(${theme.link})`;
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = lineWidth;
+        ctx.setLineDash([]);
+      }
       ctx.beginPath();
       ctx.moveTo(a.sx, a.sy);
       ctx.lineTo(b.sx, b.sy);
       ctx.stroke();
-    }
+    });
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
     const order = screen.map((_, i) => i).sort((i, j) => screen[i].z - screen[j].z);
     const showAllLabels = scale > 1.25;
+    // Labels already placed this frame, so overlapping ones are skipped
+    // (the focused node is drawn last and always wins).
+    const placed: { x: number; y: number; w: number; h: number }[] = [];
+    const overlaps = (x: number, y: number, w: number, h: number) =>
+      placed.some((p) => Math.abs(p.x - x) < (p.w + w) / 2 && Math.abs(p.y - y) < (p.h + h) / 2);
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
+    if (focus !== null) {
+      order.splice(order.indexOf(focus), 1);
+      order.push(focus);
+    }
     for (const i of order) {
       const node = screen[i];
+      if (node.intro <= 0) {
+        continue;
+      }
       const color = CATEGORY_COLORS[model.categories[i]] ?? CATEGORY_COLORS.other;
-      const dimmed = lit ? !lit.has(i) : false;
       const isFocus = i === focus;
-      ctx.globalAlpha = (0.55 + 0.45 * node.depth) * (dimmed ? 0.16 : 1);
+      const emphasis = model.emphasis[i];
+      const alpha = (0.55 + 0.45 * node.depth) * dimOf(i) * node.intro;
 
-      if (isFocus) {
+      if (theme.glow) {
+        const glowRadius = node.sr * (isFocus ? 4.5 : 2.6);
+        const glow = ctx.createRadialGradient(node.sx, node.sy, node.sr * 0.6, node.sx, node.sy, glowRadius);
+        const rgb = hexToRgb(color);
+        glow.addColorStop(0, `rgba(${rgb}, ${(isFocus ? 0.55 : 0.28) * emphasis * node.intro})`);
+        glow.addColorStop(1, `rgba(${rgb}, 0)`);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(node.sx, node.sy, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (isFocus) {
         ctx.shadowColor = color;
         ctx.shadowBlur = 18;
       }
+
+      ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
       ctx.beginPath();
       if (model.categories[i] === "folder") {
@@ -261,11 +442,11 @@ export const FileGraph = () => {
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.lineWidth = isFocus ? 2.5 : 1.5;
-      ctx.strokeStyle = "#ffffff";
+      ctx.strokeStyle = isFocus && theme.glow ? "#ffffff" : theme.ring;
       ctx.stroke();
 
       const showLabel =
-        !dimmed &&
+        emphasis > 0.5 &&
         (isFocus || showAllLabels || model.categories[i] === "folder" || (lit !== null && lit.has(i)));
       if (showLabel) {
         const file = model.data.files[i];
@@ -273,22 +454,29 @@ export const FileGraph = () => {
         ctx.font = `${isFocus ? 600 : 500} ${size}px Marianne, system-ui, sans-serif`;
         const label = file.title.length > 30 ? `${file.title.slice(0, 29)}…` : file.title;
         const y = node.sy + node.sr + size * 0.9;
+        const w = ctx.measureText(label).width + 6;
+        if (!isFocus && overlaps(node.sx, y, w, size + 4)) {
+          continue;
+        }
+        placed.push({ x: node.sx, y, w, h: size + 4 });
+        ctx.globalAlpha = node.intro * emphasis;
         ctx.lineWidth = 3.5;
-        ctx.strokeStyle = "rgba(247, 248, 251, 0.92)";
+        ctx.strokeStyle = theme.labelHalo;
         ctx.lineJoin = "round";
         ctx.strokeText(label, node.sx, y);
-        ctx.fillStyle = LABEL_COLOR;
+        ctx.fillStyle = theme.label;
         ctx.fillText(label, node.sx, y);
       }
     }
     ctx.globalAlpha = 1;
+    return animating;
   }, [litNodes, model]);
 
   const frame = useCallback(() => {
     frameRef.current = null;
     const running = model.simulation.tick();
-    draw();
-    if (running) {
+    const animating = draw();
+    if (running || animating) {
       frameRef.current = requestAnimationFrame(frame);
     }
   }, [draw, model]);
@@ -299,54 +487,63 @@ export const FileGraph = () => {
     }
   }, [frame]);
 
-  const fitView = useCallback(() => {
-    const { width, height } = sizeRef.current;
-    if (!width || !height) {
-      return;
-    }
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const node of model.nodes) {
-      minX = Math.min(minX, node.x - node.r);
-      minY = Math.min(minY, node.y - node.r);
-      maxX = Math.max(maxX, node.x + node.r);
-      maxY = Math.max(maxY, node.y + node.r);
-    }
-    const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(width / (maxX - minX), height / (maxY - minY)) * 0.9));
-    viewRef.current = {
-      scale,
-      ox: (-(minX + maxX) / 2) * scale,
-      oy: (-(minY + maxY) / 2) * scale,
-    };
-    requestRender();
-  }, [model, requestRender]);
+  const animateTo = useCallback(
+    (view: View, immediate = false) => {
+      if (immediate) {
+        viewRef.current = view;
+        viewTargetRef.current = null;
+      } else {
+        viewTargetRef.current = view;
+      }
+      requestRender();
+    },
+    [requestRender],
+  );
+
+  const fitView = useCallback(
+    (immediate = false) => {
+      const { width, height } = sizeRef.current;
+      if (!width || !height) {
+        return;
+      }
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      for (const node of model.nodes) {
+        minX = Math.min(minX, node.x - node.r);
+        minY = Math.min(minY, node.y - node.r);
+        maxX = Math.max(maxX, node.x + node.r);
+        maxY = Math.max(maxY, node.y + node.r);
+      }
+      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(width / (maxX - minX), height / (maxY - minY)) * 0.8));
+      animateTo({ scale, ox: (-(minX + maxX) / 2) * scale, oy: (-(minY + maxY) / 2) * scale }, immediate);
+    },
+    [animateTo, model],
+  );
 
   const centerOn = useCallback(
     (i: number) => {
       const node = model.nodes[i];
-      const { scale } = viewRef.current;
-      viewRef.current = { scale, ox: -node.x * scale, oy: -node.y * scale };
-      requestRender();
+      const scale = Math.max(viewRef.current.scale, 1.2);
+      animateTo({ scale, ox: -node.x * scale, oy: -node.y * scale });
     },
-    [model, requestRender],
+    [animateTo, model],
   );
 
   const zoomBy = useCallback(
-    (factor: number, at?: { x: number; y: number }) => {
+    (factor: number, at?: { x: number; y: number }, immediate = false) => {
       const { width, height } = sizeRef.current;
-      const { scale, ox, oy } = viewRef.current;
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * factor));
+      const base = viewTargetRef.current ?? viewRef.current;
+      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, base.scale * factor));
       const px = (at?.x ?? width / 2) - width / 2;
       const py = (at?.y ?? height / 2) - height / 2;
       // Keep the world point under the cursor in place.
-      const wx = (px - ox) / scale;
-      const wy = (py - oy) / scale;
-      viewRef.current = { scale: next, ox: px - wx * next, oy: py - wy * next };
-      requestRender();
+      const wx = (px - base.ox) / base.scale;
+      const wy = (py - base.oy) / base.scale;
+      animateTo({ scale: next, ox: px - wx * next, oy: py - wy * next }, immediate);
     },
-    [requestRender],
+    [animateTo],
   );
 
   const hitTest = useCallback((x: number, y: number): number | null => {
@@ -363,24 +560,15 @@ export const FileGraph = () => {
     return null;
   }, []);
 
-  // Canvas sizing, background pattern and wheel zoom.
+  // Canvas sizing, background pattern, intro and wheel zoom.
   useEffect(() => {
     const wrapper = wrapperRef.current;
     const canvas = canvasRef.current;
     if (!wrapper || !canvas) {
       return;
     }
-    const dots = document.createElement("canvas");
-    dots.width = 26;
-    dots.height = 26;
-    const dctx = dots.getContext("2d");
-    if (dctx) {
-      dctx.fillStyle = "rgba(30, 41, 59, 0.10)";
-      dctx.beginPath();
-      dctx.arc(13, 13, 1, 0, Math.PI * 2);
-      dctx.fill();
-      patternRef.current = canvas.getContext("2d")?.createPattern(dots, "repeat") ?? null;
-    }
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    introStartRef.current = reduceMotion ? performance.now() - 60_000 : performance.now();
 
     let fitted = false;
     const observer = new ResizeObserver(() => {
@@ -393,7 +581,7 @@ export const FileGraph = () => {
       canvas.style.height = `${height}px`;
       if (!fitted && width && height) {
         fitted = true;
-        fitView();
+        fitView(true);
       }
       requestRender();
     });
@@ -402,7 +590,7 @@ export const FileGraph = () => {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      zoomBy(Math.exp(-event.deltaY * 0.0016), { x: event.clientX - rect.left, y: event.clientY - rect.top });
+      zoomBy(Math.exp(-event.deltaY * 0.0016), { x: event.clientX - rect.left, y: event.clientY - rect.top }, true);
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -416,12 +604,33 @@ export const FileGraph = () => {
     };
   }, [fitView, requestRender, zoomBy]);
 
+  // Background dots follow the theme.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const dots = document.createElement("canvas");
+    dots.width = 26;
+    dots.height = 26;
+    const dctx = dots.getContext("2d");
+    if (dctx && canvas) {
+      dctx.fillStyle = THEMES[theme].dot;
+      dctx.beginPath();
+      dctx.arc(13, 13, 1, 0, Math.PI * 2);
+      dctx.fill();
+      patternRef.current = canvas.getContext("2d")?.createPattern(dots, "repeat") ?? null;
+    }
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Storage may be unavailable (private mode): the theme just won't persist.
+    }
+  }, [theme]);
+
   // Keep the render loop in sync with the React state.
   useEffect(() => {
-    uiRef.current = { selected, query, category };
+    uiRef.current = { selected, category, theme };
     matchesRef.current = matches;
     requestRender();
-  }, [selected, query, category, matches, requestRender]);
+  }, [selected, category, theme, matches, requestRender]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -446,7 +655,7 @@ export const FileGraph = () => {
     moved: boolean;
   } | null>(null);
 
-  const localPoint = (event: React.PointerEvent) => {
+  const localPoint = (event: React.PointerEvent | React.MouseEvent) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
@@ -455,6 +664,7 @@ export const FileGraph = () => {
     const { x, y } = localPoint(event);
     const hit = hitTest(x, y);
     event.currentTarget.setPointerCapture(event.pointerId);
+    viewTargetRef.current = null;
     gestureRef.current = { mode: hit === null ? "pan" : "node", node: hit, startX: x, startY: y, lastX: x, lastY: y, moved: false };
     if (hit !== null) {
       const node = model.nodes[hit];
@@ -525,6 +735,14 @@ export const FileGraph = () => {
     }
   };
 
+  const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = localPoint(event);
+    const hit = hitTest(x, y);
+    if (hit === null) {
+      zoomBy(1.6, { x, y });
+    }
+  };
+
   const selectAndCenter = (i: number) => {
     setSelected(i);
     centerOn(i);
@@ -543,7 +761,7 @@ export const FileGraph = () => {
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
 
   return (
-    <div className="file-graph">
+    <div className={`file-graph file-graph--${theme}`}>
       <header className="file-graph__header">
         <div className="file-graph__heading">
           <h1 className="file-graph__title">
@@ -569,8 +787,17 @@ export const FileGraph = () => {
           <button type="button" className="file-graph__button" onClick={() => zoomBy(1 / 1.3)} aria-label={t("graph.zoom_out")}>
             −
           </button>
-          <button type="button" className="file-graph__button file-graph__button--text" onClick={fitView}>
+          <button type="button" className="file-graph__button file-graph__button--text" onClick={() => fitView()}>
             {t("graph.recenter")}
+          </button>
+          <button
+            type="button"
+            className="file-graph__button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            aria-label={t(theme === "dark" ? "graph.theme_light" : "graph.theme_dark")}
+            title={t(theme === "dark" ? "graph.theme_light" : "graph.theme_dark")}
+          >
+            {theme === "dark" ? "☀" : "☾"}
           </button>
         </div>
       </header>
@@ -584,6 +811,7 @@ export const FileGraph = () => {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
           onPointerLeave={onPointerLeave}
+          onDoubleClick={onDoubleClick}
         />
 
         <aside className="file-graph__legend" aria-label={t("graph.legend")}>
@@ -605,16 +833,16 @@ export const FileGraph = () => {
           </span>
         </aside>
 
-        {selectedFile && (
+        {selectedFile && selected !== null && (
           <aside className="file-graph__card">
             <button type="button" className="file-graph__close" onClick={() => setSelected(null)} aria-label={t("graph.close")}>
               ×
             </button>
-            <span className="file-graph__dot file-graph__dot--large" style={{ background: CATEGORY_COLORS[model.categories[selected!]] }} />
+            <span className="file-graph__dot file-graph__dot--large" style={{ background: CATEGORY_COLORS[model.categories[selected]] }} />
             <h2 className="file-graph__card-title">{selectedFile.title}</h2>
             <dl className="file-graph__meta">
               <dt>{t("graph.category")}</dt>
-              <dd>{t(`graph.categories.${model.categories[selected!]}`)}</dd>
+              <dd>{t(`graph.categories.${model.categories[selected]}`)}</dd>
               <dt>{t("graph.cluster")}</dt>
               <dd>{clusterLabel(selectedFile)}</dd>
               {selectedFile.size > 0 && (
