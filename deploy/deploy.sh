@@ -17,6 +17,9 @@ COMPOSE=(docker compose -f compose.prod.yaml)
 "${COMPOSE[@]}" run --rm createbuckets
 "${COMPOSE[@]}" run --rm migrate
 "${COMPOSE[@]}" up -d --remove-orphans backend celery frontend nginx
+# Pick up nginx config changes shipped by this deploy.
+"${COMPOSE[@]}" exec -T nginx nginx -t
+"${COMPOSE[@]}" exec -T nginx nginx -s reload
 
 docker image prune -f >/dev/null
 "${COMPOSE[@]}" ps
