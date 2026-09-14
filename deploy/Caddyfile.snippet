@@ -1,0 +1,17 @@
+# --- Drive (DINUM x 42) : bloc a coller dans /srv/caddy/conf/Caddyfile ---
+# Remplacer BASE par la valeur de deploy/.env (ex. 37-187-129-149.sslip.io).
+drive.BASE {
+	encode zstd gzip
+	reverse_proxy drive-prod-nginx:80
+}
+
+auth.drive.BASE {
+	reverse_proxy drive-prod-keycloak:8080
+}
+
+s3.drive.BASE {
+	request_body {
+		max_size 5GB
+	}
+	reverse_proxy drive-prod-minio:9000
+}

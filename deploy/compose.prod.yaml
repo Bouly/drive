@@ -1,0 +1,155 @@
+# Production stack for the demo server.
+# Caddy (outside this stack, on the external "web" network) terminates TLS and
+# routes DRIVE_DOMAIN -> nginx, AUTH_DOMAIN -> keycloak, S3_DOMAIN -> minio.
+# Variables come from deploy/.env, generated once by deploy/setup.sh.
+name: drive-prod
+
+x-backend: &backend
+  image: drive-prod:backend
+  restart: unless-stopped
+  environment:
+    # The image user has no home: gunicorn's control socket needs a writable one.
+    HOME: /tmp
+  env_file:
+    - env/backend.env
+  depends_on:
+    postgresql:
+      condition: service_healthy
+    redis:
+      condition: service_started
+    minio:
+      condition: service_healthy
+
+services:
+  postgresql:
+    image: postgres:16
+    restart: unless-stopped
+    env_file:
+      - env/postgresql.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - postgresql:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: drive-prod-minio
+    restart: unless-stopped
+    env_file:
+      - env/minio.env
+    command: server --console-address :9001 /data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 20s
+      retries: 60
+    volumes:
+      - media:/data
+    networks:
+      - default
+      - web
+
+  createbuckets:
+    image: quay.io/minio/mc
+    env_file:
+      - env/minio.env
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      mc alias set drive http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing drive/drive-media-storage &&
+      mc version enable drive/drive-media-storage"
+
+  backend:
+    <<: *backend
+    build:
+      context: ..
+      target: backend-production
+      args:
+        DOCKER_USER: "1000:1000"
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["python", "manage.py", "migrate", "--noinput"]
+
+  celery:
+    <<: *backend
+    command: ["celery", "-A", "drive.celery_app", "worker", "-l", "INFO"]
+
+  frontend:
+    image: drive-prod:frontend
+    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: ./src/frontend/Dockerfile
+      target: frontend-production
+      args:
+        API_ORIGIN: "https://${DRIVE_DOMAIN}"
+        DOCKER_USER: "1000:1000"
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: drive-prod-nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - default
+      - web
+
+  kc_postgresql:
+    image: postgres:16
+    restart: unless-stopped
+    env_file:
+      - env/kc_postgresql.env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - kc_postgresql:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.2
+    container_name: drive-prod-keycloak
+    restart: unless-stopped
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname=https://${AUTH_DOMAIN}
+      - --proxy-headers=xforwarded
+      - --http-enabled=true
+      - --health-enabled=true
+    env_file:
+      - env/keycloak.env
+    depends_on:
+      kc_postgresql:
+        condition: service_healthy
+    networks:
+      - default
+      - web
+
+volumes:
+  postgresql:
+  kc_postgresql:
+  media:
+
+networks:
+  web:
+    external: true
