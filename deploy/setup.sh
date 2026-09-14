@@ -18,10 +18,11 @@ S3_DOMAIN="s3.drive.${BASE}"
 
 secret() { openssl rand -hex "${1:-32}"; }
 
+OFFICE_DOMAIN="office.drive.${BASE}"
+
 if [[ -f .env ]]; then
   echo "deploy/.env already exists, keeping existing secrets."
-  exit 0
-fi
+else
 
 mkdir -p env
 DB_PASSWORD="$(secret 24)"
@@ -129,3 +130,36 @@ Generated configuration for:
   keycloak: https://${AUTH_DOMAIN}  (admin / ${KC_ADMIN_PASSWORD})
   s3:       https://${S3_DOMAIN}
 EOF
+fi
+
+# --- OnlyOffice (added after the first install: appended only once) ---
+if ! grep -q '^OFFICE_DOMAIN=' .env; then
+  ONLYOFFICE_JWT_SECRET="$(secret 32)"
+
+  echo "OFFICE_DOMAIN=${OFFICE_DOMAIN}" >> .env
+
+  cat > env/onlyoffice.env <<EOF
+JWT_ENABLED=true
+JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+USE_UNAUTHORIZED_STORAGE=true
+TZ=Europe/Paris
+EOF
+
+  # OnlyOffice calls WOPI back through the public URL: Drive checks the WOPI
+  # proof signature against the absolute URL it receives.
+  cat >> env/backend.env <<EOF
+
+WOPI_CLIENTS=onlyoffice
+WOPI_ONLYOFFICE_DISCOVERY_URL=http://onlyoffice/hosting/discovery
+WOPI_SRC_BASE_URL=https://${DRIVE_DOMAIN}
+WOPI_ONLYOFFICE_OPTIONS={"ForceConvertExtensions": ["doc", "xls", "ppt"], "ConvertServiceUrl": "http://onlyoffice/converter"}
+WOPI_ONLYOFFICE_CONVERT_JWT_SECRET=${ONLYOFFICE_JWT_SECRET}
+EOF
+
+  mkdir -p onlyoffice
+  sed "s#http://localhost:9981#https://${OFFICE_DOMAIN}#" \
+    ../docker/onlyoffice/local-development.json > onlyoffice/local-production-linux.json
+
+  chmod 600 env/onlyoffice.env
+  echo "OnlyOffice configured on https://${OFFICE_DOMAIN}"
+fi

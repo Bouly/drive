@@ -14,12 +14,16 @@ COMPOSE=(docker compose -f compose.prod.yaml)
 
 "${COMPOSE[@]}" build backend frontend
 "${COMPOSE[@]}" up -d postgresql redis minio kc_postgresql keycloak
+# OnlyOffice takes a few minutes on first boot; the WOPI discovery below needs it up.
+"${COMPOSE[@]}" up -d --wait --wait-timeout 900 onlyoffice
 "${COMPOSE[@]}" run --rm createbuckets
 "${COMPOSE[@]}" run --rm migrate
 "${COMPOSE[@]}" up -d --remove-orphans backend celery frontend nginx
 # Pick up nginx config changes shipped by this deploy.
 "${COMPOSE[@]}" exec -T nginx nginx -t
 "${COMPOSE[@]}" exec -T nginx nginx -s reload
+# Load the editors' discovery (supported extensions, proof keys) into the cache.
+"${COMPOSE[@]}" exec -T backend python manage.py trigger_wopi_configuration
 
 docker image prune -f >/dev/null
 "${COMPOSE[@]}" ps

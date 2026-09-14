@@ -9,6 +9,10 @@ auth.drive.BASE {
 	reverse_proxy drive-prod-keycloak:8080
 }
 
+office.drive.BASE {
+	reverse_proxy drive-prod-onlyoffice:80
+}
+
 s3.drive.BASE {
 	request_body {
 		max_size 5GB

@@ -84,7 +84,27 @@ services:
 
   celery:
     <<: *backend
-    command: ["celery", "-A", "drive.celery_app", "worker", "-l", "INFO"]
+    # -B embeds beat: it refreshes the WOPI discovery cache periodically.
+    command: ["celery", "-A", "drive.celery_app", "worker", "-B", "-l", "INFO",
+              "--schedule", "/tmp/celerybeat-schedule"]
+
+  onlyoffice:
+    image: onlyoffice/documentserver-de
+    container_name: drive-prod-onlyoffice
+    restart: unless-stopped
+    env_file:
+      - env/onlyoffice.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/hosting/discovery"]
+      interval: 30s
+      retries: 10
+      start_period: 120s
+      timeout: 10s
+    volumes:
+      - ./onlyoffice/local-production-linux.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
+    networks:
+      - default
+      - web
 
   frontend:
     image: drive-prod:frontend
