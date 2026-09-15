@@ -10,7 +10,7 @@ import pytest
 
 from core import factories, models
 
-from graph.models import ItemChunk, ItemLink, ItemTopic, Topic
+from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
 from graph.tasks import index_item
@@ -157,6 +157,32 @@ def test_index_item_ignores_trashed_candidates(settings):
 
     assert ItemChunk.objects.filter(item=item).count() == 1
     assert not ItemLink.objects.filter(source=item).exists()
+
+
+def test_index_item_remembers_a_file_without_text(settings):
+    """A photo whose OCR finds nothing is marked analysed, not left pending."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    item = make_text_file("photo", "   ")
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        index_item.apply(args=[item.id], throw=True)
+
+    client.assert_not_called()
+    assert not ItemChunk.objects.filter(item=item).exists()
+    assert ItemIndex.objects.get(item=item).state == ItemIndex.State.EMPTY
+
+
+def test_index_item_remembers_what_it_skipped():
+    """A video is recorded as skipped, so the page stops waiting for it."""
+    video = factories.ItemFactory(
+        title="film.mp4",
+        type=models.ItemTypeChoices.FILE,
+        update_upload_state=models.ItemUploadStateChoices.READY,
+        mimetype="video/mp4",
+        size=10,
+    )
+    index_item.apply(args=[video.id], throw=True)
+    assert ItemIndex.objects.get(item=video).state == ItemIndex.State.SKIPPED
 
 
 def test_index_item_skips_non_extractable_items():

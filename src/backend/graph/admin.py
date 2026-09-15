@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from graph.models import ItemChunk, ItemLink, Topic
+from graph.models import ItemChunk, ItemIndex, ItemLink, Topic
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -47,3 +47,13 @@ class TopicAdmin(ReadOnlyAdmin):
     list_display = ("label", "automatic", "keywords", "updated_at")
     list_filter = ("automatic",)
     search_fields = ("label",)
+
+
+@admin.register(ItemIndex)
+class ItemIndexAdmin(ReadOnlyAdmin):
+    """Where each file stands in the indexing pipeline."""
+
+    list_display = ("item", "state", "detail", "updated_at")
+    list_filter = ("state",)
+    search_fields = ("item__title", "detail")
+    raw_id_fields = ("item",)

@@ -8,7 +8,7 @@ files the user cannot read are simply left out: the graph never reveals the
 existence of a file to someone who cannot open it.
 """
 
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 
 from rest_framework import views
 from rest_framework.response import Response
@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from core import models
 from core.api import permissions
 
-from graph.models import ItemChunk, ItemLink, ItemTopic, Topic
+from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services.extraction import is_extractable
 
 MAX_NODES = 1000
@@ -42,7 +42,10 @@ def graph_items(user):
         # ancestors_deleted_at, and must leave the graph with their folder.
         .filter(ancestors_deleted_at__isnull=True)
         .filter(in_graph)
-        .annotate(indexed=Exists(ItemChunk.objects.filter(item=OuterRef("pk"))))
+        .annotate(
+            indexed=Exists(ItemChunk.objects.filter(item=OuterRef("pk"))),
+            index_state=Subquery(ItemIndex.objects.filter(item=OuterRef("pk")).values("state")[:1]),
+        )
         .select_related("creator")
         .order_by("-updated_at")
         .distinct()[:MAX_NODES]
@@ -54,12 +57,16 @@ def item_status(item):
     Where an item stands in the pipeline, for the page to show it right.
 
     ``indexed``: its passages are stored, links and topic follow.
-    ``pending``: its text is being extracted and embedded (or about to be).
-    ``skipped``: nothing to analyse, so it stays a lone dot (archive, video,
-    file too big, upload not finished).
+    ``pending``: being analysed, or waiting for the worker to pick it up.
+    ``empty``: analysed, but it holds no text to compare (a photo).
+    ``failed``: the analysis broke; it will be retried on the next save.
+    ``skipped``: nothing to analyse (video, archive, file too big).
     """
     if item.indexed:
         return "indexed"
+    state = item.index_state
+    if state in (ItemIndex.State.EMPTY, ItemIndex.State.FAILED, ItemIndex.State.SKIPPED):
+        return state
     return "pending" if is_extractable(item) else "skipped"
 
 

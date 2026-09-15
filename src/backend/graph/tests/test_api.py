@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from core import factories, models
 
-from graph.models import ItemLink, ItemTopic, Topic
+from graph.models import ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
 
@@ -131,6 +131,17 @@ def test_a_file_shows_up_before_it_is_analysed():
     status = {f["title"]: f["status"] for f in client.get(URL).json()["files"]}
 
     assert status == {"rapport.pdf": "pending", "photos.zip": "skipped", "analysé": "indexed"}
+
+
+def test_a_file_analysed_without_text_stops_pending():
+    """A photo analysed in vain is not shown as being analysed forever."""
+    user = factories.UserFactory()
+    photo = make_file("chat.jpg", users=[user])
+    ItemIndex.objects.create(item=photo, state=ItemIndex.State.EMPTY)
+
+    client = APIClient()
+    client.force_login(user)
+    assert [f["status"] for f in client.get(URL).json()["files"]] == ["empty"]
 
 
 def test_files_of_a_trashed_folder_are_hidden():

@@ -61,6 +61,37 @@ class ItemChunk(BaseModel):
         return f"{self.item_id}#{self.index}"
 
 
+class ItemIndex(BaseModel):
+    """
+    Where an item stands in the indexing pipeline.
+
+    Without it, a file analysed but holding no text (a photo, a scan of a
+    blank page) would look like it is still being analysed, forever.
+    """
+
+    class State(models.TextChoices):
+        """Result of the last indexing run."""
+
+        PENDING = "pending", _("Being analysed")
+        DONE = "done", _("Analysed")
+        EMPTY = "empty", _("No text found")
+        SKIPPED = "skipped", _("Nothing to analyse")
+        FAILED = "failed", _("Analysis failed")
+
+    item = models.OneToOneField(Item, on_delete=models.CASCADE, related_name="graph_index")
+    state = models.CharField(_("state"), max_length=16, choices=State.choices)
+    # Why it was skipped or how it failed, for the admin.
+    detail = models.TextField(_("detail"), blank=True)
+
+    class Meta:
+        db_table = "drive_graph_index"
+        verbose_name = _("Indexing state")
+        verbose_name_plural = _("Indexing states")
+
+    def __str__(self):
+        return f"{self.item_id}: {self.state}"
+
+
 class ItemLink(BaseModel):
     """A weighted relation between two items."""
 
