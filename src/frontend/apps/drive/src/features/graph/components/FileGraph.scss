@@ -368,11 +368,21 @@
   }
 
   &__card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--c--globals--spacings--xs, 8px);
     margin-top: var(--c--globals--spacings--sm, 12px);
+  }
+
+  a.file-graph__button {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
   }
 
   &__button {
     height: 32px;
+    white-space: nowrap;
     padding: 0 var(--c--globals--spacings--sm, 12px);
     border: 1px solid var(--fg-panel-border);
     border-radius: 4px;

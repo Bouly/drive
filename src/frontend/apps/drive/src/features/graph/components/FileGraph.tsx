@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Badge, Button, getMimeCategory, Icon, Switch, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { Maximize, ZoomMinus, ZoomPlus } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
-import { buildFakeGraph, FOLDER_MIMETYPE, GraphFile, GraphLink } from "../data/fakeGraph";
+import { FOLDER_MIMETYPE, GraphData, GraphFile, GraphLink } from "../data/fakeGraph";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
 
 /**
@@ -133,8 +133,7 @@ const readStoredTheme = (): "dark" | "light" => {
   }
 };
 
-const buildModel = () => {
-  const data = buildFakeGraph();
+const buildModel = (data: GraphData) => {
   const index = new Map(data.files.map((file, i) => [file.id, i]));
   const clusterIndex = new Map(data.clusters.map((cluster, i) => [cluster.id, i]));
   const degree = data.files.map(() => 0);
@@ -163,7 +162,8 @@ const buildModel = () => {
   const surprises = linkMeta.map((meta, i) => (meta.kind === "surprise" ? i : -1)).filter((i) => i >= 0);
 
   // Clusters sit on a ring; nodes start near their cluster with a bit of noise.
-  const ring = 320;
+  // A small graph (few topics) sits closer together than the demo dataset.
+  const ring = Math.min(320, 60 + 45 * data.clusters.length);
   const centers = data.clusters.map((_, i) => {
     const angle = (i / data.clusters.length) * Math.PI * 2 - Math.PI / 2;
     return { x: Math.cos(angle) * ring, y: Math.sin(angle) * ring };
@@ -205,9 +205,15 @@ const buildModel = () => {
 
 type Model = ReturnType<typeof buildModel>;
 
-export const FileGraph = () => {
+type FileGraphProps = {
+  data: GraphData;
+  /** True when the dataset is the built-in sample, not the user's files. */
+  demo?: boolean;
+};
+
+export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const { t, i18n } = useTranslation();
-  const model = useMemo<Model>(buildModel, []);
+  const model = useMemo<Model>(() => buildModel(data), [data]);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1011,6 +1017,11 @@ export const FileGraph = () => {
         <button type="button" className="file-graph__button file-graph__button--text" onClick={() => centerOn(i)}>
           {t("graph.center")}
         </button>
+        {!demo && (
+          <a className="file-graph__button file-graph__button--text" href={`/explorer/items/files/${file.id}`}>
+            {t("graph.open_file")}
+          </a>
+        )}
       </div>
       <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
       <ul className="file-graph__links">
@@ -1036,9 +1047,11 @@ export const FileGraph = () => {
         <div className="file-graph__heading">
           <h1 className="file-graph__title">
             {t("graph.title")}
-            <Badge type="accent" uppercased>
-              {t("graph.demo_badge")}
-            </Badge>
+            {demo && (
+              <Badge type="accent" uppercased>
+                {t("graph.demo_badge")}
+              </Badge>
+            )}
           </h1>
           <p className="file-graph__hint">
             <span className="file-graph__stats">

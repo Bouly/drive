@@ -750,7 +750,8 @@
         "surprises_intro": "Files from different topics whose content turns out to be related. Click one to see the pair.",
         "no_result": "No file matches",
         "results_more_one": "{{count}} more…",
-        "results_more_other": "{{count}} more…"
+        "results_more_other": "{{count}} more…",
+        "open_file": "Open in the explorer"
       }
     }
   },
@@ -1505,7 +1506,8 @@
         "surprises_intro": "Des fichiers de sujets différents dont le contenu se révèle lié. Cliquez pour voir la paire.",
         "no_result": "Aucun fichier ne correspond",
         "results_more_one": "{{count}} de plus…",
-        "results_more_other": "{{count}} de plus…"
+        "results_more_other": "{{count}} de plus…",
+        "open_file": "Ouvrir dans l'explorateur"
       }
     }
   },
@@ -2260,7 +2262,8 @@
         "surprises_intro": "Bestanden uit verschillende onderwerpen waarvan de inhoud verband houdt. Klik om het paar te zien.",
         "no_result": "Geen bestand gevonden",
         "results_more_one": "nog {{count}}…",
-        "results_more_other": "nog {{count}}…"
+        "results_more_other": "nog {{count}}…",
+        "open_file": "Openen in de verkenner"
       }
     }
   }

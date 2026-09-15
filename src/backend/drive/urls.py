@@ -16,6 +16,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("core.urls")),
     path("", include("wopi.urls")),
+    path("", include("graph.urls")),
 ]
 
 if settings.DEBUG:
