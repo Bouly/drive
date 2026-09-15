@@ -12,6 +12,7 @@ from core import factories, models
 
 from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services import storage
+from graph.services.albert import AlbertError
 from graph.services.chunking import Chunk, hash_text
 from graph.tasks import index_item, readable_title
 
@@ -173,6 +174,70 @@ def test_index_item_falls_back_to_the_title_of_a_file_without_text(settings):
     index = ItemIndex.objects.get(item=item)
     assert index.state == ItemIndex.State.DONE
     assert index.detail == "title only"
+
+
+def no_text():
+    """Tika is not running in tests: pretend it found nothing in the image."""
+    return mock.patch("graph.tasks.extract_text", return_value="")
+
+
+def make_image(title, mimetype="image/jpeg"):
+    """A ready image file with bytes in object storage and no readable text."""
+    item = factories.ItemFactory(
+        title=title,
+        type=models.ItemTypeChoices.FILE,
+        filename=title,
+        mimetype=mimetype,
+        size=32,
+        update_upload_state=models.ItemUploadStateChoices.READY,
+    )
+    default_storage.save(item.file_key, BytesIO(b"\xff\xd8\xff" + b"0" * 29))
+    return item
+
+
+def test_index_item_describes_a_picture_with_albert(settings):
+    """An image without text is placed by what Albert sees on it."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    item = make_image("IMG_4032.jpg")
+
+    with mock.patch("graph.tasks.AlbertClient") as client, no_text():
+        client.return_value.describe_image.return_value = "Un chat roux dort sur un canapé."
+        client.return_value.embed.side_effect = lambda texts: [unit(0) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    raw, mimetype = client.return_value.describe_image.call_args.args
+    assert mimetype == "image/jpeg"
+    assert raw.startswith(b"\xff\xd8\xff")
+    assert "chat roux" in ItemChunk.objects.get(item=item).text
+    assert ItemIndex.objects.get(item=item).detail == "described by Albert"
+
+
+def test_index_item_falls_back_to_the_title_when_albert_cannot_describe(settings):
+    """Albert down or refusing: the image is still placed by its name."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    item = make_image("Chat roux.jpg")
+
+    with mock.patch("graph.tasks.AlbertClient") as client, no_text():
+        client.return_value.describe_image.side_effect = AlbertError("down")
+        client.return_value.embed.side_effect = lambda texts: [unit(0) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    assert ItemChunk.objects.get(item=item).text == "Chat roux"
+    assert ItemIndex.objects.get(item=item).detail == "title only"
+
+
+def test_index_item_does_not_describe_a_huge_picture(settings):
+    """A picture too heavy to send is not described, only named."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    settings.GRAPH_VISION_MAX_FILE_SIZE = 10
+    item = make_image("Panorama.jpg")
+
+    with mock.patch("graph.tasks.AlbertClient") as client, no_text():
+        client.return_value.embed.side_effect = lambda texts: [unit(0) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    client.return_value.describe_image.assert_not_called()
+    assert ItemIndex.objects.get(item=item).detail == "title only"
 
 
 def test_readable_title_drops_extension_and_dashes():

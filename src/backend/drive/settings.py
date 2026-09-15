@@ -182,6 +182,15 @@ class Base(Configuration):
     GRAPH_ALBERT_CHAT_MODEL = values.Value(
         "openweight-medium", environ_name="GRAPH_ALBERT_CHAT_MODEL", environ_prefix=None
     )
+    # Model describing images that hold no readable text, so a photo is
+    # placed in the graph by what it shows.
+    GRAPH_ALBERT_VISION_MODEL = values.Value(
+        "openweight-medium", environ_name="GRAPH_ALBERT_VISION_MODEL", environ_prefix=None
+    )
+    # Images heavier than this are not described: the picture travels in the request.
+    GRAPH_VISION_MAX_FILE_SIZE = values.PositiveIntegerValue(
+        6 * 1024 * 1024, environ_name="GRAPH_VISION_MAX_FILE_SIZE", environ_prefix=None
+    )
 
     # Item permissions
     PERMISSIONS_BACKEND = values.Value(

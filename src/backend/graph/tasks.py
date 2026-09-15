@@ -6,9 +6,12 @@ semantic links (5); topics (6) are regrouped by a follow-up task. Albert
 errors are retried with a backoff.
 """
 
+import logging
 import re
 
+from django.conf import settings
 from django.core.cache import cache
+from django.core.files.storage import default_storage
 
 from celery import shared_task
 
@@ -27,6 +30,8 @@ from graph.services.extraction import (
 from graph.services.linking import link_item, live_files, relink_neighbours
 from graph.services.topics import assign_topics
 
+logger = logging.getLogger(__name__)
+
 TOPICS_LOCK = "graph-refresh-topics"
 # Seconds to wait before regrouping, so several uploads are grouped in one run.
 TOPICS_DELAY = 10
@@ -40,6 +45,27 @@ def readable_title(title):
     drawn together by a shared extension.
     """
     return re.sub(r"\.[A-Za-z0-9]{1,8}$", "", title).replace("-", " ").replace("_", " ").strip()
+
+
+def describe_picture(item):
+    """
+    What an image shows, in one sentence, or "" when it cannot be described.
+
+    An OCR finds no text in a photo or a drawing; Albert's vision model says
+    what is on it, and that sentence is what the graph compares.
+    """
+    mimetype = item.mimetype or ""
+    if not mimetype.startswith("image/") or (item.size or 0) > settings.GRAPH_VISION_MAX_FILE_SIZE:
+        return ""
+    try:
+        with default_storage.open(item.file_key, "rb") as fd:
+            raw = fd.read()
+        description = AlbertClient().describe_image(raw, mimetype)
+    except AlbertError as exc:
+        logger.warning("Albert could not describe item %s: %s", item.id, exc)
+        return ""
+    logger.info("Described item %s: %s", item.id, description)
+    return description
 
 
 def _remember(item, state, detail=""):
@@ -70,13 +96,22 @@ def index_item(item_id):
 
     # The title is part of what a file is about, and it is all a photo has.
     title = readable_title(item.title)
+    described = ""
+    if not text.strip():
+        described = describe_picture(item)
+        text = described
     chunks = chunk_text(f"{title}\n\n{text}" if text.strip() else title)
     if not chunks:
         # No text, no title: nothing to compare this file with.
         _remember(item, ItemIndex.State.EMPTY, f"{len(text)} characters extracted")
         storage.delete_chunks(item)
         return
-    detail = f"{len(chunks)} passages" if text.strip() else "title only"
+    if described:
+        detail = "described by Albert"
+    elif text.strip():
+        detail = f"{len(chunks)} passages"
+    else:
+        detail = "title only"
 
     for chunk, vector in zip(chunks, AlbertClient().embed([c.text for c in chunks]), strict=True):
         chunk.embedding = vector

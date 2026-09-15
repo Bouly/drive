@@ -7,6 +7,7 @@ and an embeddings endpoint (``/v1/embeddings``) running the same model as
 our storage (bge-m3, 1024 dimensions, unit vectors).
 """
 
+import base64
 import math
 
 from django.conf import settings
@@ -91,14 +92,30 @@ class AlbertClient:
                 raise AlbertError("Albert returned a vector that is not unit length")
         return vectors
 
-    def chat(self, prompt, max_tokens=40):
-        """The answer of the chat model to a single user prompt, stripped."""
+    def chat(self, prompt, max_tokens=40, image=None, model=None):
+        """
+        The answer of the chat model to a single user prompt, stripped.
+
+        ``image`` is an ``(bytes, mimetype)`` pair sent along with the prompt,
+        for the models that can look at a picture.
+        """
+        content = prompt
+        if image is not None:
+            raw, mimetype = image
+            encoded = base64.b64encode(raw).decode()
+            content = [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mimetype};base64,{encoded}"},
+                },
+            ]
         data = self._request(
             "POST",
             "/chat/completions",
             json={
-                "model": settings.GRAPH_ALBERT_CHAT_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
+                "model": model or settings.GRAPH_ALBERT_CHAT_MODEL,
+                "messages": [{"role": "user", "content": content}],
                 "max_tokens": max_tokens,
                 "temperature": 0.2,
             },
@@ -107,3 +124,21 @@ class AlbertClient:
             return (data["choices"][0]["message"]["content"] or "").strip()
         except (KeyError, IndexError) as exc:
             raise AlbertError("Albert returned no chat answer") from exc
+
+    def describe_image(self, raw, mimetype):
+        """
+        One sentence describing a picture, in French, or "" when refused.
+
+        Used for images holding no readable text: the description is what the
+        graph compares, so a photo is placed by what it shows.
+        """
+        prompt = (
+            "Décris cette image en une phrase courte, en français, pour pouvoir "
+            "la retrouver plus tard. Nomme ce qu'on y voit. Réponds uniquement par la phrase."
+        )
+        return self.chat(
+            prompt,
+            max_tokens=80,
+            image=(raw, mimetype),
+            model=settings.GRAPH_ALBERT_VISION_MODEL,
+        )
