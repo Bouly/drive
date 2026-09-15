@@ -144,6 +144,15 @@ class Base(Configuration):
     GRAPH_EMBEDDING_DIM = values.IntegerValue(
         1024, environ_name="GRAPH_EMBEDDING_DIM", environ_prefix=None
     )
+    # Albert API (DINUM): seeds the graph with public documents, see graph_seed_albert.
+    GRAPH_ALBERT_URL = values.Value(
+        "https://albert.api.etalab.gouv.fr/v1", environ_name="GRAPH_ALBERT_URL", environ_prefix=None
+    )
+    GRAPH_ALBERT_API_KEY = SecretFileValue(None, environ_name="ALBERT_API_KEY", environ_prefix=None)
+    # Alias of BAAI/bge-m3 on Albert: same vectors as our storage expects.
+    GRAPH_ALBERT_MODEL = values.Value(
+        "openweight-embeddings", environ_name="GRAPH_ALBERT_MODEL", environ_prefix=None
+    )
 
     # Item permissions
     PERMISSIONS_BACKEND = values.Value(
