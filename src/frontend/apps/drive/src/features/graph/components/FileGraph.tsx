@@ -27,8 +27,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
 /** One color per topic when the graph is colored by topic (DSFR palette). */
 const TOPIC_COLORS = [
-  "#3E5DE7", "#027B3E", "#CB5000", "#0069CF", "#6969DF", "#D7010E", "#5A8228", "#AE6257",
-  "#3A7EA0", "#B8860B", "#75758A", "#8F8FA4",
+  "#3E5DE7", "#027B3E", "#CB5000", "#7B3FA0", "#0F766E", "#D7010E", "#B8860B", "#AE6257",
+  "#0069CF", "#5A8228", "#6969DF", "#3A7EA0",
 ];
 type ColorBy = "type" | "topic";
 
