@@ -70,6 +70,11 @@ storage.replace_links(item, [
 storage.delete_chunks(item)
 ```
 
+Les liens sémantiques d'un item (étape 5 minimale) sont dans `graph.services.linking` :
+`link_item(item, candidats)` garde les 4 voisins les plus proches (≥ 0,62 même sujet,
+≥ 0,70 sujets différents = « rapprochement inattendu ») et écrit via `replace_links`.
+C'est ce qu'appellent la tâche `graph.tasks.index_item` (à l'upload) et le seed Albert.
+
 ## Vérifier en local
 
 ```bash

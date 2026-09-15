@@ -1,14 +1,23 @@
+"""
+Celery tasks of the file graph: index a file once its upload is safe.
+
+Chained here: extraction (1), chunking (2), embeddings (3), storage (4) and
+semantic links (5). Albert errors are retried with a backoff.
+"""
+
 from celery import shared_task
 
-from core.models import Item
+from core.models import Item, ItemTypeChoices
+
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.chunking import chunk_text
 from graph.services.extraction import ExtractionSkipped, extract_text, is_extractable
+from graph.services.linking import link_item
 
 
-@shared_task(bind=True, autoretry_for=(AlbertError,), retry_backoff=True, max_retries=5)
-def index_item(self, item_id):
+@shared_task(autoretry_for=(AlbertError,), retry_backoff=True, max_retries=5)
+def index_item(item_id):
     """Extract, chunk, embed and link an item. Idempotent: rerunning replaces its chunks."""
     item = Item.objects.get(pk=item_id)
 
@@ -29,6 +38,6 @@ def index_item(self, item_id):
 
     storage.save_chunks(item, chunks)
 
-    vector = storage.item_vector(item)
-    neighbours = storage.nearest_items(vector, Item.objects.all(), exclude_item=item)
-    storage.replace_links(item, neighbours)
+    # Links are stored for everyone; the API filters by access rights when
+    # reading. Trashed files must not become targets though.
+    link_item(item, Item.objects.filter_non_deleted().filter(type=ItemTypeChoices.FILE))

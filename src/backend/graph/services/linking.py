@@ -1,0 +1,63 @@
+"""
+Semantic links of an item (a minimal step 5), built only on ``storage``.
+
+An item is linked to its closest neighbours; a neighbour from another topic
+must be clearly related to count, and is then flagged as "surprising".
+"""
+
+from core import models
+
+from graph.models import ItemLink, ItemTopic
+from graph.services import storage
+
+LINKS_PER_ITEM = 4
+# Same-topic neighbours are linked from this similarity...
+MIN_SIMILARITY = 0.62
+# ...cross-topic ones only when clearly related: those are the "unexpected" links.
+SURPRISE_MIN_SIMILARITY = 0.7
+
+
+def semantic_links(item, candidates, topic_of=None):
+    """
+    The links to store for ``item``, as dicts for ``storage.replace_links``.
+
+    ``candidates`` are the items a link may point to; ``topic_of`` maps item
+    ids (as strings) to topic ids and is read from storage when not given.
+    Returns an empty list when the item has no chunk.
+    """
+    vector = storage.item_vector(item)
+    if vector is None:
+        return []
+    neighbours = storage.nearest_items(
+        vector, candidates, k=LINKS_PER_ITEM, min_similarity=MIN_SIMILARITY, exclude_item=item
+    )
+    if topic_of is None:
+        ids = [item.id, *(neighbour.item_id for neighbour in neighbours)]
+        topic_of = {
+            str(membership.item_id): membership.topic_id
+            for membership in ItemTopic.objects.filter(item_id__in=ids)
+        }
+    links = []
+    for neighbour in neighbours:
+        surprising = topic_of.get(str(item.id)) != topic_of.get(neighbour.item_id)
+        if surprising and neighbour.similarity < SURPRISE_MIN_SIMILARITY:
+            continue
+        evidence = storage.nearest_chunks(
+            vector, models.Item.objects.filter(id=neighbour.item_id), k=1
+        )
+        links.append(
+            {
+                "target": neighbour.item_id,
+                "weight": round(neighbour.similarity, 3),
+                "kind": ItemLink.Kind.SEMANTIC,
+                "surprising": surprising,
+                "reason": f"Contenus proches ({round(neighbour.similarity * 100)} % de similarité)",
+                "evidence": evidence[0].text[:300] if evidence else "",
+            }
+        )
+    return links
+
+
+def link_item(item, candidates, topic_of=None):
+    """Rewrite the links of ``item`` among ``candidates``; returns how many were stored."""
+    return storage.replace_links(item, semantic_links(item, candidates, topic_of))

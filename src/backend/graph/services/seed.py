@@ -17,18 +17,14 @@ from django.db import transaction
 
 from core import models
 
-from graph.models import ItemLink, ItemTopic, Topic
+from graph.models import ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
+from graph.services.linking import link_item
 
 logger = logging.getLogger(__name__)
 
 FOLDER_TITLE = "Albert · données de test"
-LINKS_PER_ITEM = 4
-# Same-topic neighbours are linked from this similarity...
-MIN_SIMILARITY = 0.62
-# ...cross-topic ones only when clearly related: those are the "unexpected" links.
-SURPRISE_MIN_SIMILARITY = 0.7
 # Readable topic names for collections whose documents carry no theme.
 COLLECTION_LABELS = {
     "mediatech-fiches-travail-emploi": "Travail - Emploi",
@@ -159,33 +155,7 @@ def link_seeded_items(user, report):
         for membership in ItemTopic.objects.filter(item__in=items)
     }
     for item in items:
-        vector = storage.item_vector(item)
-        if vector is None:
-            continue
-        neighbours = storage.nearest_items(
-            vector, items, k=LINKS_PER_ITEM, min_similarity=MIN_SIMILARITY, exclude_item=item
-        )
-        links = []
-        for neighbour in neighbours:
-            surprising = topic_of.get(str(item.id)) != topic_of.get(neighbour.item_id)
-            if surprising and neighbour.similarity < SURPRISE_MIN_SIMILARITY:
-                continue
-            evidence = storage.nearest_chunks(
-                vector, models.Item.objects.filter(id=neighbour.item_id), k=1
-            )
-            links.append(
-                {
-                    "target": neighbour.item_id,
-                    "weight": round(neighbour.similarity, 3),
-                    "kind": ItemLink.Kind.SEMANTIC,
-                    "surprising": surprising,
-                    "reason": (
-                        f"Contenus proches ({round(neighbour.similarity * 100)} % de similarité)"
-                    ),
-                    "evidence": evidence[0].text[:300] if evidence else "",
-                }
-            )
-        report.links += storage.replace_links(item, links)
+        report.links += link_item(item, items, topic_of)
 
 
 def seed_from_albert(user, client, collection_ids, documents_per_collection=30):
