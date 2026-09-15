@@ -139,6 +139,29 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    GRAPH_ALLOWED_MIMETYPES = values.ListValue(
+        [
+            "text/",
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.",
+            "application/vnd.oasis.opendocument.",
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/rtf",
+            "application/json",
+            "image/",
+        ],
+        environ_name="GRAPH_ALLOWED_MIMETYPES",
+        environ_prefix=None,
+    )
+    GRAPH_TIKA_URL = values.Value("http://tika:9998", environ_name="GRAPH_TIKA_URL", environ_prefix=None)
+    GRAPH_TIKA_TIMEOUT = values.IntegerValue(120, environ_name="GRAPH_TIKA_TIMEOUT", environ_prefix=None)
+    GRAPH_OCR_LANGUAGES = values.Value("fra+eng", environ_name="GRAPH_OCR_LANGUAGES", environ_prefix=None)
+    GRAPH_MAX_FILE_SIZE = values.PositiveIntegerValue(52428800, environ_name="GRAPH_MAX_FILE_SIZE", environ_prefix=None)
+    GRAPH_CHUNK_WORDS = values.IntegerValue(350, environ_name="GRAPH_CHUNK_WORDS", environ_prefix=None)
+    GRAPH_CHUNK_OVERLAP = values.IntegerValue(50, environ_name="GRAPH_CHUNK_OVERLAP", environ_prefix=None)
+
     # File graph storage: size of the vectors stored for each passage.
     # Must match the embedding model (bge-m3 -> 1024, multilingual-e5-base -> 768).
     GRAPH_EMBEDDING_DIM = values.IntegerValue(
