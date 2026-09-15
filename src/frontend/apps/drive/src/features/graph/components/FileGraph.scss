@@ -561,6 +561,11 @@
     font-size: var(--c--globals--font--sizes--xs, 12px);
     line-height: 1.4;
     color: var(--fg-muted);
+    // The reason is often a quoted passage: three lines are enough to judge.
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   &__pair {

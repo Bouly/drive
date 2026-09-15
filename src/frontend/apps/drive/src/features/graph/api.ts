@@ -44,14 +44,32 @@ export const toGraphData = (api: ApiGraph): GraphData => {
       creator: file.creator,
       cluster: file.cluster ?? NO_TOPIC.id,
     })),
-    links: api.links.map((link) => ({
+    links: mergeReciprocalLinks(api.links).map((link) => ({
       source: link.source,
       target: link.target,
       weight: link.weight,
       kind: link.surprising ? "surprise" : "semantic",
-      reason: link.reason || link.evidence || undefined,
+      // The passage that justifies the link says more than the generic reason;
+      // the similarity is already shown next to it.
+      reason: link.evidence || link.reason || undefined,
     })),
   };
+};
+
+/**
+ * Links are stored per file, so two close files usually point to each other:
+ * the graph draws one edge per pair, keeping the strongest of the two.
+ */
+const mergeReciprocalLinks = (links: ApiGraph["links"]) => {
+  const byPair = new Map<string, ApiGraph["links"][number]>();
+  for (const link of links) {
+    const key = [link.source, link.target].sort().join("|");
+    const current = byPair.get(key);
+    if (!current || link.weight > current.weight) {
+      byPair.set(key, link);
+    }
+  }
+  return [...byPair.values()];
 };
 
 export const fetchGraph = async (): Promise<GraphData> => {
