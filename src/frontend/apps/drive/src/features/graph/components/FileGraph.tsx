@@ -67,12 +67,21 @@ const INTRO_DURATION = 700;
 const INTRO_STAGGER = 14;
 /** Per-frame convergence of emphasis and camera animations (0..1). */
 const EASE = 0.22;
+const MAX_SEARCH_RESULTS = 6;
+const TOP_INSET = 56;
 
 type Neighbor = { node: number; link: GraphLink };
 
 type View = { scale: number; ox: number; oy: number };
 
 type ScreenNode = SimNode & { sx: number; sy: number; sr: number; depth: number; intro: number };
+
+type Filters = {
+  selected: number | null;
+  category: string | null;
+  cluster: number | null;
+  activeLink: number | null;
+};
 
 const normalize = (text: string) =>
   text
@@ -131,6 +140,7 @@ const buildModel = () => {
     });
     linkMeta.push(link);
   }
+  const surprises = linkMeta.map((meta, i) => (meta.kind === "surprise" ? i : -1)).filter((i) => i >= 0);
 
   // Clusters sit on a ring; nodes start near their cluster with a bit of noise.
   const ring = 320;
@@ -144,8 +154,9 @@ const buildModel = () => {
     return seed / 4294967296;
   };
   const categories = data.files.map(categoryOf);
+  const clusterOf = data.files.map((file) => clusterIndex.get(file.cluster) ?? 0);
   const nodes: SimNode[] = data.files.map((file, i) => {
-    const cluster = clusterIndex.get(file.cluster) ?? 0;
+    const cluster = clusterOf[i];
     return {
       id: file.id,
       x: centers[cluster].x + (rand() - 0.5) * 120,
@@ -169,7 +180,7 @@ const buildModel = () => {
   // Emphasis (0 dimmed .. 1 lit) per node, eased frame by frame.
   const emphasis = nodes.map(() => 1);
 
-  return { data, index, nodes, links, linkMeta, neighbors, categories, simulation, emphasis };
+  return { data, index, nodes, links, linkMeta, surprises, neighbors, categories, clusterOf, simulation, emphasis };
 };
 
 type Model = ReturnType<typeof buildModel>;
@@ -184,16 +195,26 @@ export const FileGraph = () => {
   const viewTargetRef = useRef<View | null>(null);
   const sizeRef = useRef({ width: 0, height: 0 });
   const hoverRef = useRef<number | null>(null);
+  const previewCategoryRef = useRef<string | null>(null);
   const frameRef = useRef<number | null>(null);
   const patternRef = useRef<CanvasPattern | null>(null);
   const screenRef = useRef<ScreenNode[]>([]);
   const introStartRef = useRef<number | null>(null);
   // Mirrors of the React state read by the render loop.
-  const uiRef = useRef({ selected: null as number | null, category: null as string | null, theme: "dark" as "dark" | "light" });
+  const uiRef = useRef<Filters & { theme: "dark" | "light" }>({
+    selected: null,
+    category: null,
+    cluster: null,
+    activeLink: null,
+    theme: "dark",
+  });
 
-  const [selected, setSelected] = useState<number | null>(null);
+  const [filters, setFilters] = useState<Filters>({ selected: null, category: null, cluster: null, activeLink: null });
+  const { selected, category, cluster, activeLink } = filters;
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [showSurprises, setShowSurprises] = useState(false);
+  const [hovered, setHovered] = useState<number | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -214,6 +235,10 @@ export const FileGraph = () => {
     return set;
   }, [model, query]);
   const matchesRef = useRef(matches);
+  const searchResults = useMemo(
+    () => (matches ? Array.from(matches).sort((a, b) => model.nodes[b].degree - model.nodes[a].degree).slice(0, MAX_SEARCH_RESULTS) : []),
+    [matches, model],
+  );
 
   const categoriesInUse = useMemo(() => {
     const counts = new Map<string, number>();
@@ -221,24 +246,46 @@ export const FileGraph = () => {
     return CATEGORY_ORDER.filter((c) => counts.has(c)).map((c) => ({ id: c, count: counts.get(c) ?? 0 }));
   }, [model]);
 
+  const clusterSizes = useMemo(() => {
+    const counts = model.data.clusters.map(() => 0);
+    model.clusterOf.forEach((c) => counts[c]++);
+    return counts;
+  }, [model]);
+
+  const nodesOfCategory = useCallback(
+    (id: string) => model.categories.map((c, i) => (c === id ? i : -1)).filter((i) => i >= 0),
+    [model],
+  );
+  const nodesOfCluster = useCallback(
+    (ci: number) => model.clusterOf.map((c, i) => (c === ci ? i : -1)).filter((i) => i >= 0),
+    [model],
+  );
+
   /** Nodes emphasised by the current interaction, or null when nothing is. */
   const litNodes = useCallback((): Set<number> | null => {
-    const { selected: sel, category: cat } = uiRef.current;
-    const hover = hoverRef.current;
-    const focus = hover ?? sel;
+    const ui = uiRef.current;
+    const focus = hoverRef.current ?? ui.selected;
     if (focus !== null) {
       const set = new Set<number>([focus]);
       model.neighbors[focus].forEach((n) => set.add(n.node));
       return set;
     }
+    if (ui.activeLink !== null) {
+      const link = model.links[ui.activeLink];
+      return new Set([link.source, link.target]);
+    }
     if (matchesRef.current) {
       return matchesRef.current;
     }
-    if (cat) {
-      return new Set(model.categories.map((c, i) => (c === cat ? i : -1)).filter((i) => i >= 0));
+    const category = previewCategoryRef.current ?? ui.category;
+    if (category) {
+      return new Set(nodesOfCategory(category));
+    }
+    if (ui.cluster !== null) {
+      return new Set(nodesOfCluster(ui.cluster));
     }
     return null;
-  }, [model]);
+  }, [model, nodesOfCategory, nodesOfCluster]);
 
   /** Draws one frame. Returns true while an animation still needs frames. */
   const draw = useCallback((): boolean => {
@@ -278,6 +325,7 @@ export const FileGraph = () => {
     }
 
     const focus = hoverRef.current ?? uiRef.current.selected;
+    const activeLinkIndex = uiRef.current.activeLink;
     const lit = litNodes();
     const nodes = model.nodes;
     const introStart = introStartRef.current ?? now;
@@ -297,26 +345,28 @@ export const FileGraph = () => {
       } else {
         model.emphasis[i] = wanted;
       }
+      const emphasis = model.emphasis[i];
       return {
         ...node,
         depth,
         intro,
         sx: width / 2 + (node.x * scale + ox) * parallax,
         sy: height / 2 + (node.y * scale + oy) * parallax,
-        sr: node.r * scale * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro),
+        sr: node.r * scale * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro) * (0.85 + 0.15 * emphasis),
       };
     });
     screenRef.current = screen;
-    const dimOf = (i: number) => 0.14 + 0.86 * model.emphasis[i];
+    const dimOf = (i: number) => 0.12 + 0.88 * model.emphasis[i];
 
     // Soft hull and name behind each cluster.
-    const clusters = model.data.clusters.map(() => ({ x: 0, y: 0, n: 0, spread: 0, intro: 0 }));
-    screen.forEach((node) => {
+    const clusters = model.data.clusters.map(() => ({ x: 0, y: 0, n: 0, spread: 0, intro: 0, emphasis: 0 }));
+    screen.forEach((node, i) => {
       const c = clusters[node.cluster];
       c.x += node.sx;
       c.y += node.sy;
       c.n++;
       c.intro = Math.max(c.intro, node.intro);
+      c.emphasis = Math.max(c.emphasis, model.emphasis[i]);
     });
     clusters.forEach((c) => {
       if (c.n) {
@@ -333,8 +383,9 @@ export const FileGraph = () => {
         return;
       }
       const radius = c.spread + 40 * scale;
+      const strength = c.intro * (0.3 + 0.7 * c.emphasis);
       const hull = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
-      hull.addColorStop(0, `rgba(${theme.clusterHull}, ${0.07 * c.intro})`);
+      hull.addColorStop(0, `rgba(${theme.clusterHull}, ${0.07 * strength})`);
       hull.addColorStop(1, `rgba(${theme.clusterHull}, 0)`);
       ctx.fillStyle = hull;
       ctx.beginPath();
@@ -346,7 +397,7 @@ export const FileGraph = () => {
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
       ctx.fillStyle = theme.clusterLabel;
-      ctx.globalAlpha = c.intro;
+      ctx.globalAlpha = strength;
       ctx.fillText(model.data.clusters[i].label.toUpperCase(), c.x, c.y - radius + size * 1.6);
       ctx.globalAlpha = 1;
     });
@@ -358,14 +409,15 @@ export const FileGraph = () => {
       const meta = model.linkMeta[li];
       const surprise = meta.kind === "surprise";
       const touchesFocus = focus !== null && (link.source === focus || link.target === focus);
+      const isActive = li === activeLinkIndex;
       const depth = (a.depth + b.depth) / 2;
       const intro = Math.min(a.intro, b.intro);
       const dim = Math.min(dimOf(link.source), dimOf(link.target));
       let alpha = (0.16 + 0.34 * depth) * dim * intro;
       let lineWidth = Math.min(2.6, (0.7 + meta.weight * 1.4) * Math.sqrt(scale));
-      if (touchesFocus) {
+      if (touchesFocus || isActive) {
         alpha = 0.95;
-        lineWidth *= 1.7;
+        lineWidth *= isActive ? 2.1 : 1.7;
       }
       if (surprise) {
         ctx.strokeStyle = SURPRISE_COLOR;
@@ -392,7 +444,7 @@ export const FileGraph = () => {
     ctx.globalAlpha = 1;
 
     const order = screen.map((_, i) => i).sort((i, j) => screen[i].z - screen[j].z);
-    const showAllLabels = scale > 1.25;
+    const showAllLabels = scale > 1.05;
     // Labels already placed this frame, so overlapping ones are skipped
     // (the focused node is drawn last and always wins).
     const placed: { x: number; y: number; w: number; h: number }[] = [];
@@ -453,19 +505,23 @@ export const FileGraph = () => {
         const size = Math.round(11 * Math.min(1.35, Math.max(0.95, Math.sqrt(scale))));
         ctx.font = `${isFocus ? 600 : 500} ${size}px Marianne, system-ui, sans-serif`;
         const label = file.title.length > 30 ? `${file.title.slice(0, 29)}…` : file.title;
-        const y = node.sy + node.sr + size * 0.9;
         const w = ctx.measureText(label).width + 6;
-        if (!isFocus && overlaps(node.sx, y, w, size + 4)) {
+        // Zoomed in, labels sit to the right of their node so they stop
+        // crossing the neighbours below; zoomed out they hang underneath.
+        const sideways = showAllLabels;
+        const x = sideways ? node.sx + node.sr + 6 + w / 2 : node.sx;
+        const y = sideways ? node.sy : node.sy + node.sr + size * 0.9;
+        if (!isFocus && overlaps(x, y, w, size + 4)) {
           continue;
         }
-        placed.push({ x: node.sx, y, w, h: size + 4 });
+        placed.push({ x, y, w, h: size + 4 });
         ctx.globalAlpha = node.intro * emphasis;
         ctx.lineWidth = 3.5;
         ctx.strokeStyle = theme.labelHalo;
         ctx.lineJoin = "round";
-        ctx.strokeText(label, node.sx, y);
+        ctx.strokeText(label, x, y);
         ctx.fillStyle = theme.label;
-        ctx.fillText(label, node.sx, y);
+        ctx.fillText(label, x, y);
       }
     }
     ctx.globalAlpha = 1;
@@ -500,24 +556,34 @@ export const FileGraph = () => {
     [requestRender],
   );
 
-  const fitView = useCallback(
-    (immediate = false) => {
+  /** Moves the camera so the given nodes fill the stage (all nodes by default). */
+  const fitToNodes = useCallback(
+    (indices?: number[], immediate = false) => {
       const { width, height } = sizeRef.current;
       if (!width || !height) {
         return;
       }
+      const list = indices && indices.length ? indices : model.nodes.map((_, i) => i);
       let minX = Infinity;
       let minY = Infinity;
       let maxX = -Infinity;
       let maxY = -Infinity;
-      for (const node of model.nodes) {
+      for (const i of list) {
+        const node = model.nodes[i];
         minX = Math.min(minX, node.x - node.r);
         minY = Math.min(minY, node.y - node.r);
         maxX = Math.max(maxX, node.x + node.r);
         maxY = Math.max(maxY, node.y + node.r);
       }
-      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(width / (maxX - minX), height / (maxY - minY)) * 0.8));
-      animateTo({ scale, ox: (-(minX + maxX) / 2) * scale, oy: (-(minY + maxY) / 2) * scale }, immediate);
+      // A pair needs room for the labels of its two nodes; a group less so.
+      const padding = !indices ? 0 : indices.length <= 2 ? 240 : 110;
+      const spanX = maxX - minX + padding;
+      const spanY = maxY - minY + padding;
+      const cap = indices ? 2.2 : MAX_SCALE;
+      // The topic chips sit over the top of the stage: keep the graph below them.
+      const usable = height - TOP_INSET;
+      const scale = Math.min(cap, Math.max(MIN_SCALE, Math.min(width / spanX, usable / spanY) * 0.8));
+      animateTo({ scale, ox: (-(minX + maxX) / 2) * scale, oy: (-(minY + maxY) / 2) * scale + TOP_INSET / 2 }, immediate);
     },
     [animateTo, model],
   );
@@ -560,7 +626,7 @@ export const FileGraph = () => {
     return null;
   }, []);
 
-  // Canvas sizing, background pattern, intro and wheel zoom.
+  // Canvas sizing, intro and wheel zoom.
   useEffect(() => {
     const wrapper = wrapperRef.current;
     const canvas = canvasRef.current;
@@ -581,7 +647,7 @@ export const FileGraph = () => {
       canvas.style.height = `${height}px`;
       if (!fitted && width && height) {
         fitted = true;
-        fitView(true);
+        fitToNodes(undefined, true);
       }
       requestRender();
     });
@@ -602,7 +668,7 @@ export const FileGraph = () => {
         frameRef.current = null;
       }
     };
-  }, [fitView, requestRender, zoomBy]);
+  }, [fitToNodes, requestRender, zoomBy]);
 
   // Background dots follow the theme.
   useEffect(() => {
@@ -627,24 +693,71 @@ export const FileGraph = () => {
 
   // Keep the render loop in sync with the React state.
   useEffect(() => {
-    uiRef.current = { selected, category, theme };
+    uiRef.current = { ...filters, theme };
     matchesRef.current = matches;
     requestRender();
-  }, [selected, category, theme, matches, requestRender]);
+  }, [filters, theme, matches, requestRender]);
+
+  // --- Filters -------------------------------------------------------------
+
+  const clearFilters = useCallback(() => {
+    setFilters({ selected: null, category: null, cluster: null, activeLink: null });
+    setShowSurprises(false);
+    fitToNodes();
+  }, [fitToNodes]);
+
+  const selectNode = useCallback((i: number | null) => {
+    setFilters((f) => ({ ...f, selected: i, activeLink: null }));
+    if (i !== null) {
+      setShowSurprises(false);
+    }
+  }, []);
+
+  const toggleCategory = (id: string) => {
+    if (category === id) {
+      clearFilters();
+      return;
+    }
+    setFilters({ selected: null, category: id, cluster: null, activeLink: null });
+    setShowSurprises(false);
+    fitToNodes(nodesOfCategory(id));
+  };
+
+  const toggleCluster = (ci: number) => {
+    if (cluster === ci) {
+      clearFilters();
+      return;
+    }
+    setFilters({ selected: null, category: null, cluster: ci, activeLink: null });
+    setShowSurprises(false);
+    fitToNodes(nodesOfCluster(ci));
+  };
+
+  const showLink = (li: number) => {
+    const link = model.links[li];
+    setFilters({ selected: null, category: null, cluster: null, activeLink: li });
+    fitToNodes([link.source, link.target]);
+  };
+
+  const previewCategory = (id: string | null) => {
+    previewCategoryRef.current = id;
+    requestRender();
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setSelected(null);
         setQuery("");
-        setCategory(null);
+        setSearchOpen(false);
+        clearFilters();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [clearFilters]);
 
-  // Pointer interactions: drag a node, pan the view, hover, click to select.
+  // --- Pointer interactions: drag a node, pan the view, hover, click to select.
+
   const gestureRef = useRef<{
     mode: "node" | "pan";
     node: number | null;
@@ -658,6 +771,15 @@ export const FileGraph = () => {
   const localPoint = (event: React.PointerEvent | React.MouseEvent) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  };
+
+  const setHover = (hit: number | null, canvas: HTMLCanvasElement) => {
+    if (hit !== hoverRef.current) {
+      hoverRef.current = hit;
+      setHovered(hit);
+      canvas.style.cursor = hit === null ? "grab" : "pointer";
+      requestRender();
+    }
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -677,12 +799,7 @@ export const FileGraph = () => {
     const { x, y } = localPoint(event);
     const gesture = gestureRef.current;
     if (!gesture) {
-      const hit = hitTest(x, y);
-      if (hit !== hoverRef.current) {
-        hoverRef.current = hit;
-        event.currentTarget.style.cursor = hit === null ? "grab" : "pointer";
-        requestRender();
-      }
+      setHover(hitTest(x, y), event.currentTarget);
       return;
     }
     const dx = x - gesture.lastX;
@@ -720,45 +837,148 @@ export const FileGraph = () => {
       node.fy = null;
       model.simulation.reheat(0.1);
       if (!gesture.moved) {
-        setSelected(gesture.node);
+        selectNode(gesture.node);
       }
     } else if (!gesture.moved) {
-      setSelected(null);
+      selectNode(null);
     }
     requestRender();
   };
 
-  const onPointerLeave = () => {
-    if (hoverRef.current !== null) {
-      hoverRef.current = null;
-      requestRender();
-    }
+  const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    setHover(null, event.currentTarget);
   };
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = localPoint(event);
-    const hit = hitTest(x, y);
-    if (hit === null) {
+    if (hitTest(x, y) === null) {
       zoomBy(1.6, { x, y });
     }
   };
 
   const selectAndCenter = (i: number) => {
-    setSelected(i);
+    selectNode(i);
+    setSearchOpen(false);
     centerOn(i);
   };
 
   const onSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" && matches && matches.size) {
-      const first = Array.from(matches).sort((a, b) => model.nodes[b].degree - model.nodes[a].degree)[0];
-      selectAndCenter(first);
+    if (event.key === "Enter" && searchResults.length) {
+      selectAndCenter(searchResults[0]);
     }
   };
 
+  // --- Derived data for the panels ----------------------------------------
+
   const selectedFile = selected !== null ? model.data.files[selected] : null;
   const selectedNeighbors = selected !== null ? [...model.neighbors[selected]].sort((a, b) => b.link.weight - a.link.weight) : [];
-  const clusterLabel = (file: GraphFile) => model.data.clusters.find((c) => c.id === file.cluster)?.label ?? "";
+  const clusterLabel = (i: number) => model.data.clusters[model.clusterOf[i]]?.label ?? "";
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
+  const hoveredScreen = hovered !== null ? screenRef.current[hovered] : null;
+  const activeLinkMeta = activeLink !== null ? model.linkMeta[activeLink] : null;
+
+  let filterChip: string | null = null;
+  if (category) {
+    filterChip = `${t(`graph.categories.${category}`)} · ${nodesOfCategory(category).length}`;
+  } else if (cluster !== null) {
+    filterChip = `${model.data.clusters[cluster].label} · ${clusterSizes[cluster]}`;
+  } else if (activeLinkMeta) {
+    filterChip = t("graph.surprise_link");
+  }
+
+  const renderSurprises = () => (
+    <aside className="file-graph__card file-graph__card--list">
+      <button type="button" className="file-graph__close" onClick={() => setShowSurprises(false)} aria-label={t("graph.close")}>
+        ×
+      </button>
+      <h2 className="file-graph__card-title">
+        <span className="file-graph__dash file-graph__dash--inline" />
+        {t("graph.surprises_title")}
+      </h2>
+      <p className="file-graph__card-intro">{t("graph.surprises_intro")}</p>
+      <ul className="file-graph__links">
+        {model.surprises.map((li) => {
+          const link = model.links[li];
+          const meta = model.linkMeta[li];
+          return (
+            <li key={li}>
+              <button
+                type="button"
+                className={`file-graph__pair${activeLink === li ? " file-graph__pair--active" : ""}`}
+                onClick={() => showLink(li)}
+              >
+                <span className="file-graph__pair-files">
+                  <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[link.source]] }} />
+                  <span className="file-graph__link-title">{model.data.files[link.source].title}</span>
+                  <span className="file-graph__weight file-graph__weight--surprise">{Math.round(meta.weight * 100)}%</span>
+                </span>
+                <span className="file-graph__pair-files">
+                  <span className="file-graph__pair-arrow">↔</span>
+                  <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[link.target]] }} />
+                  <span className="file-graph__link-title">{model.data.files[link.target].title}</span>
+                </span>
+                <span className="file-graph__reason">{meta.reason}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
+  );
+
+  const renderCard = (i: number, file: GraphFile) => (
+    <aside className="file-graph__card">
+      <button type="button" className="file-graph__close" onClick={() => selectNode(null)} aria-label={t("graph.close")}>
+        ×
+      </button>
+      <span className="file-graph__dot file-graph__dot--large" style={{ background: CATEGORY_COLORS[model.categories[i]], color: CATEGORY_COLORS[model.categories[i]] }} />
+      <h2 className="file-graph__card-title">{file.title}</h2>
+      <dl className="file-graph__meta">
+        <dt>{t("graph.category")}</dt>
+        <dd>
+          <button type="button" className="file-graph__inline-link" onClick={() => toggleCategory(model.categories[i])}>
+            {t(`graph.categories.${model.categories[i]}`)}
+          </button>
+        </dd>
+        <dt>{t("graph.cluster")}</dt>
+        <dd>
+          <button type="button" className="file-graph__inline-link" onClick={() => toggleCluster(model.clusterOf[i])}>
+            {clusterLabel(i)}
+          </button>
+        </dd>
+        {file.size > 0 && (
+          <>
+            <dt>{t("graph.size")}</dt>
+            <dd>{prettyBytes(file.size, { locale: i18n.language })}</dd>
+          </>
+        )}
+        <dt>{t("graph.last_update")}</dt>
+        <dd>{formatDate(file.updated_at)}</dd>
+        <dt>{t("graph.created_by")}</dt>
+        <dd>{file.creator}</dd>
+      </dl>
+      <div className="file-graph__card-actions">
+        <button type="button" className="file-graph__button file-graph__button--text" onClick={() => centerOn(i)}>
+          {t("graph.center")}
+        </button>
+      </div>
+      <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
+      <ul className="file-graph__links">
+        {selectedNeighbors.map(({ node, link }) => (
+          <li key={node}>
+            <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
+              <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[node]] }} />
+              <span className="file-graph__link-title">{model.data.files[node].title}</span>
+              <span className={`file-graph__weight${link.kind === "surprise" ? " file-graph__weight--surprise" : ""}`}>
+                {Math.round(link.weight * 100)}%
+              </span>
+            </button>
+            {link.reason && <p className="file-graph__reason">{link.reason}</p>}
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
 
   return (
     <div className={`file-graph file-graph--${theme}`}>
@@ -768,26 +988,60 @@ export const FileGraph = () => {
             {t("graph.title")}
             <span className="file-graph__badge">{t("graph.demo_badge")}</span>
           </h1>
-          <p className="file-graph__hint">{t("graph.hint")}</p>
+          <p className="file-graph__hint">
+            <span className="file-graph__stats">
+              {t("graph.stats", { files: model.data.files.length, topics: model.data.clusters.length, surprises: model.surprises.length })}
+            </span>
+            {t("graph.hint")}
+          </p>
         </div>
         <div className="file-graph__toolbar">
-          <input
-            className="file-graph__search"
-            type="search"
-            value={query}
-            placeholder={t("graph.search_placeholder")}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={onSearchKeyDown}
-            aria-label={t("graph.search_placeholder")}
-          />
-          {matches && <span className="file-graph__count">{t("graph.results", { count: matches.size })}</span>}
+          {filterChip && (
+            <button type="button" className="file-graph__chip" onClick={clearFilters} title={t("graph.filter_clear")}>
+              {filterChip}
+              <span aria-hidden="true">×</span>
+            </button>
+          )}
+          <div className="file-graph__search-wrap">
+            <input
+              className="file-graph__search"
+              type="search"
+              value={query}
+              placeholder={t("graph.search_placeholder")}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => setSearchOpen(true)}
+              onBlur={() => window.setTimeout(() => setSearchOpen(false), 150)}
+              onKeyDown={onSearchKeyDown}
+              aria-label={t("graph.search_placeholder")}
+            />
+            {searchOpen && matches && (
+              <ul className="file-graph__results">
+                {searchResults.length === 0 && <li className="file-graph__results-empty">{t("graph.no_result")}</li>}
+                {searchResults.map((i) => (
+                  <li key={i}>
+                    <button type="button" className="file-graph__link" onMouseDown={(event) => event.preventDefault()} onClick={() => selectAndCenter(i)}>
+                      <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[i]] }} />
+                      <span className="file-graph__link-title">{model.data.files[i].title}</span>
+                      <span className="file-graph__results-topic">{clusterLabel(i)}</span>
+                    </button>
+                  </li>
+                ))}
+                {matches.size > searchResults.length && (
+                  <li className="file-graph__results-empty">{t("graph.results_more", { count: matches.size - searchResults.length })}</li>
+                )}
+              </ul>
+            )}
+          </div>
           <button type="button" className="file-graph__button" onClick={() => zoomBy(1.3)} aria-label={t("graph.zoom_in")}>
             +
           </button>
           <button type="button" className="file-graph__button" onClick={() => zoomBy(1 / 1.3)} aria-label={t("graph.zoom_out")}>
             −
           </button>
-          <button type="button" className="file-graph__button file-graph__button--text" onClick={() => fitView()}>
+          <button type="button" className="file-graph__button file-graph__button--text" onClick={() => fitToNodes()}>
             {t("graph.recenter")}
           </button>
           <button
@@ -814,64 +1068,72 @@ export const FileGraph = () => {
           onDoubleClick={onDoubleClick}
         />
 
+        {hovered !== null && hoveredScreen && !gestureRef.current && (
+          <div className="file-graph__tooltip" style={{ left: hoveredScreen.sx, top: hoveredScreen.sy - hoveredScreen.sr - 10 }}>
+            <strong>{model.data.files[hovered].title}</strong>
+            <span>
+              {t(`graph.categories.${model.categories[hovered]}`)} · {clusterLabel(hovered)} ·{" "}
+              {t("graph.connections", { count: model.nodes[hovered].degree })}
+            </span>
+          </div>
+        )}
+
+        <div className="file-graph__topics" role="group" aria-label={t("graph.topics")}>
+          {model.data.clusters.map((c, ci) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`file-graph__topic${cluster === ci ? " file-graph__topic--active" : ""}`}
+              onClick={() => toggleCluster(ci)}
+            >
+              <span className="file-graph__topic-index">{ci + 1}</span>
+              {c.label}
+              <span className="file-graph__legend-count">{clusterSizes[ci]}</span>
+            </button>
+          ))}
+        </div>
+
         <aside className="file-graph__legend" aria-label={t("graph.legend")}>
+          <h3 className="file-graph__section-title">{t("graph.types")}</h3>
           {categoriesInUse.map(({ id, count }) => (
             <button
               key={id}
               type="button"
               className={`file-graph__legend-item${category === id ? " file-graph__legend-item--active" : ""}`}
-              onClick={() => setCategory(category === id ? null : id)}
+              style={category === id ? { background: `${CATEGORY_COLORS[id]}33` } : undefined}
+              onClick={() => toggleCategory(id)}
+              onMouseEnter={() => previewCategory(id)}
+              onMouseLeave={() => previewCategory(null)}
             >
               <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[id] }} />
               {t(`graph.categories.${id}`)}
               <span className="file-graph__legend-count">{count}</span>
             </button>
           ))}
-          <span className="file-graph__legend-item file-graph__legend-item--static">
+          <button
+            type="button"
+            className={`file-graph__legend-item file-graph__legend-item--surprise${showSurprises || activeLink !== null ? " file-graph__legend-item--active" : ""}`}
+            onClick={() => {
+              setShowSurprises(!showSurprises);
+              selectNode(null);
+            }}
+          >
             <span className="file-graph__dash" />
             {t("graph.surprise_link")}
-          </span>
+            <span className="file-graph__legend-count">{model.surprises.length}</span>
+          </button>
         </aside>
 
-        {selectedFile && selected !== null && (
-          <aside className="file-graph__card">
-            <button type="button" className="file-graph__close" onClick={() => setSelected(null)} aria-label={t("graph.close")}>
+        {selectedFile && selected !== null ? renderCard(selected, selectedFile) : showSurprises && renderSurprises()}
+
+        {activeLinkMeta && !showSurprises && selected === null && (
+          <div className="file-graph__callout">
+            <span className="file-graph__dash file-graph__dash--inline" />
+            <span>{activeLinkMeta.reason}</span>
+            <button type="button" className="file-graph__close file-graph__close--inline" onClick={clearFilters} aria-label={t("graph.close")}>
               ×
             </button>
-            <span className="file-graph__dot file-graph__dot--large" style={{ background: CATEGORY_COLORS[model.categories[selected]] }} />
-            <h2 className="file-graph__card-title">{selectedFile.title}</h2>
-            <dl className="file-graph__meta">
-              <dt>{t("graph.category")}</dt>
-              <dd>{t(`graph.categories.${model.categories[selected]}`)}</dd>
-              <dt>{t("graph.cluster")}</dt>
-              <dd>{clusterLabel(selectedFile)}</dd>
-              {selectedFile.size > 0 && (
-                <>
-                  <dt>{t("graph.size")}</dt>
-                  <dd>{prettyBytes(selectedFile.size, { locale: i18n.language })}</dd>
-                </>
-              )}
-              <dt>{t("graph.last_update")}</dt>
-              <dd>{formatDate(selectedFile.updated_at)}</dd>
-              <dt>{t("graph.created_by")}</dt>
-              <dd>{selectedFile.creator}</dd>
-            </dl>
-            <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
-            <ul className="file-graph__links">
-              {selectedNeighbors.map(({ node, link }) => (
-                <li key={node}>
-                  <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
-                    <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[node]] }} />
-                    <span className="file-graph__link-title">{model.data.files[node].title}</span>
-                    <span className={`file-graph__weight${link.kind === "surprise" ? " file-graph__weight--surprise" : ""}`}>
-                      {Math.round(link.weight * 100)}%
-                    </span>
-                  </button>
-                  {link.reason && <p className="file-graph__reason">{link.reason}</p>}
-                </li>
-              ))}
-            </ul>
-          </aside>
+          </div>
         )}
       </div>
     </div>

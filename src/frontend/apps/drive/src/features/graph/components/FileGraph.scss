@@ -152,7 +152,272 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
+    max-height: calc(100% - 32px);
+    overflow: auto;
     padding: 10px 12px;
+  }
+
+  &__section-title {
+    margin: 6px 6px 4px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+
+    & + & {
+      margin-top: 10px;
+    }
+  }
+
+  &__topics {
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    right: 16px;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  &__topic {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px 0 6px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 999px;
+    background: var(--fg-panel);
+    backdrop-filter: blur(8px);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-text);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 120ms, border-color 120ms;
+
+    &:hover {
+      border-color: var(--fg-muted);
+    }
+
+    &--active {
+      border-color: #4f8cff;
+      background: var(--fg-active);
+      font-weight: 600;
+    }
+
+    .file-graph__legend-count {
+      padding-left: 2px;
+    }
+  }
+
+  &__topic-index {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--fg-hover);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    text-align: center;
+    color: var(--fg-muted);
+  }
+
+  &__stats {
+    margin-right: 4px;
+    font-weight: 600;
+    color: var(--c--contextuals--content--semantic--neutral--primary, #1e293b);
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 10px 0 12px;
+    border: 0;
+    border-radius: 999px;
+    background: #e8efff;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1d4ed8;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover {
+      background: #dbe6ff;
+    }
+
+    span {
+      font-size: 16px;
+      line-height: 1;
+    }
+  }
+
+  &__search-wrap {
+    position: relative;
+  }
+
+  &__results {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 3;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 10px;
+    background: var(--fg-panel);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 28px var(--fg-panel-shadow);
+    color: var(--fg-text);
+  }
+
+  &__results-empty {
+    padding: 6px 8px;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  &__results-topic {
+    flex: none;
+    max-width: 40%;
+    overflow: hidden;
+    font-size: 11px;
+    color: var(--fg-faint);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__tooltip {
+    position: absolute;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 280px;
+    padding: 8px 10px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 8px;
+    background: var(--fg-panel);
+    box-shadow: 0 6px 20px var(--fg-panel-shadow);
+    color: var(--fg-text);
+    font-size: 12px;
+    line-height: 1.3;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+
+    strong {
+      font-size: 13px;
+    }
+
+    span {
+      color: var(--fg-muted);
+    }
+  }
+
+  &__callout {
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: min(560px, calc(100% - 32px));
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 79, 176, 0.5);
+    border-radius: 12px;
+    background: var(--fg-panel);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 28px var(--fg-panel-shadow);
+    color: var(--fg-text);
+    font-size: 13px;
+    line-height: 1.4;
+    transform: translateX(-50%);
+    animation: file-graph-card-in 220ms ease-out;
+  }
+
+  &__inline-link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: pointer;
+
+    &:hover {
+      color: #4f8cff;
+    }
+  }
+
+  &__card-actions {
+    margin-top: 12px;
+  }
+
+  &__card-intro {
+    margin: 0 0 10px;
+    font-size: 12.5px;
+    line-height: 1.4;
+    color: var(--fg-muted);
+  }
+
+  &__pair {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    padding: 8px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    font: inherit;
+    color: var(--fg-text);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--fg-hover);
+    }
+
+    &--active {
+      border-color: rgba(255, 79, 176, 0.5);
+      background: rgba(255, 79, 176, 0.1);
+    }
+
+    .file-graph__reason {
+      margin: 0;
+    }
+  }
+
+  &__pair-files {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+
+  &__pair-arrow {
+    flex: none;
+    width: 10px;
+    text-align: center;
+    color: #ff4fb0;
+  }
+
+  &__pair .file-graph__reason {
+    margin-top: 2px;
   }
 
   &__legend-item {
@@ -214,16 +479,26 @@
     flex: none;
     width: 18px;
     border-top: 2px dashed #ff4fb0;
+
+    &--inline {
+      display: inline-block;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
   }
 
   &__card {
-    top: 16px;
+    top: 52px;
     right: 16px;
     width: 320px;
-    max-height: calc(100% - 32px);
+    max-height: calc(100% - 68px);
     overflow: auto;
     padding: 16px 18px;
     animation: file-graph-card-in 220ms ease-out;
+
+    &--list {
+      width: 360px;
+    }
   }
 
   &__close {
@@ -239,6 +514,11 @@
 
     &:hover {
       color: var(--fg-text);
+    }
+
+    &--inline {
+      position: static;
+      flex: none;
     }
   }
 
@@ -347,7 +627,8 @@
       max-height: 50%;
     }
 
-    &__legend {
+    &__legend,
+    &__topics {
       display: none;
     }
   }

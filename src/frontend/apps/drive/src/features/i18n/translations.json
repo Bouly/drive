@@ -740,7 +740,17 @@
           "other": "Other"
         },
         "theme_dark": "Dark background",
-        "theme_light": "Light background"
+        "theme_light": "Light background",
+        "stats": "{{files}} files · {{topics}} topics · {{surprises}} unexpected connections. ",
+        "topics": "Topics",
+        "types": "Types",
+        "filter_clear": "Clear filter",
+        "center": "Center on it",
+        "surprises_title": "Unexpected connections",
+        "surprises_intro": "Files from different topics whose content turns out to be related. Click one to see the pair.",
+        "no_result": "No file matches",
+        "results_more_one": "{{count}} more…",
+        "results_more_other": "{{count}} more…"
       }
     }
   },
@@ -1485,7 +1495,17 @@
           "other": "Autre"
         },
         "theme_dark": "Fond sombre",
-        "theme_light": "Fond clair"
+        "theme_light": "Fond clair",
+        "stats": "{{files}} fichiers · {{topics}} sujets · {{surprises}} rapprochements inattendus. ",
+        "topics": "Sujets",
+        "types": "Types",
+        "filter_clear": "Effacer le filtre",
+        "center": "Centrer dessus",
+        "surprises_title": "Rapprochements inattendus",
+        "surprises_intro": "Des fichiers de sujets différents dont le contenu se révèle lié. Cliquez pour voir la paire.",
+        "no_result": "Aucun fichier ne correspond",
+        "results_more_one": "{{count}} de plus…",
+        "results_more_other": "{{count}} de plus…"
       }
     }
   },
@@ -2230,7 +2250,17 @@
           "other": "Overig"
         },
         "theme_dark": "Donkere achtergrond",
-        "theme_light": "Lichte achtergrond"
+        "theme_light": "Lichte achtergrond",
+        "stats": "{{files}} bestanden · {{topics}} onderwerpen · {{surprises}} onverwachte verbanden. ",
+        "topics": "Onderwerpen",
+        "types": "Types",
+        "filter_clear": "Filter wissen",
+        "center": "Centreren",
+        "surprises_title": "Onverwachte verbanden",
+        "surprises_intro": "Bestanden uit verschillende onderwerpen waarvan de inhoud verband houdt. Klik om het paar te zien.",
+        "no_result": "Geen bestand gevonden",
+        "results_more_one": "nog {{count}}…",
+        "results_more_other": "nog {{count}}…"
       }
     }
   }
