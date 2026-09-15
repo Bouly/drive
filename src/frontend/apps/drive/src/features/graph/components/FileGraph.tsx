@@ -139,7 +139,7 @@ const readStoredTheme = (): "dark" | "light" => {
   }
 };
 
-const buildModel = (data: GraphData) => {
+const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   const index = new Map(data.files.map((file, i) => [file.id, i]));
   const clusterIndex = new Map(data.clusters.map((cluster, i) => [cluster.id, i]));
   const degree = data.files.map(() => 0);
@@ -183,10 +183,13 @@ const buildModel = (data: GraphData) => {
   const clusterOf = data.files.map((file) => clusterIndex.get(file.cluster) ?? 0);
   const nodes: SimNode[] = data.files.map((file, i) => {
     const cluster = clusterOf[i];
+    // A file already on screen keeps its place when the graph is refetched,
+    // so a new file simply appears instead of everything moving.
+    const before = placed?.get(file.id);
     return {
       id: file.id,
-      x: centers[cluster].x + (rand() - 0.5) * 120,
-      y: centers[cluster].y + (rand() - 0.5) * 120,
+      x: before ? before.x : centers[cluster].x + (rand() - 0.5) * 120,
+      y: before ? before.y : centers[cluster].y + (rand() - 0.5) * 120,
       z: rand() * 2 - 1,
       vx: 0,
       vy: 0,
@@ -224,7 +227,13 @@ type FileGraphProps = {
 
 export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const { t, i18n } = useTranslation();
-  const model = useMemo<Model>(() => buildModel(data), [data]);
+  /** Where each file sits, so a refetch does not shuffle the whole graph. */
+  const placedRef = useRef(new Map<string, SimNode>());
+  const model = useMemo<Model>(() => {
+    const built = buildModel(data, placedRef.current);
+    placedRef.current = new Map(built.nodes.map((node) => [node.id, node]));
+    return built;
+  }, [data]);
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -775,6 +784,16 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       // Storage may be unavailable (private mode): the theme just won't persist.
     }
   }, [theme]);
+
+  // Files came or went: frame them, so a new one is never drawn off screen.
+  const shownRef = useRef(model.nodes.length);
+  useEffect(() => {
+    if (model.nodes.length !== shownRef.current) {
+      shownRef.current = model.nodes.length;
+      fitToNodes();
+    }
+    requestRender();
+  }, [model, fitToNodes, requestRender]);
 
   // Keep the render loop in sync with the React state.
   useEffect(() => {
