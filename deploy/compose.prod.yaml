@@ -40,6 +40,13 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
 
+  tika:
+    # Text extraction (with OCR) for the file graph; reached by celery as
+    # http://tika:9998 (GRAPH_TIKA_URL). The image ships no curl or wget, so
+    # no healthcheck: Tika answers within seconds of starting.
+    image: apache/tika:3.3.1.0-full
+    restart: unless-stopped
+
   minio:
     image: quay.io/minio/minio
     container_name: drive-prod-minio

@@ -295,14 +295,11 @@ services:
       - aliasgroup1=app-dev:8000
 
   tika:
+    # The image ships neither curl nor wget: no shell healthcheck possible.
     image: apache/tika:3.3.1.0-full
     profiles: ["graph"]
     ports:
       - "9998:9998"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q0- http://localhost:9998/tika >/dev/null || exit 1"]
-      interval: 10s
-      retries: 12
 
   onlyoffice:
     image: onlyoffice/documentserver-de
