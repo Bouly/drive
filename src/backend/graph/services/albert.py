@@ -132,13 +132,17 @@ class AlbertClient:
         Used for images holding no readable text: the description is what the
         graph compares, so a photo is placed by what it shows.
         """
+        # Keywords matter as much as the sentence: they carry the subject of
+        # the picture, which is what brings it next to documents about it.
         prompt = (
-            "Décris cette image en une phrase courte, en français, pour pouvoir "
-            "la retrouver plus tard. Nomme ce qu'on y voit. Réponds uniquement par la phrase."
+            "Regarde cette image. Réponds en français, en deux lignes :\n"
+            "1. une phrase décrivant ce qu'on y voit ;\n"
+            "2. six mots-clés du sujet, séparés par des virgules, du plus précis au plus général.\n"
+            "Pas d'introduction, pas de numérotation."
         )
         return self.chat(
             prompt,
-            max_tokens=80,
+            max_tokens=160,
             image=(raw, mimetype),
             model=settings.GRAPH_ALBERT_VISION_MODEL,
         )
