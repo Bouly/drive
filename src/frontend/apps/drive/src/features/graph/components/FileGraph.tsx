@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getMimeCategory } from "@gouvfr-lasuite/ui-components";
+import { Badge, Button, getMimeCategory, Icon, Switch, Tooltip } from "@gouvfr-lasuite/ui-components";
+import { Maximize, ZoomMinus, ZoomPlus } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
 import { buildFakeGraph, FOLDER_MIMETYPE, GraphFile, GraphLink } from "../data/fakeGraph";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
@@ -68,7 +69,8 @@ const INTRO_STAGGER = 14;
 /** Per-frame convergence of emphasis and camera animations (0..1). */
 const EASE = 0.22;
 const MAX_SEARCH_RESULTS = 6;
-const TOP_INSET = 56;
+/** Room kept above the graph so the top topic name stays visible. */
+const TOP_INSET = 36;
 
 type Neighbor = { node: number; link: GraphLink };
 
@@ -199,6 +201,9 @@ export const FileGraph = () => {
   const frameRef = useRef<number | null>(null);
   const patternRef = useRef<CanvasPattern | null>(null);
   const screenRef = useRef<ScreenNode[]>([]);
+  /** Screen rectangles of the topic names drawn on the stage: they are clickable. */
+  const clusterLabelsRef = useRef<{ x: number; y: number; w: number; h: number }[]>([]);
+  const hoverClusterRef = useRef<number | null>(null);
   const introStartRef = useRef<number | null>(null);
   // Mirrors of the React state read by the render loop.
   const uiRef = useRef<Filters & { theme: "dark" | "light" }>({
@@ -393,12 +398,18 @@ export const FileGraph = () => {
       ctx.fill();
 
       const size = Math.round(12 * Math.min(1.3, Math.max(0.85, Math.sqrt(scale))));
+      const hoveredLabel = i === hoverClusterRef.current;
+      const active = i === uiRef.current.cluster;
       ctx.font = `700 ${size}px Marianne, system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
-      ctx.fillStyle = theme.clusterLabel;
-      ctx.globalAlpha = strength;
-      ctx.fillText(model.data.clusters[i].label.toUpperCase(), c.x, c.y - radius + size * 1.6);
+      ctx.fillStyle = hoveredLabel || active ? theme.label : theme.clusterLabel;
+      ctx.globalAlpha = hoveredLabel || active ? Math.max(strength, 0.85) : strength;
+      const text = model.data.clusters[i].label.toUpperCase();
+      const labelY = c.y - radius + size * 1.6;
+      ctx.fillText(text, c.x, labelY);
+      const w = ctx.measureText(text).width + 16;
+      clusterLabelsRef.current[i] = { x: c.x - w / 2, y: labelY - size - 6, w, h: size + 12 };
       ctx.globalAlpha = 1;
     });
 
@@ -580,7 +591,6 @@ export const FileGraph = () => {
       const spanX = maxX - minX + padding;
       const spanY = maxY - minY + padding;
       const cap = indices ? 2.2 : MAX_SCALE;
-      // The topic chips sit over the top of the stage: keep the graph below them.
       const usable = height - TOP_INSET;
       const scale = Math.min(cap, Math.max(MIN_SCALE, Math.min(width / spanX, usable / spanY) * 0.8));
       animateTo({ scale, ox: (-(minX + maxX) / 2) * scale, oy: (-(minY + maxY) / 2) * scale + TOP_INSET / 2 }, immediate);
@@ -624,6 +634,11 @@ export const FileGraph = () => {
       }
     }
     return null;
+  }, []);
+
+  const clusterHitTest = useCallback((x: number, y: number): number | null => {
+    const index = clusterLabelsRef.current.findIndex((r) => r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
+    return index >= 0 ? index : null;
   }, []);
 
   // Canvas sizing, intro and wheel zoom.
@@ -761,6 +776,7 @@ export const FileGraph = () => {
   const gestureRef = useRef<{
     mode: "node" | "pan";
     node: number | null;
+    cluster: number | null;
     startX: number;
     startY: number;
     lastX: number;
@@ -773,11 +789,12 @@ export const FileGraph = () => {
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
-  const setHover = (hit: number | null, canvas: HTMLCanvasElement) => {
-    if (hit !== hoverRef.current) {
+  const setHover = (hit: number | null, clusterHit: number | null, canvas: HTMLCanvasElement) => {
+    if (hit !== hoverRef.current || clusterHit !== hoverClusterRef.current) {
       hoverRef.current = hit;
+      hoverClusterRef.current = hit === null ? clusterHit : null;
       setHovered(hit);
-      canvas.style.cursor = hit === null ? "grab" : "pointer";
+      canvas.style.cursor = hit === null && clusterHit === null ? "grab" : "pointer";
       requestRender();
     }
   };
@@ -787,7 +804,16 @@ export const FileGraph = () => {
     const hit = hitTest(x, y);
     event.currentTarget.setPointerCapture(event.pointerId);
     viewTargetRef.current = null;
-    gestureRef.current = { mode: hit === null ? "pan" : "node", node: hit, startX: x, startY: y, lastX: x, lastY: y, moved: false };
+    gestureRef.current = {
+      mode: hit === null ? "pan" : "node",
+      node: hit,
+      cluster: hit === null ? clusterHitTest(x, y) : null,
+      startX: x,
+      startY: y,
+      lastX: x,
+      lastY: y,
+      moved: false,
+    };
     if (hit !== null) {
       const node = model.nodes[hit];
       node.fx = node.x;
@@ -799,7 +825,8 @@ export const FileGraph = () => {
     const { x, y } = localPoint(event);
     const gesture = gestureRef.current;
     if (!gesture) {
-      setHover(hitTest(x, y), event.currentTarget);
+      const hit = hitTest(x, y);
+      setHover(hit, hit === null ? clusterHitTest(x, y) : null, event.currentTarget);
       return;
     }
     const dx = x - gesture.lastX;
@@ -840,13 +867,17 @@ export const FileGraph = () => {
         selectNode(gesture.node);
       }
     } else if (!gesture.moved) {
-      selectNode(null);
+      if (gesture.cluster !== null) {
+        toggleCluster(gesture.cluster);
+      } else {
+        selectNode(null);
+      }
     }
     requestRender();
   };
 
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    setHover(null, event.currentTarget);
+    setHover(null, null, event.currentTarget);
   };
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -986,7 +1017,9 @@ export const FileGraph = () => {
         <div className="file-graph__heading">
           <h1 className="file-graph__title">
             {t("graph.title")}
-            <span className="file-graph__badge">{t("graph.demo_badge")}</span>
+            <Badge type="accent" uppercased>
+              {t("graph.demo_badge")}
+            </Badge>
           </h1>
           <p className="file-graph__hint">
             <span className="file-graph__stats">
@@ -997,12 +1030,16 @@ export const FileGraph = () => {
         </div>
         <div className="file-graph__toolbar">
           {filterChip && (
-            <button type="button" className="file-graph__chip" onClick={clearFilters} title={t("graph.filter_clear")}>
-              {filterChip}
-              <span aria-hidden="true">×</span>
-            </button>
+            <Tooltip content={t("graph.filter_clear")}>
+              <Button size="small" variant="secondary" icon={<Icon name="close" />} iconPosition="right" onClick={clearFilters}>
+                {filterChip}
+              </Button>
+            </Tooltip>
           )}
           <div className="file-graph__search-wrap">
+            <span className="file-graph__search-icon" aria-hidden="true">
+              <Icon name="search" size={18} />
+            </span>
             <input
               className="file-graph__search"
               type="search"
@@ -1035,24 +1072,20 @@ export const FileGraph = () => {
               </ul>
             )}
           </div>
-          <button type="button" className="file-graph__button" onClick={() => zoomBy(1.3)} aria-label={t("graph.zoom_in")}>
-            +
-          </button>
-          <button type="button" className="file-graph__button" onClick={() => zoomBy(1 / 1.3)} aria-label={t("graph.zoom_out")}>
-            −
-          </button>
-          <button type="button" className="file-graph__button file-graph__button--text" onClick={() => fitToNodes()}>
+          <Tooltip content={t("graph.zoom_in")}>
+            <Button size="small" variant="bordered" color="neutral" icon={<ZoomPlus />} aria-label={t("graph.zoom_in")} onClick={() => zoomBy(1.3)} />
+          </Tooltip>
+          <Tooltip content={t("graph.zoom_out")}>
+            <Button size="small" variant="bordered" color="neutral" icon={<ZoomMinus />} aria-label={t("graph.zoom_out")} onClick={() => zoomBy(1 / 1.3)} />
+          </Tooltip>
+          <Button size="small" variant="bordered" color="neutral" icon={<Maximize />} onClick={() => fitToNodes()}>
             {t("graph.recenter")}
-          </button>
-          <button
-            type="button"
-            className="file-graph__button"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={t(theme === "dark" ? "graph.theme_light" : "graph.theme_dark")}
-            title={t(theme === "dark" ? "graph.theme_light" : "graph.theme_dark")}
-          >
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
+          </Button>
+          <Switch
+            label={t("graph.theme_dark")}
+            checked={theme === "dark"}
+            onChange={(event) => setTheme(event.target.checked ? "dark" : "light")}
+          />
         </div>
       </header>
 
@@ -1077,21 +1110,6 @@ export const FileGraph = () => {
             </span>
           </div>
         )}
-
-        <div className="file-graph__topics" role="group" aria-label={t("graph.topics")}>
-          {model.data.clusters.map((c, ci) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`file-graph__topic${cluster === ci ? " file-graph__topic--active" : ""}`}
-              onClick={() => toggleCluster(ci)}
-            >
-              <span className="file-graph__topic-index">{ci + 1}</span>
-              {c.label}
-              <span className="file-graph__legend-count">{clusterSizes[ci]}</span>
-            </button>
-          ))}
-        </div>
 
         <aside className="file-graph__legend" aria-label={t("graph.legend")}>
           <h3 className="file-graph__section-title">{t("graph.types")}</h3>
