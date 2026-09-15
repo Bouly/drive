@@ -56,18 +56,20 @@ def index_item(item_id):
         _remember(item, ItemIndex.State.FAILED, str(exc))
         raise
 
-    chunks = chunk_text(text)
+    # The title is part of what a file is about, and it is all a photo has.
+    chunks = chunk_text(f"{item.title}\n\n{text}" if text.strip() else item.title)
     if not chunks:
-        # An image with no readable text, a blank scan: nothing to link.
+        # No text, no title: nothing to compare this file with.
         _remember(item, ItemIndex.State.EMPTY, f"{len(text)} characters extracted")
         storage.delete_chunks(item)
         return
+    detail = f"{len(chunks)} passages" if text.strip() else "title only"
 
     for chunk, vector in zip(chunks, AlbertClient().embed([c.text for c in chunks]), strict=True):
         chunk.embedding = vector
 
     storage.save_chunks(item, chunks)
-    _remember(item, ItemIndex.State.DONE, f"{len(chunks)} passages")
+    _remember(item, ItemIndex.State.DONE, detail)
 
     # Links are stored for everyone; the API filters by access rights when
     # reading. Trashed files must not become targets though.

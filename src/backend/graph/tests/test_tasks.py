@@ -159,17 +159,32 @@ def test_index_item_ignores_trashed_candidates(settings):
     assert not ItemLink.objects.filter(source=item).exists()
 
 
-def test_index_item_remembers_a_file_without_text(settings):
-    """A photo whose OCR finds nothing is marked analysed, not left pending."""
+def test_index_item_falls_back_to_the_title_of_a_file_without_text(settings):
+    """A photo whose OCR finds nothing is placed by its name, not left pending."""
     settings.GRAPH_CHUNK_WORDS = 350
-    item = make_text_file("photo", "   ")
+    item = make_text_file("Chat roux sur un canapé", "   ")
 
     with mock.patch("graph.tasks.AlbertClient") as client:
+        client.return_value.embed.side_effect = lambda texts: [unit(0) for _ in texts]
         index_item.apply(args=[item.id], throw=True)
 
-    client.assert_not_called()
-    assert not ItemChunk.objects.filter(item=item).exists()
-    assert ItemIndex.objects.get(item=item).state == ItemIndex.State.EMPTY
+    chunk = ItemChunk.objects.get(item=item)
+    assert chunk.text == "Chat roux sur un canapé"
+    index = ItemIndex.objects.get(item=item)
+    assert index.state == ItemIndex.State.DONE
+    assert index.detail == "title only"
+
+
+def test_index_item_indexes_the_title_with_the_text(settings):
+    """The name of a file counts as part of its content."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    item = make_text_file("Budget 2027", "Les crédits de fonctionnement augmentent.")
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        client.return_value.embed.side_effect = lambda texts: [unit(0) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    assert ItemChunk.objects.get(item=item).text.startswith("Budget 2027")
 
 
 def test_index_item_remembers_what_it_skipped():
