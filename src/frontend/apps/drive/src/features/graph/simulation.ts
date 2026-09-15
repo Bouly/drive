@@ -45,10 +45,13 @@ export class ForceSimulation {
   readonly centers: { x: number; y: number }[];
   alpha = 1;
 
-  constructor(nodes: SimNode[], links: SimLink[], centers: { x: number; y: number }[]) {
+  readonly clusterPull: number;
+
+  constructor(nodes: SimNode[], links: SimLink[], centers: { x: number; y: number }[], clusterPull = CLUSTER_PULL) {
     this.nodes = nodes;
     this.links = links;
     this.centers = centers;
+    this.clusterPull = clusterPull;
   }
 
   /** Runs one step. Returns false once the layout has settled. */
@@ -101,8 +104,8 @@ export class ForceSimulation {
 
     for (const node of nodes) {
       const center = centers[node.cluster];
-      node.vx += (center.x - node.x) * CLUSTER_PULL * alpha;
-      node.vy += (center.y - node.y) * CLUSTER_PULL * alpha;
+      node.vx += (center.x - node.x) * this.clusterPull * alpha;
+      node.vy += (center.y - node.y) * this.clusterPull * alpha;
       node.vx -= node.x * CENTER_PULL * alpha;
       node.vy -= node.y * CENTER_PULL * alpha;
 

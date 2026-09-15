@@ -198,8 +198,13 @@ const buildModel = (data: GraphData) => {
     };
   });
 
-  const simulation = new ForceSimulation(nodes, links, centers);
-  for (let i = 0; i < 40; i++) {
+  // With a single topic every node is pulled to the same point: pull gently
+  // so repulsion and links shape the layout instead of a tight ball.
+  const simulation = new ForceSimulation(nodes, links, centers, data.clusters.length > 1 ? undefined : 0.006);
+  // Small graphs settle before the first frame, so the initial framing
+  // matches the final layout; large ones keep animating into place.
+  const warmup = nodes.length <= 150 ? 320 : 40;
+  for (let i = 0; i < warmup; i++) {
     simulation.tick();
   }
 
