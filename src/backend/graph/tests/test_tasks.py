@@ -9,7 +9,7 @@ import pytest
 
 from core import factories, models
 
-from graph.models import ItemChunk, ItemLink
+from graph.models import ItemChunk, ItemLink, ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
 from graph.tasks import index_item
@@ -21,6 +21,14 @@ def unit(axis, dim=1024):
     """A unit vector along one axis."""
     vector = [0.0] * dim
     vector[axis] = 1.0
+    return vector
+
+
+def mix(a, b, weight, dim=1024):
+    """A unit vector between two axes: its similarity to axis ``a`` is ``weight``."""
+    vector = [0.0] * dim
+    vector[a] = weight
+    vector[b] = (1 - weight**2) ** 0.5
     return vector
 
 
@@ -62,6 +70,24 @@ def test_index_item_stores_chunks_and_links(settings):
     assert links[0].surprising is False
     assert "Le préavis" in links[0].evidence
     assert "100 %" in links[0].reason
+
+
+def test_index_item_links_to_other_topics_are_not_surprising_without_topic(settings):
+    """An upload has no topic: its links to a file with a topic are plain links."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    neighbour = make_text_file("fiche", "Licenciement économique.")
+    storage.save_chunks(neighbour, [Chunk(0, "Licenciement", hash_text("l"), unit(0))])
+    topic = Topic.objects.create(label="Travail - Emploi")
+    ItemTopic.objects.create(item=neighbour, topic=topic)
+    item = make_text_file("upload", "Réorganisation et suppression de postes.")
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        client.return_value.embed.side_effect = lambda texts: [mix(0, 1, 0.8) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    link = ItemLink.objects.get(source=item)
+    assert link.target_id == neighbour.id
+    assert link.surprising is False
 
 
 def test_index_item_ignores_trashed_candidates(settings):

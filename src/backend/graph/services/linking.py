@@ -39,7 +39,11 @@ def semantic_links(item, candidates, topic_of=None):
         }
     links = []
     for neighbour in neighbours:
-        surprising = topic_of.get(str(item.id)) != topic_of.get(neighbour.item_id)
+        # Only two known, different topics make a link unexpected: an uploaded
+        # file has no topic yet, which says nothing about its neighbours.
+        source_topic = topic_of.get(str(item.id))
+        target_topic = topic_of.get(neighbour.item_id)
+        surprising = None not in (source_topic, target_topic) and source_topic != target_topic
         if surprising and neighbour.similarity < SURPRISE_MIN_SIMILARITY:
             continue
         evidence = storage.nearest_chunks(
