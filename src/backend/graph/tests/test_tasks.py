@@ -13,7 +13,7 @@ from core import factories, models
 from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
-from graph.tasks import index_item
+from graph.tasks import index_item, readable_title
 
 pytestmark = pytest.mark.django_db
 
@@ -173,6 +173,13 @@ def test_index_item_falls_back_to_the_title_of_a_file_without_text(settings):
     index = ItemIndex.objects.get(item=item)
     assert index.state == ItemIndex.State.DONE
     assert index.detail == "title only"
+
+
+def test_readable_title_drops_extension_and_dashes():
+    """A file name becomes words before it is analysed."""
+    assert readable_title("Poop-emoji-scaled.jpg") == "Poop emoji scaled"
+    assert readable_title("Budget_2027.xlsx") == "Budget 2027"
+    assert readable_title("Note de cadrage") == "Note de cadrage"
 
 
 def test_index_item_indexes_the_title_with_the_text(settings):

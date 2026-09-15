@@ -6,6 +6,8 @@ semantic links (5); topics (6) are regrouped by a follow-up task. Albert
 errors are retried with a backoff.
 """
 
+import re
+
 from django.core.cache import cache
 
 from celery import shared_task
@@ -28,6 +30,16 @@ from graph.services.topics import assign_topics
 TOPICS_LOCK = "graph-refresh-topics"
 # Seconds to wait before regrouping, so several uploads are grouped in one run.
 TOPICS_DELAY = 10
+
+
+def readable_title(title):
+    """
+    A file name as words: no extension, no dashes or underscores.
+
+    "Poop-emoji-scaled.jpg" becomes "Poop emoji scaled", so files are not
+    drawn together by a shared extension.
+    """
+    return re.sub(r"\.[A-Za-z0-9]{1,8}$", "", title).replace("-", " ").replace("_", " ").strip()
 
 
 def _remember(item, state, detail=""):
@@ -57,7 +69,8 @@ def index_item(item_id):
         raise
 
     # The title is part of what a file is about, and it is all a photo has.
-    chunks = chunk_text(f"{item.title}\n\n{text}" if text.strip() else item.title)
+    title = readable_title(item.title)
+    chunks = chunk_text(f"{title}\n\n{text}" if text.strip() else title)
     if not chunks:
         # No text, no title: nothing to compare this file with.
         _remember(item, ItemIndex.State.EMPTY, f"{len(text)} characters extracted")
