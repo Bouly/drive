@@ -15,6 +15,9 @@ LINKS_PER_ITEM = 4
 MIN_SIMILARITY = 0.62
 # ...cross-topic ones only when clearly related: those are the "unexpected" links.
 SURPRISE_MIN_SIMILARITY = 0.7
+# The single closest neighbour is kept from this lower similarity, so a file
+# whose content relates to something is not left alone in the graph.
+NEAREST_MIN_SIMILARITY = 0.5
 
 
 def semantic_links(item, candidates, topic_of=None):
@@ -29,8 +32,17 @@ def semantic_links(item, candidates, topic_of=None):
     if vector is None:
         return []
     neighbours = storage.nearest_items(
-        vector, candidates, k=LINKS_PER_ITEM, min_similarity=MIN_SIMILARITY, exclude_item=item
+        vector,
+        candidates,
+        k=LINKS_PER_ITEM,
+        min_similarity=NEAREST_MIN_SIMILARITY,
+        exclude_item=item,
     )
+    neighbours = [
+        neighbour
+        for rank, neighbour in enumerate(neighbours)
+        if rank == 0 or neighbour.similarity >= MIN_SIMILARITY
+    ]
     if topic_of is None:
         ids = [item.id, *(neighbour.item_id for neighbour in neighbours)]
         topic_of = {
@@ -65,3 +77,26 @@ def semantic_links(item, candidates, topic_of=None):
 def link_item(item, candidates, topic_of=None):
     """Rewrite the links of ``item`` among ``candidates``; returns how many were stored."""
     return storage.replace_links(item, semantic_links(item, candidates, topic_of))
+
+
+def relink_neighbours(item, candidates):
+    """
+    Rewrite the links of the items close to ``item``.
+
+    Links are computed when a file is indexed: without this, a file indexed
+    earlier would never point to a closer file that arrived after it.
+    Returns the number of items relinked.
+    """
+    vector = storage.item_vector(item)
+    if vector is None:
+        return 0
+    neighbours = storage.nearest_items(
+        vector,
+        candidates,
+        k=2 * LINKS_PER_ITEM,
+        min_similarity=NEAREST_MIN_SIMILARITY,
+        exclude_item=item,
+    )
+    for neighbour in models.Item.objects.filter(id__in=[n.item_id for n in neighbours]):
+        link_item(neighbour, candidates)
+    return len(neighbours)

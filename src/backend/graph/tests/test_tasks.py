@@ -1,9 +1,10 @@
 """Tests for the indexing task: extraction, embedding (mocked) and linking through storage."""
 
-from io import BytesIO
+from io import BytesIO, StringIO
 from unittest import mock
 
 from django.core.files.storage import default_storage
+from django.core.management import call_command
 
 import pytest
 
@@ -88,6 +89,58 @@ def test_index_item_links_to_other_topics_are_not_surprising_without_topic(setti
     link = ItemLink.objects.get(source=item)
     assert link.target_id == neighbour.id
     assert link.surprising is False
+
+
+def test_index_item_keeps_the_closest_neighbour_below_the_threshold(settings):
+    """A file whose best neighbour is only fairly close still gets that one link."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    fair = make_text_file("assez proche", "a")
+    storage.save_chunks(fair, [Chunk(0, "a", hash_text("a"), unit(0))])
+    weak = make_text_file("un peu proche", "b")
+    storage.save_chunks(weak, [Chunk(0, "b", hash_text("b"), mix(0, 2, 0.4))])
+    item = make_text_file("nouveau", "c")
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        client.return_value.embed.side_effect = lambda texts: [mix(0, 1, 0.55) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    targets = list(ItemLink.objects.filter(source=item).values_list("target_id", flat=True))
+    assert targets == [fair.id]
+
+
+def test_index_item_relinks_files_indexed_before(settings):
+    """An older file points to a closer newcomer once the newcomer is indexed."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    old = make_text_file("ancien", "a")
+    storage.save_chunks(old, [Chunk(0, "a", hash_text("a"), unit(0))])
+    far = make_text_file("lointain", "b")
+    storage.save_chunks(far, [Chunk(0, "b", hash_text("b"), mix(0, 1, 0.52))])
+    storage.replace_links(old, [{"target": far, "weight": 0.52, "kind": ItemLink.Kind.SEMANTIC}])
+    item = make_text_file("nouveau", "c")
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        client.return_value.embed.side_effect = lambda texts: [mix(0, 2, 0.9) for _ in texts]
+        index_item.apply(args=[item.id], throw=True)
+
+    old_targets = list(
+        ItemLink.objects.filter(source=old).order_by("-weight").values_list("target_id", flat=True)
+    )
+    assert old_targets[0] == item.id
+
+
+def test_graph_relink_command_rewrites_links():
+    """The command links stored files together without any embedding call."""
+    first = make_text_file("premier", "a")
+    storage.save_chunks(first, [Chunk(0, "a", hash_text("a"), unit(0))])
+    second = make_text_file("second", "b")
+    storage.save_chunks(second, [Chunk(0, "b", hash_text("b"), mix(0, 1, 0.8))])
+
+    call_command("graph_relink", stdout=StringIO())
+
+    assert set(ItemLink.objects.values_list("source_id", "target_id")) == {
+        (first.id, second.id),
+        (second.id, first.id),
+    }
 
 
 def test_index_item_ignores_trashed_candidates(settings):

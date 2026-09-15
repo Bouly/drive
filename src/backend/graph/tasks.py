@@ -13,7 +13,7 @@ from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.chunking import chunk_text
 from graph.services.extraction import ExtractionSkipped, extract_text, is_extractable
-from graph.services.linking import link_item
+from graph.services.linking import link_item, relink_neighbours
 
 
 @shared_task(autoretry_for=(AlbertError,), retry_backoff=True, max_retries=5)
@@ -40,4 +40,7 @@ def index_item(item_id):
 
     # Links are stored for everyone; the API filters by access rights when
     # reading. Trashed files must not become targets though.
-    link_item(item, Item.objects.filter_non_deleted().filter(type=ItemTypeChoices.FILE))
+    candidates = Item.objects.filter_non_deleted().filter(type=ItemTypeChoices.FILE)
+    link_item(item, candidates)
+    # Files indexed earlier may now have this one among their closest.
+    relink_neighbours(item, candidates)
