@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 FOLDER_TITLE = "Albert · données de test"
 LINKS_PER_ITEM = 4
 # Same-topic neighbours are linked from this similarity...
-MIN_SIMILARITY = 0.65
+MIN_SIMILARITY = 0.62
 # ...cross-topic ones only when clearly related: those are the "unexpected" links.
-SURPRISE_MIN_SIMILARITY = 0.72
+SURPRISE_MIN_SIMILARITY = 0.7
 # Readable topic names for collections whose documents carry no theme.
 COLLECTION_LABELS = {
     "mediatech-fiches-travail-emploi": "Travail - Emploi",

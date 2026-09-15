@@ -25,6 +25,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: "#A9A9BF", // gray-300
 };
 const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
+/** One color per topic when the graph is colored by topic (DSFR palette). */
+const TOPIC_COLORS = [
+  "#3E5DE7", "#027B3E", "#CB5000", "#0069CF", "#6969DF", "#D7010E", "#5A8228", "#AE6257",
+  "#3A7EA0", "#B8860B", "#75758A", "#8F8FA4",
+];
+type ColorBy = "type" | "topic";
 
 /** Mixes a hex color with white; the dark stage needs brighter families. */
 const lighten = (hex: string, amount: number) => {
@@ -230,12 +236,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const hoverClusterRef = useRef<number | null>(null);
   const introStartRef = useRef<number | null>(null);
   // Mirrors of the React state read by the render loop.
-  const uiRef = useRef<Filters & { theme: "dark" | "light" }>({
+  const uiRef = useRef<Filters & { theme: "dark" | "light"; colorBy: ColorBy }>({
     selected: null,
     category: null,
     cluster: null,
     activeLink: null,
     theme: "dark",
+    colorBy: "type",
   });
 
   const [filters, setFilters] = useState<Filters>({ selected: null, category: null, cluster: null, activeLink: null });
@@ -244,6 +251,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [showSurprises, setShowSurprises] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
+  // Real data has meaningful topics: color by them; the demo is colored by file type.
+  const [colorBy, setColorBy] = useState<ColorBy>(demo ? "type" : "topic");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -287,6 +296,19 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   );
   const nodesOfCluster = useCallback(
     (ci: number) => model.clusterOf.map((c, i) => (c === ci ? i : -1)).filter((i) => i >= 0),
+    [model],
+  );
+
+  /** Color of a node: its file family, or its topic. */
+  const nodeColor = useCallback(
+    (i: number, mode: ColorBy, themeName: "dark" | "light") => {
+      const theme = THEMES[themeName];
+      if (mode === "topic") {
+        const color = TOPIC_COLORS[model.clusterOf[i] % TOPIC_COLORS.length];
+        return themeName === "dark" ? lighten(color, 0.25) : color;
+      }
+      return theme.categoryColor(model.categories[i]);
+    },
     [model],
   );
 
@@ -460,7 +482,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         ctx.lineWidth = lineWidth + 0.5;
         ctx.setLineDash([7, 5]);
       } else if (touchesFocus) {
-        ctx.strokeStyle = theme.categoryColor(model.categories[focus]);
+        ctx.strokeStyle = nodeColor(focus, uiRef.current.colorBy, uiRef.current.theme);
         ctx.globalAlpha = alpha;
         ctx.lineWidth = lineWidth;
         ctx.setLineDash([]);
@@ -496,7 +518,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (node.intro <= 0) {
         continue;
       }
-      const color = theme.categoryColor(model.categories[i]);
+      const color = nodeColor(i, uiRef.current.colorBy, uiRef.current.theme);
       const isFocus = i === focus;
       const emphasis = model.emphasis[i];
       const alpha = (0.55 + 0.45 * node.depth) * dimOf(i) * node.intro;
@@ -561,7 +583,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     }
     ctx.globalAlpha = 1;
     return animating;
-  }, [litNodes, model]);
+  }, [litNodes, model, nodeColor]);
 
   const frame = useCallback(() => {
     frameRef.current = null;
@@ -732,10 +754,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
   // Keep the render loop in sync with the React state.
   useEffect(() => {
-    uiRef.current = { ...filters, theme };
+    uiRef.current = { ...filters, theme, colorBy };
     matchesRef.current = matches;
     requestRender();
-  }, [filters, theme, matches, requestRender]);
+  }, [filters, theme, colorBy, matches, requestRender]);
 
   // --- Filters -------------------------------------------------------------
 
@@ -932,6 +954,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const hoveredScreen = hovered !== null ? screenRef.current[hovered] : null;
   const activeLinkMeta = activeLink !== null ? model.linkMeta[activeLink] : null;
   const dotColor = THEMES[theme].categoryColor;
+  const colorOf = (i: number) => nodeColor(i, colorBy, theme);
+  const topicColor = (ci: number) => (theme === "dark" ? lighten(TOPIC_COLORS[ci % TOPIC_COLORS.length], 0.25) : TOPIC_COLORS[ci % TOPIC_COLORS.length]);
 
   let filterChip: string | null = null;
   if (category) {
@@ -987,7 +1011,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       <button type="button" className="file-graph__close" onClick={() => selectNode(null)} aria-label={t("graph.close")}>
         ×
       </button>
-      <span className="file-graph__dot file-graph__dot--large" style={{ background: dotColor(model.categories[i]), color: dotColor(model.categories[i]) }} />
+      <span className="file-graph__dot file-graph__dot--large" style={{ background: colorOf(i), color: colorOf(i) }} />
       <h2 className="file-graph__card-title">{file.title}</h2>
       <dl className="file-graph__meta">
         <dt>{t("graph.category")}</dt>
@@ -1028,7 +1052,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         {selectedNeighbors.map(({ node, link }) => (
           <li key={node}>
             <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
-              <span className="file-graph__dot" style={{ background: dotColor(model.categories[node]) }} />
+              <span className="file-graph__dot" style={{ background: colorOf(node) }} />
               <span className="file-graph__link-title">{model.data.files[node].title}</span>
               <span className={`file-graph__weight${link.kind === "surprise" ? " file-graph__weight--surprise" : ""}`}>
                 {Math.round(link.weight * 100)}%
@@ -1092,7 +1116,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 {searchResults.map((i) => (
                   <li key={i}>
                     <button type="button" className="file-graph__link" onMouseDown={(event) => event.preventDefault()} onClick={() => selectAndCenter(i)}>
-                      <span className="file-graph__dot" style={{ background: dotColor(model.categories[i]) }} />
+                      <span className="file-graph__dot" style={{ background: colorOf(i) }} />
                       <span className="file-graph__link-title">{model.data.files[i].title}</span>
                       <span className="file-graph__results-topic">{clusterLabel(i)}</span>
                     </button>
@@ -1144,8 +1168,39 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         )}
 
         <aside className="file-graph__legend" aria-label={t("graph.legend")}>
-          <h3 className="file-graph__section-title">{t("graph.types")}</h3>
-          {categoriesInUse.map(({ id, count }) => (
+          <div className="file-graph__legend-mode" role="group" aria-label={t("graph.color_by")}>
+            <span className="file-graph__section-title">{t("graph.color_by")}</span>
+            <button
+              type="button"
+              className={`file-graph__mode${colorBy === "type" ? " file-graph__mode--active" : ""}`}
+              onClick={() => setColorBy("type")}
+            >
+              {t("graph.by_type")}
+            </button>
+            <button
+              type="button"
+              className={`file-graph__mode${colorBy === "topic" ? " file-graph__mode--active" : ""}`}
+              onClick={() => setColorBy("topic")}
+            >
+              {t("graph.by_topic")}
+            </button>
+          </div>
+          {colorBy === "topic" &&
+            model.data.clusters.map((c, ci) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`file-graph__legend-item${cluster === ci ? " file-graph__legend-item--active" : ""}`}
+                style={cluster === ci ? { background: `${topicColor(ci)}33` } : undefined}
+                onClick={() => toggleCluster(ci)}
+              >
+                <span className="file-graph__dot" style={{ background: topicColor(ci) }} />
+                {c.label}
+                <span className="file-graph__legend-count">{clusterSizes[ci]}</span>
+              </button>
+            ))}
+          {colorBy === "type" &&
+            categoriesInUse.map(({ id, count }) => (
             <button
               key={id}
               type="button"
@@ -1159,7 +1214,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               {t(`graph.categories.${id}`)}
               <span className="file-graph__legend-count">{count}</span>
             </button>
-          ))}
+            ))}
           <button
             type="button"
             className={`file-graph__legend-item file-graph__legend-item--surprise${showSurprises || activeLink !== null ? " file-graph__legend-item--active" : ""}`}

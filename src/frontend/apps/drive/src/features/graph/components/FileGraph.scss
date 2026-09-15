@@ -180,6 +180,39 @@
     padding: var(--c--globals--spacings--xs, 8px);
   }
 
+  &__legend-mode {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 4px;
+
+    .file-graph__section-title {
+      margin-right: auto;
+    }
+  }
+
+  &__mode {
+    padding: 2px 8px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    color: var(--fg-muted);
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--fg-link);
+    }
+
+    &--active {
+      border-color: var(--fg-link);
+      background: var(--fg-active);
+      color: var(--fg-text);
+    }
+  }
+
   &__section-title {
     margin: 4px 6px;
     font-size: var(--c--globals--font--sizes--t, 11px);

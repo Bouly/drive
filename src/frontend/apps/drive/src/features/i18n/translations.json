@@ -751,7 +751,10 @@
         "no_result": "No file matches",
         "results_more_one": "{{count}} more…",
         "results_more_other": "{{count}} more…",
-        "open_file": "Open in the explorer"
+        "open_file": "Open in the explorer",
+        "color_by": "Color",
+        "by_type": "Type",
+        "by_topic": "Topic"
       }
     }
   },
@@ -1507,7 +1510,10 @@
         "no_result": "Aucun fichier ne correspond",
         "results_more_one": "{{count}} de plus…",
         "results_more_other": "{{count}} de plus…",
-        "open_file": "Ouvrir dans l'explorateur"
+        "open_file": "Ouvrir dans l'explorateur",
+        "color_by": "Couleur",
+        "by_type": "Type",
+        "by_topic": "Sujet"
       }
     }
   },
@@ -2263,7 +2269,10 @@
         "no_result": "Geen bestand gevonden",
         "results_more_one": "nog {{count}}…",
         "results_more_other": "nog {{count}}…",
-        "open_file": "Openen in de verkenner"
+        "open_file": "Openen in de verkenner",
+        "color_by": "Kleur",
+        "by_type": "Type",
+        "by_topic": "Onderwerp"
       }
     }
   }
