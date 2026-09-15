@@ -178,6 +178,10 @@ class Base(Configuration):
     GRAPH_ALBERT_MODEL = values.Value(
         "openweight-embeddings", environ_name="GRAPH_ALBERT_MODEL", environ_prefix=None
     )
+    # Chat model naming the automatic topics (Mistral Small on Albert).
+    GRAPH_ALBERT_CHAT_MODEL = values.Value(
+        "openweight-medium", environ_name="GRAPH_ALBERT_CHAT_MODEL", environ_prefix=None
+    )
 
     # Item permissions
     PERMISSIONS_BACKEND = values.Value(

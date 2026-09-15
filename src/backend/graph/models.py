@@ -108,6 +108,9 @@ class Topic(BaseModel):
 
     label = models.CharField(_("label"), max_length=255)
     keywords = models.JSONField(_("keywords"), default=list, blank=True)
+    # True for topics found by clustering the graph (step 6), which are
+    # recomputed; False for topics given by a source, like Albert's themes.
+    automatic = models.BooleanField(_("automatic"), default=False)
 
     class Meta:
         db_table = "drive_graph_topic"

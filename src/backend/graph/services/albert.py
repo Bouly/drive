@@ -90,3 +90,20 @@ class AlbertClient:
             if abs(norm - 1) > 1e-3:
                 raise AlbertError("Albert returned a vector that is not unit length")
         return vectors
+
+    def chat(self, prompt, max_tokens=40):
+        """The answer of the chat model to a single user prompt, stripped."""
+        data = self._request(
+            "POST",
+            "/chat/completions",
+            json={
+                "model": settings.GRAPH_ALBERT_CHAT_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": 0.2,
+            },
+        )
+        try:
+            return (data["choices"][0]["message"]["content"] or "").strip()
+        except (KeyError, IndexError) as exc:
+            raise AlbertError("Albert returned no chat answer") from exc

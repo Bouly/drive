@@ -1,8 +1,8 @@
 """
 Semantic links of an item (a minimal step 5), built only on ``storage``.
 
-An item is linked to its closest neighbours; a neighbour from another topic
-must be clearly related to count, and is then flagged as "surprising".
+An item is linked to its closest neighbours; a strong link to a file of
+another topic is flagged as "surprising" (an unexpected connection).
 """
 
 from core import models
@@ -11,10 +11,10 @@ from graph.models import ItemLink, ItemTopic
 from graph.services import storage
 
 LINKS_PER_ITEM = 4
-# Same-topic neighbours are linked from this similarity...
+# Neighbours are linked from this similarity...
 MIN_SIMILARITY = 0.62
-# ...cross-topic ones only when clearly related: those are the "unexpected" links.
-SURPRISE_MIN_SIMILARITY = 0.7
+# ...and a link between two different topics that strong is "unexpected".
+SURPRISE_MIN_SIMILARITY = 0.62
 # The single closest neighbour is kept from this lower similarity, so a file
 # whose content relates to something is not left alone in the graph.
 NEAREST_MIN_SIMILARITY = 0.5
@@ -55,9 +55,11 @@ def semantic_links(item, candidates, topic_of=None):
         # file has no topic yet, which says nothing about its neighbours.
         source_topic = topic_of.get(str(item.id))
         target_topic = topic_of.get(neighbour.item_id)
-        surprising = None not in (source_topic, target_topic) and source_topic != target_topic
-        if surprising and neighbour.similarity < SURPRISE_MIN_SIMILARITY:
-            continue
+        surprising = (
+            None not in (source_topic, target_topic)
+            and source_topic != target_topic
+            and neighbour.similarity >= SURPRISE_MIN_SIMILARITY
+        )
         evidence = storage.nearest_chunks(
             vector, models.Item.objects.filter(id=neighbour.item_id), k=1
         )

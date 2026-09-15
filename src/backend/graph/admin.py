@@ -44,5 +44,6 @@ class ItemLinkAdmin(ReadOnlyAdmin):
 class TopicAdmin(ReadOnlyAdmin):
     """Topics and their keywords."""
 
-    list_display = ("label", "keywords", "updated_at")
+    list_display = ("label", "automatic", "keywords", "updated_at")
+    list_filter = ("automatic",)
     search_fields = ("label",)
