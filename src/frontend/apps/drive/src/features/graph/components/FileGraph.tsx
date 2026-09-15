@@ -251,8 +251,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const [showSurprises, setShowSurprises] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
-  // Real data has meaningful topics: color by them; the demo is colored by file type.
-  const [colorBy, setColorBy] = useState<ColorBy>(demo ? "type" : "topic");
+  // Color by topic when topics tell files apart; a single topic (uploads have
+  // none yet) or the demo dataset reads better by file type.
+  const [colorBy, setColorBy] = useState<ColorBy>(demo || data.clusters.length < 2 ? "type" : "topic");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -1079,7 +1080,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           </h1>
           <p className="file-graph__hint">
             <span className="file-graph__stats">
-              {t("graph.stats", { files: model.data.files.length, topics: model.data.clusters.length, surprises: model.surprises.length })}
+              {[
+                t("graph.stats_files", { count: model.data.files.length }),
+                t("graph.stats_topics", { count: model.data.clusters.length }),
+                t("graph.stats_surprises", { count: model.surprises.length }),
+              ].join(" · ")}
+              {". "}
             </span>
             {t("graph.hint")}
           </p>
