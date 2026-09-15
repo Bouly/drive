@@ -290,6 +290,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return CATEGORY_ORDER.filter((c) => counts.has(c)).map((c) => ({ id: c, count: counts.get(c) ?? 0 }));
   }, [model]);
 
+  /** Files whose content is still being analysed: they pulse and are polled. */
+  const pendingCount = useMemo(
+    () => model.data.files.filter((file) => file.status === "pending").length,
+    [model],
+  );
+
   const clusterSizes = useMemo(() => {
     const counts = model.data.clusters.map(() => 0);
     model.clusterOf.forEach((c) => counts[c]++);
@@ -528,6 +534,18 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const isFocus = i === focus;
       const emphasis = model.emphasis[i];
       const alpha = (0.55 + 0.45 * node.depth) * dimOf(i) * node.intro;
+
+      // Being analysed: a halo breathes around the dot until its links arrive.
+      if (model.data.files[i].status === "pending") {
+        animating = true;
+        const pulse = 0.5 + 0.5 * Math.sin(now / 420);
+        ctx.globalAlpha = (0.12 + 0.3 * pulse) * dimOf(i) * node.intro;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(node.sx, node.sy, node.sr * (1.7 + 0.9 * pulse), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
 
       if (theme.glow) {
         const glowRadius = node.sr * (isFocus ? 4.5 : 2.6);
@@ -1019,6 +1037,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       </button>
       <span className="file-graph__dot file-graph__dot--large" style={{ background: colorOf(i), color: colorOf(i) }} />
       <h2 className="file-graph__card-title">{file.title}</h2>
+      {file.status === "pending" && (
+        <p className="file-graph__pending">
+          <span className="file-graph__pulse" />
+          {t("graph.analysing_file")}
+        </p>
+      )}
+      {file.status === "skipped" && <p className="file-graph__pending">{t("graph.no_text")}</p>}
       <dl className="file-graph__meta">
         <dt>{t("graph.category")}</dt>
         <dd>
@@ -1238,6 +1263,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             {t("graph.surprise_link")}
             <span className="file-graph__legend-count">{model.surprises.length}</span>
           </button>
+          {pendingCount > 0 && (
+            <span className="file-graph__legend-item file-graph__legend-item--pending">
+              <span className="file-graph__pulse" />
+              {t("graph.analysing")}
+              <span className="file-graph__legend-count">{pendingCount}</span>
+            </span>
+          )}
         </aside>
 
         {selectedFile && selected !== null ? renderCard(selected, selectedFile) : showSurprises && renderSurprises()}

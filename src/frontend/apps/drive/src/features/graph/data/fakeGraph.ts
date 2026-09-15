@@ -21,6 +21,11 @@ export type GraphFile = {
   updated_at: string;
   creator: string;
   cluster: string;
+  /**
+   * Where the file stands: "indexed" (content analysed), "pending" (being
+   * analysed, drawn pulsing) or "skipped" (nothing to analyse).
+   */
+  status?: "indexed" | "pending" | "skipped";
 };
 
 export type GraphLink = {

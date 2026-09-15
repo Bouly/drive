@@ -1,11 +1,11 @@
 """
 Read side of the file graph: what the storage contains, for the frontend.
 
-GET /api/v1.0/graph/ returns the files the user can read that are part of
-the graph (they have passages or links), the links between those files and
-the topics they belong to. Links to files the user cannot read are simply
-left out: the graph never reveals the existence of a file to someone who
-cannot open it.
+GET /api/v1.0/graph/ returns the files the user can read, the links between
+those files and the topics they belong to. A file appears as soon as it is
+uploaded, with a status saying whether its content is analysed yet. Links to
+files the user cannot read are simply left out: the graph never reveals the
+existence of a file to someone who cannot open it.
 """
 
 from django.db.models import Exists, OuterRef, Q
@@ -17,14 +17,22 @@ from core import models
 from core.api import permissions
 
 from graph.models import ItemChunk, ItemLink, ItemTopic, Topic
+from graph.services.extraction import is_extractable
 
 MAX_NODES = 1000
 
 
 def graph_items(user):
-    """The items the user can read that take part in the graph."""
+    """
+    The items the user can read that belong in the graph.
+
+    Every readable file is there, even one whose text is not analysed yet:
+    it shows up as soon as it is uploaded and gains its links afterwards.
+    Items of another type only appear once they carry chunks or links.
+    """
     in_graph = (
-        Q(Exists(ItemChunk.objects.filter(item=OuterRef("pk"))))
+        Q(type=models.ItemTypeChoices.FILE)
+        | Q(Exists(ItemChunk.objects.filter(item=OuterRef("pk"))))
         | Q(Exists(ItemLink.objects.filter(source=OuterRef("pk"))))
         | Q(Exists(ItemLink.objects.filter(target=OuterRef("pk"))))
     )
@@ -34,10 +42,25 @@ def graph_items(user):
         # ancestors_deleted_at, and must leave the graph with their folder.
         .filter(ancestors_deleted_at__isnull=True)
         .filter(in_graph)
+        .annotate(indexed=Exists(ItemChunk.objects.filter(item=OuterRef("pk"))))
         .select_related("creator")
         .order_by("-updated_at")
         .distinct()[:MAX_NODES]
     )
+
+
+def item_status(item):
+    """
+    Where an item stands in the pipeline, for the page to show it right.
+
+    ``indexed``: its passages are stored, links and topic follow.
+    ``pending``: its text is being extracted and embedded (or about to be).
+    ``skipped``: nothing to analyse, so it stays a lone dot (archive, video,
+    file too big, upload not finished).
+    """
+    if item.indexed:
+        return "indexed"
+    return "pending" if is_extractable(item) else "skipped"
 
 
 def serialize_item(item, topic_by_item):
@@ -51,6 +74,7 @@ def serialize_item(item, topic_by_item):
         "updated_at": item.updated_at.isoformat(),
         "creator": (creator.full_name or creator.email) if creator else "",
         "cluster": topic_by_item.get(item.id),
+        "status": item_status(item),
     }
 
 

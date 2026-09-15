@@ -313,6 +313,29 @@
     }
   }
 
+  // Breathing dot: a file whose content is still being analysed.
+  &__pulse {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--fg-link);
+    animation: file-graph-pulse 1.4s ease-in-out infinite;
+  }
+
+  &__pending {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+    margin: 0 0 var(--c--globals--spacings--xs, 8px);
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    color: var(--fg-muted);
+  }
+
+  &__legend-item--pending {
+    cursor: default;
+  }
+
   &__dash {
     flex: none;
     width: 18px;
@@ -620,6 +643,19 @@
   }
 }
 
+@keyframes file-graph-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
+}
+
 @keyframes file-graph-card-in {
   from {
     opacity: 0;
@@ -634,7 +670,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .file-graph__card,
-  .file-graph__callout {
+  .file-graph__callout,
+  .file-graph__pulse {
     animation: none;
   }
 }

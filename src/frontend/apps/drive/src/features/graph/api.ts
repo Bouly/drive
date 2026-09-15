@@ -12,6 +12,7 @@ type ApiGraph = {
     updated_at: string;
     creator: string;
     cluster: string | null;
+    status: "indexed" | "pending" | "skipped";
   }[];
   links: {
     source: string;
@@ -43,6 +44,7 @@ export const toGraphData = (api: ApiGraph): GraphData => {
       updated_at: file.updated_at,
       creator: file.creator,
       cluster: file.cluster ?? NO_TOPIC.id,
+      status: file.status,
     })),
     links: mergeReciprocalLinks(api.links).map((link) => ({
       source: link.source,
@@ -77,6 +79,9 @@ export const fetchGraph = async (): Promise<GraphData> => {
   return toGraphData((await response.json()) as ApiGraph);
 };
 
+/** How often the graph is refetched while files are still being analysed. */
+const PENDING_POLL_MS = 4000;
+
 export const useGraph = () =>
   useQuery({
     queryKey: ["graph"],
@@ -85,4 +90,7 @@ export const useGraph = () =>
     // ago must show up right away. The cached graph is drawn meanwhile.
     staleTime: 0,
     refetchOnMount: "always",
+    // While files are being analysed, poll so their links appear on their own.
+    refetchInterval: ({ state }) =>
+      state.data?.files.some((file) => file.status === "pending") ? PENDING_POLL_MS : false,
   });

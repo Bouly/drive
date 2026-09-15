@@ -112,6 +112,27 @@ def test_public_files_are_part_of_the_graph():
     assert [f["title"] for f in client.get(URL).json()["files"]] == ["public"]
 
 
+def test_a_file_shows_up_before_it_is_analysed():
+    """An uploaded file is in the graph right away, marked as being analysed."""
+    user = factories.UserFactory()
+    make_file("rapport.pdf", users=[user])
+    factories.ItemFactory(
+        title="photos.zip",
+        type=models.ItemTypeChoices.FILE,
+        update_upload_state=models.ItemUploadStateChoices.READY,
+        users=[user],
+        mimetype="application/zip",
+        size=999,
+    )
+    with_chunk(make_file("analysé", users=[user]))
+
+    client = APIClient()
+    client.force_login(user)
+    status = {f["title"]: f["status"] for f in client.get(URL).json()["files"]}
+
+    assert status == {"rapport.pdf": "pending", "photos.zip": "skipped", "analysé": "indexed"}
+
+
 def test_files_of_a_trashed_folder_are_hidden():
     """Trashing a folder takes its files out of the graph, links included."""
     user = factories.UserFactory()
