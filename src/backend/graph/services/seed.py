@@ -71,7 +71,10 @@ def get_or_create_folder(user):
     ).first()
     if folder is None:
         folder = models.Item.objects.create_child(
-            title=FOLDER_TITLE, type=models.ItemTypeChoices.FOLDER, creator=user
+            title=FOLDER_TITLE,
+            type=models.ItemTypeChoices.FOLDER,
+            creator=user,
+            link_reach=models.LinkReachChoices.RESTRICTED,
         )
         models.ItemAccess.objects.create(item=folder, user=user, role=models.RoleChoices.OWNER)
     return folder
@@ -90,6 +93,9 @@ def create_file(user, folder, title, text):
         size=len(content),
         creator=user,
         upload_state=models.ItemUploadStateChoices.READY,
+        # Explicit: the model has no default and an empty reach reads as "not
+        # restricted", which would show the file to every logged-in user.
+        link_reach=models.LinkReachChoices.RESTRICTED,
     )
     models.ItemAccess.objects.create(item=item, user=user, role=models.RoleChoices.OWNER)
     default_storage.save(item.file_key, BytesIO(content))
