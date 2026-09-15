@@ -7,7 +7,7 @@ Chaîne backend qui relie les fichiers d'un Drive par leur contenu. Six étapes 
 | 1. Extraire | texte brut du fichier (docx, odt, pdf, pptx, xlsx, images OCR…) via Apache Tika | `services/extraction.py` |
 | 2. Découper | chunks de ~350 mots, chevauchement 50 | `services/chunking.py` |
 | 3. Représenter | un vecteur par chunk, modèle `bge-m3` servi par TEI (prod) ou Ollama (local) | `services/embeddings.py` |
-| 4. Stocker | chunks + vecteurs (pgvector), liens, sujets | `models.py` (à venir) |
+| 4. Stocker | chunks + vecteurs (pgvector), liens, sujets | `models.py`, `services/storage.py` |
 | 5. Relier | plus proches voisins, termes partagés | à venir |
 | 6. Structurer | sujets, rapprochements inattendus | à venir |
 
@@ -24,6 +24,37 @@ Chaîne backend qui relie les fichiers d'un Drive par leur contenu. Six étapes 
   `text_hash` (sha256) pour repérer les passages identiques.
 - **Formats** : bureautique, PDF, texte, JSON, images (OCR fra+eng). Vidéo et audio exclus.
   Taille max 50 Mo. Voir `GRAPH_ALLOWED_MIMETYPES`.
+
+## Étape 4 · Stockage (pgvector)
+
+Les vecteurs vivent dans le Postgres de Drive grâce à l'extension **pgvector**
+(image `pgvector/pgvector:0.8.6-pg16-trixie`, même Postgres 16, données conservées).
+La migration `0001_initial` crée l'extension puis les tables :
+
+| Table | Rôle |
+| --- | --- |
+| `drive_graph_chunk` | un passage : `item`, `index`, `text`, `text_hash` (sha256), `embedding vector(1024)`, `signature` (MinHash, optionnel). Index HNSW cosinus. |
+| `drive_graph_link` | un lien `source → target` : `weight` (0..1), `kind` (semantic, lexical, copy, folder), `surprising`, `reason`, `evidence` |
+| `drive_graph_topic` / `drive_graph_item_topic` | un sujet (`label`, `keywords`) et l'appartenance d'un item |
+
+Les autres étapes n'écrivent jamais de SQL vectoriel : elles passent par
+`graph.services.storage` :
+
+```python
+from graph.services import storage
+
+storage.save_chunks(item, chunks)          # chunks = sortie de pipeline.prepare_item
+storage.nearest_items(vector, items, k=6)  # items = Item.objects.readable_per_se(user)
+storage.nearest_chunks(vector, items, k=10)
+storage.item_vector(item)                  # moyenne normalisée des chunks
+storage.replace_links(item, [{"target": other, "weight": 0.8, "kind": "semantic", "reason": "…"}])
+storage.delete_chunks(item)
+```
+
+`nearest_items` renvoie des `Neighbour(item_id, similarity)` triés du plus proche au plus
+lointain, avec `similarity = 1 - distance cosinus` (1.0 = identique). Le seuil par défaut
+est 0,55. Passer un queryset d'items **lisibles par l'utilisateur** est ce qui fait
+respecter les droits : le filtre s'applique dans la même requête SQL.
 
 ## Lancer les services en local
 

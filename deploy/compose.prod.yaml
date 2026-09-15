@@ -22,7 +22,9 @@ x-backend: &backend
 
 services:
   postgresql:
-    image: postgres:16
+    # Postgres 16 with the pgvector extension (file graph embeddings); the
+    # trixie variant keeps the glibc collation of the previous postgres:16.
+    image: pgvector/pgvector:0.8.6-pg16-trixie
     restart: unless-stopped
     env_file:
       - env/postgresql.env
