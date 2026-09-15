@@ -186,6 +186,8 @@ services:
       - ./src/frontend/apps/drive/conf/default.conf:/etc/nginx/conf.d/default.conf:ro
 
   frontend-dev:
+    environment:
+      - HOME=/tmp
     user: "${DOCKER_USER:-1000}"
     build:
       context: .
