@@ -88,6 +88,27 @@ services:
     command: ["celery", "-A", "drive.celery_app", "worker", "-B", "-l", "INFO",
               "--schedule", "/tmp/celerybeat-schedule"]
 
+  # File graph services: text extraction and embeddings, internal only.
+  tika:
+    image: apache/tika:3.3.1.0-full
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9998/tika >/dev/null || exit 1"]
+      interval: 10s
+      retries: 12
+
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    restart: unless-stopped
+    command: ["--model-id", "${GRAPH_EMBEDDING_MODEL:-BAAI/bge-m3}", "--auto-truncate", "--max-client-batch-size", "64"]
+    volumes:
+      - embeddings:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/health >/dev/null || exit 1"]
+      interval: 15s
+      start_period: 600s
+      retries: 60
+
   onlyoffice:
     image: onlyoffice/documentserver-de
     container_name: drive-prod-onlyoffice
@@ -171,6 +192,7 @@ volumes:
   postgresql:
   kc_postgresql:
   media:
+  embeddings:
 
 networks:
   web:

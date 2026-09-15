@@ -160,6 +160,18 @@ EOF
   echo "OnlyOffice configured on https://${OFFICE_DOMAIN}"
 fi
 
+# --- File graph services (appended only once) ---
+if ! grep -q '^GRAPH_EMBEDDING_MODEL=' env/backend.env; then
+  cat >> env/backend.env <<EOF
+
+GRAPH_TIKA_URL=http://tika:9998
+GRAPH_EMBEDDING_URL=http://embeddings:80
+GRAPH_EMBEDDING_MODEL=BAAI/bge-m3
+GRAPH_EMBEDDING_DIM=1024
+EOF
+  echo "Graph services configured (Tika, embeddings bge-m3)"
+fi
+
 # Regenerated on every run (no secret inside) so config changes ship with deploys.
 # "New document" in Drive creates OpenDocument files (odt/ods/odp): the dev
 # stack edits them with Collabora, here OnlyOffice must accept them too.

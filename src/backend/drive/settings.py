@@ -139,6 +139,69 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # File graph: extraction (Apache Tika), chunking and embeddings (TEI).
+    GRAPH_TIKA_URL = values.Value(
+        "http://tika:9998", environ_name="GRAPH_TIKA_URL", environ_prefix=None
+    )
+    GRAPH_TIKA_TIMEOUT = values.IntegerValue(
+        120, environ_name="GRAPH_TIKA_TIMEOUT", environ_prefix=None
+    )
+    GRAPH_OCR_LANGUAGES = values.Value(
+        "fra+eng", environ_name="GRAPH_OCR_LANGUAGES", environ_prefix=None
+    )
+    GRAPH_MAX_FILE_SIZE = values.PositiveIntegerValue(
+        50 * MB, environ_name="GRAPH_MAX_FILE_SIZE", environ_prefix=None
+    )
+    GRAPH_ALLOWED_MIMETYPES = values.ListValue(
+        [
+            "text/",
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.",
+            "application/vnd.oasis.opendocument.",
+            "application/msword",
+            "application/vnd.ms-excel",
+            "application/vnd.ms-powerpoint",
+            "application/rtf",
+            "application/json",
+            "image/",
+        ],
+        environ_name="GRAPH_ALLOWED_MIMETYPES",
+        environ_prefix=None,
+    )
+    GRAPH_CHUNK_WORDS = values.IntegerValue(
+        350, environ_name="GRAPH_CHUNK_WORDS", environ_prefix=None
+    )
+    GRAPH_CHUNK_OVERLAP = values.IntegerValue(
+        50, environ_name="GRAPH_CHUNK_OVERLAP", environ_prefix=None
+    )
+    # "tei" (text-embeddings-inference, x86 servers) or "ollama" (any machine).
+    GRAPH_EMBEDDING_BACKEND = values.Value(
+        "tei", environ_name="GRAPH_EMBEDDING_BACKEND", environ_prefix=None
+    )
+    GRAPH_EMBEDDING_URL = values.Value(
+        "http://embeddings:80", environ_name="GRAPH_EMBEDDING_URL", environ_prefix=None
+    )
+    GRAPH_EMBEDDING_MODEL = values.Value(
+        "BAAI/bge-m3", environ_name="GRAPH_EMBEDDING_MODEL", environ_prefix=None
+    )
+    # Must match the model: bge-m3 -> 1024, multilingual-e5-base -> 768.
+    GRAPH_EMBEDDING_DIM = values.IntegerValue(
+        1024, environ_name="GRAPH_EMBEDDING_DIM", environ_prefix=None
+    )
+    # e5 models expect "passage: " / "query: " prefixes; bge-m3 wants none.
+    GRAPH_EMBEDDING_PASSAGE_PREFIX = values.Value(
+        "", environ_name="GRAPH_EMBEDDING_PASSAGE_PREFIX", environ_prefix=None
+    )
+    GRAPH_EMBEDDING_QUERY_PREFIX = values.Value(
+        "", environ_name="GRAPH_EMBEDDING_QUERY_PREFIX", environ_prefix=None
+    )
+    GRAPH_EMBEDDING_BATCH_SIZE = values.IntegerValue(
+        16, environ_name="GRAPH_EMBEDDING_BATCH_SIZE", environ_prefix=None
+    )
+    GRAPH_EMBEDDING_TIMEOUT = values.IntegerValue(
+        120, environ_name="GRAPH_EMBEDDING_TIMEOUT", environ_prefix=None
+    )
+
     # Item permissions
     PERMISSIONS_BACKEND = values.Value(
         "core.permissions.backends.role.RolePermissionsBackend",
@@ -852,6 +915,7 @@ class Base(Configuration):
     INSTALLED_APPS = [
         "core",
         "wopi",
+        "graph",
         "drf_spectacular",
         "drf_standardized_errors",
         # Third party apps
