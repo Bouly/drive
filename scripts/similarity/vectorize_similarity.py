@@ -14,6 +14,9 @@ Usage :
     python vectorize_similarity.py fichier1.txt fichier2.txt
     python vectorize_similarity.py --from-albert --list [--collection-id 123]
     python vectorize_similarity.py --from-albert --document-ids 111 222
+
+Option --upload-to-drive : envoie les deux documents compares dans "My files"
+d'une instance Drive locale de developpement (identifiants dev drive/drive).
 """
 
 import argparse
@@ -23,6 +26,8 @@ from math import sqrt
 
 import requests
 from openai import OpenAI
+
+import drive_upload
 
 ALBERT_BASE_URL = "https://albert.api.etalab.gouv.fr/v1"
 EMBEDDING_MODEL = "openweight-embeddings"
@@ -84,7 +89,24 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def compare(label_a: str, text_a: str, label_b: str, text_b: str, api_key: str) -> None:
+def slugify_filename(label: str) -> str:
+    basename = os.path.basename(label)
+    keep = [c if c.isalnum() else "_" for c in basename]
+    return "".join(keep).strip("_")[:80] or "document"
+
+
+def upload_compared_documents(label_a: str, text_a: str, label_b: str, text_b: str) -> None:
+    print("Connexion a Drive (dev, drive/drive)...")
+    drive = drive_upload.login("drive", "drive")
+    for label, text in [(label_a, text_a), (label_b, text_b)]:
+        filename = f"{slugify_filename(label)}.txt"
+        item_id = drive_upload.upload_file(drive, filename, text)
+        print(f"  -> uploade dans My files : {filename} (item {item_id})")
+
+
+def compare(
+    label_a: str, text_a: str, label_b: str, text_b: str, api_key: str, upload_to_drive: bool = False
+) -> None:
     client = OpenAI(base_url=ALBERT_BASE_URL, api_key=api_key)
 
     response = client.embeddings.create(
@@ -100,6 +122,9 @@ def compare(label_a: str, text_a: str, label_b: str, text_b: str, api_key: str) 
     print(f"Document 1 : {label_a} ({len(vector_a)} dimensions)")
     print(f"Document 2 : {label_b} ({len(vector_b)} dimensions)")
     print(f"Similarite cosinus : {similarity:.4f}")
+
+    if upload_to_drive:
+        upload_compared_documents(label_a, text_a, label_b, text_b)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -118,6 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("ID1", "ID2"),
         help="Ids des deux documents Albert a comparer (sinon selection interactive)",
+    )
+    parser.add_argument(
+        "--upload-to-drive",
+        action="store_true",
+        help="Envoyer les deux documents compares dans 'My files' d'une instance Drive locale (dev)",
     )
     return parser
 
@@ -145,7 +175,14 @@ def run_albert_mode(args: argparse.Namespace, api_key: str) -> None:
     text_a = fetch_albert_document_content(api_key, id_a, query=names.get(id_a, str(id_a)))
     text_b = fetch_albert_document_content(api_key, id_b, query=names.get(id_b, str(id_b)))
 
-    compare(names.get(id_a, str(id_a)), text_a, names.get(id_b, str(id_b)), text_b, api_key)
+    compare(
+        names.get(id_a, str(id_a)),
+        text_a,
+        names.get(id_b, str(id_b)),
+        text_b,
+        api_key,
+        upload_to_drive=args.upload_to_drive,
+    )
 
 
 def main() -> None:
@@ -161,7 +198,9 @@ def main() -> None:
         parser.error("fournissez deux fichiers, ou utilisez --from-albert")
 
     path_a, path_b = args.files
-    compare(path_a, read_file(path_a), path_b, read_file(path_b), api_key)
+    compare(
+        path_a, read_file(path_a), path_b, read_file(path_b), api_key, upload_to_drive=args.upload_to_drive
+    )
 
 
 if __name__ == "__main__":
