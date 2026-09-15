@@ -6,22 +6,32 @@ import prettyBytes from "pretty-bytes";
 import { buildFakeGraph, FOLDER_MIMETYPE, GraphFile, GraphLink } from "../data/fakeGraph";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
 
-/** One color per file family; keys are ui-kit MimeCategory values plus "folder". */
+/**
+ * One color per file family, taken from the ui-kit file icons (mime-*.svg) so
+ * the graph matches the explorer; keys are ui-kit MimeCategory values plus
+ * "folder". Families without an icon color use DSFR palette tokens.
+ */
 const CATEGORY_COLORS: Record<string, string> = {
-  docs: "#4f8cff",
-  doc: "#4f8cff",
-  calc: "#2fbf71",
-  powerpoint: "#ff9a3c",
-  pdf: "#ff5c5c",
-  image: "#b07cff",
-  video: "#2ec4d6",
-  audio: "#e3b341",
-  archive: "#c49a6c",
-  folder: "#8a9bb8",
-  other: "#9aa5b5",
+  docs: "#3677CC",
+  doc: "#3677CC",
+  calc: "#5A8228",
+  powerpoint: "#AE6257",
+  pdf: "#6D778C",
+  image: "#6969DF", // brand-500
+  video: "#3A7EA0",
+  audio: "#E57036", // warning-400
+  archive: "#EB9970", // warning-300
+  folder: "#75758A", // gray-500
+  other: "#A9A9BF", // gray-300
 };
 const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
-const SURPRISE_COLOR = "#ff4fb0";
+
+/** Mixes a hex color with white; the dark stage needs brighter families. */
+const lighten = (hex: string, amount: number) => {
+  const value = parseInt(hex.slice(1), 16);
+  const channel = (shift: number) => Math.round(((value >> shift) & 255) + (255 - ((value >> shift) & 255)) * amount);
+  return `#${[16, 8, 0].map((s) => channel(s).toString(16).padStart(2, "0")).join("")}`;
+};
 
 type Theme = {
   bg: string;
@@ -32,30 +42,38 @@ type Theme = {
   clusterLabel: string;
   clusterHull: string;
   ring: string;
+  /** Color of the dashed "unexpected connection" links. */
+  surprise: string;
   glow: boolean;
+  categoryColor: (category: string) => string;
 };
+// Values are DSFR palette tokens (cunningham-tokens.css): gray-*, brand-*, warning-*.
 const THEMES: Record<"dark" | "light", Theme> = {
   dark: {
-    bg: "#0b1020",
-    dot: "rgba(148, 163, 184, 0.14)",
-    link: "170, 184, 210",
-    label: "#e6ebf5",
-    labelHalo: "rgba(11, 16, 32, 0.85)",
-    clusterLabel: "rgba(226, 232, 240, 0.35)",
+    bg: "#1B1B23", // gray-900
+    dot: "rgba(117, 117, 138, 0.28)", // gray-500
+    link: "169, 169, 191", // gray-300
+    label: "#F0F0F3", // gray-050
+    labelHalo: "rgba(27, 27, 35, 0.85)",
+    clusterLabel: "rgba(169, 169, 191, 0.55)",
     clusterHull: "255, 255, 255",
-    ring: "rgba(11, 16, 32, 0.9)",
+    ring: "rgba(27, 27, 35, 0.9)",
+    surprise: "#EB9970", // warning-300
     glow: true,
+    categoryColor: (category) => lighten(CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other, 0.3),
   },
   light: {
-    bg: "#f7f8fb",
-    dot: "rgba(30, 41, 59, 0.10)",
-    link: "70, 82, 104",
-    label: "#1e293b",
-    labelHalo: "rgba(247, 248, 251, 0.92)",
-    clusterLabel: "rgba(30, 41, 59, 0.28)",
-    clusterHull: "47, 111, 237",
-    ring: "#ffffff",
+    bg: "#F0F0F3", // gray-050
+    dot: "rgba(117, 117, 138, 0.25)",
+    link: "105, 105, 125", // gray-550
+    label: "#25252F", // gray-850
+    labelHalo: "rgba(240, 240, 243, 0.92)",
+    clusterLabel: "rgba(105, 105, 125, 0.7)",
+    clusterHull: "94, 92, 208", // brand-550
+    ring: "#FFFFFF",
+    surprise: "#CB5000", // warning-500
     glow: false,
+    categoryColor: (category) => CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other,
   },
 };
 const THEME_STORAGE_KEY = "drive-graph-theme";
@@ -400,7 +418,7 @@ export const FileGraph = () => {
       const size = Math.round(12 * Math.min(1.3, Math.max(0.85, Math.sqrt(scale))));
       const hoveredLabel = i === hoverClusterRef.current;
       const active = i === uiRef.current.cluster;
-      ctx.font = `700 ${size}px Marianne, system-ui, sans-serif`;
+      ctx.font = `600 ${size}px Marianne, system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
       ctx.fillStyle = hoveredLabel || active ? theme.label : theme.clusterLabel;
@@ -431,12 +449,12 @@ export const FileGraph = () => {
         lineWidth *= isActive ? 2.1 : 1.7;
       }
       if (surprise) {
-        ctx.strokeStyle = SURPRISE_COLOR;
+        ctx.strokeStyle = theme.surprise;
         ctx.globalAlpha = Math.min(1, alpha * 1.6);
         ctx.lineWidth = lineWidth + 0.5;
         ctx.setLineDash([7, 5]);
       } else if (touchesFocus) {
-        ctx.strokeStyle = CATEGORY_COLORS[model.categories[focus]] ?? CATEGORY_COLORS.other;
+        ctx.strokeStyle = theme.categoryColor(model.categories[focus]);
         ctx.globalAlpha = alpha;
         ctx.lineWidth = lineWidth;
         ctx.setLineDash([]);
@@ -472,7 +490,7 @@ export const FileGraph = () => {
       if (node.intro <= 0) {
         continue;
       }
-      const color = CATEGORY_COLORS[model.categories[i]] ?? CATEGORY_COLORS.other;
+      const color = theme.categoryColor(model.categories[i]);
       const isFocus = i === focus;
       const emphasis = model.emphasis[i];
       const alpha = (0.55 + 0.45 * node.depth) * dimOf(i) * node.intro;
@@ -907,6 +925,7 @@ export const FileGraph = () => {
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
   const hoveredScreen = hovered !== null ? screenRef.current[hovered] : null;
   const activeLinkMeta = activeLink !== null ? model.linkMeta[activeLink] : null;
+  const dotColor = THEMES[theme].categoryColor;
 
   let filterChip: string | null = null;
   if (category) {
@@ -962,7 +981,7 @@ export const FileGraph = () => {
       <button type="button" className="file-graph__close" onClick={() => selectNode(null)} aria-label={t("graph.close")}>
         ×
       </button>
-      <span className="file-graph__dot file-graph__dot--large" style={{ background: CATEGORY_COLORS[model.categories[i]], color: CATEGORY_COLORS[model.categories[i]] }} />
+      <span className="file-graph__dot file-graph__dot--large" style={{ background: dotColor(model.categories[i]), color: dotColor(model.categories[i]) }} />
       <h2 className="file-graph__card-title">{file.title}</h2>
       <dl className="file-graph__meta">
         <dt>{t("graph.category")}</dt>
@@ -998,7 +1017,7 @@ export const FileGraph = () => {
         {selectedNeighbors.map(({ node, link }) => (
           <li key={node}>
             <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
-              <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[node]] }} />
+              <span className="file-graph__dot" style={{ background: dotColor(model.categories[node]) }} />
               <span className="file-graph__link-title">{model.data.files[node].title}</span>
               <span className={`file-graph__weight${link.kind === "surprise" ? " file-graph__weight--surprise" : ""}`}>
                 {Math.round(link.weight * 100)}%
@@ -1060,7 +1079,7 @@ export const FileGraph = () => {
                 {searchResults.map((i) => (
                   <li key={i}>
                     <button type="button" className="file-graph__link" onMouseDown={(event) => event.preventDefault()} onClick={() => selectAndCenter(i)}>
-                      <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[i]] }} />
+                      <span className="file-graph__dot" style={{ background: dotColor(model.categories[i]) }} />
                       <span className="file-graph__link-title">{model.data.files[i].title}</span>
                       <span className="file-graph__results-topic">{clusterLabel(i)}</span>
                     </button>
@@ -1118,12 +1137,12 @@ export const FileGraph = () => {
               key={id}
               type="button"
               className={`file-graph__legend-item${category === id ? " file-graph__legend-item--active" : ""}`}
-              style={category === id ? { background: `${CATEGORY_COLORS[id]}33` } : undefined}
+              style={category === id ? { background: `${dotColor(id)}33` } : undefined}
               onClick={() => toggleCategory(id)}
               onMouseEnter={() => previewCategory(id)}
               onMouseLeave={() => previewCategory(null)}
             >
-              <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[id] }} />
+              <span className="file-graph__dot" style={{ background: dotColor(id) }} />
               {t(`graph.categories.${id}`)}
               <span className="file-graph__legend-count">{count}</span>
             </button>
