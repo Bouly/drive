@@ -146,7 +146,7 @@ def link_seeded_items(user, report):
     folder = get_or_create_folder(user)
     items = list(
         models.Item.objects.children(folder.path).filter(
-            type=models.ItemTypeChoices.FILE, deleted_at=None
+            type=models.ItemTypeChoices.FILE, ancestors_deleted_at=None
         )
     )
     # Keys as strings: Neighbour.item_id is a string, Item.id a UUID.

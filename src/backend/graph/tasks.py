@@ -10,13 +10,13 @@ from django.core.cache import cache
 
 from celery import shared_task
 
-from core.models import Item, ItemTypeChoices
+from core.models import Item
 
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.chunking import chunk_text
 from graph.services.extraction import ExtractionSkipped, extract_text, is_extractable
-from graph.services.linking import link_item, relink_neighbours
+from graph.services.linking import link_item, live_files, relink_neighbours
 from graph.services.topics import assign_topics
 
 TOPICS_LOCK = "graph-refresh-topics"
@@ -48,7 +48,7 @@ def index_item(item_id):
 
     # Links are stored for everyone; the API filters by access rights when
     # reading. Trashed files must not become targets though.
-    candidates = Item.objects.filter_non_deleted().filter(type=ItemTypeChoices.FILE)
+    candidates = live_files()
     link_item(item, candidates)
     # Files indexed earlier may now have this one among their closest.
     relink_neighbours(item, candidates)

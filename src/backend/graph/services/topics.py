@@ -17,12 +17,10 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 
-from core import models
-
 from graph.models import ItemChunk, ItemTopic, Topic
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
-from graph.services.linking import link_item
+from graph.services.linking import link_item, live_files
 
 logger = logging.getLogger(__name__)
 
@@ -204,7 +202,7 @@ def assign_topics(client=None):
             client = None
 
     report = TopicReport()
-    files = models.Item.objects.filter_non_deleted().filter(type=models.ItemTypeChoices.FILE)
+    files = live_files()
     given = ItemTopic.objects.filter(topic__automatic=False).values("item_id")
     items = list(files.filter(id__in=ItemChunk.objects.values("item_id")).exclude(id__in=given))
     report.files = len(items)

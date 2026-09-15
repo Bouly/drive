@@ -74,6 +74,19 @@ Les liens sémantiques d'un item (étape 5 minimale) sont dans `graph.services.l
 `link_item(item, candidats)` garde les 4 voisins les plus proches (≥ 0,62 même sujet,
 ≥ 0,70 sujets différents = « rapprochement inattendu ») et écrit via `replace_links`.
 C'est ce qu'appellent la tâche `graph.tasks.index_item` (à l'upload) et le seed Albert.
+Le plus proche voisin est gardé dès 0,50 (pas de fichier isolé) et les voisins d'un nouveau
+fichier recalculent leurs liens (`relink_neighbours`). `graph_relink` refait tous les liens
+sans appeler Albert.
+
+## Les sujets (étape 6)
+
+`graph.services.topics.assign_topics()` regroupe les fichiers indexés par détection de
+communautés (Louvain) sur leur graphe de voisins, puis nomme chaque nouveau groupe avec le
+modèle de chat d'Albert (`GRAPH_ALBERT_CHAT_MODEL`, mots des titres en secours). Un groupe
+qui partage au moins la moitié de ses fichiers avec un ancien sujet garde son nom. Les
+sujets trouvés ainsi ont `Topic.automatic = True` ; les thèmes Albert du seed ne sont pas
+touchés. La tâche `refresh_topics` tourne 10 s après chaque indexation (une à la fois,
+verrou Redis) ; `graph_topics` la lance à la main.
 
 ## Vérifier en local
 

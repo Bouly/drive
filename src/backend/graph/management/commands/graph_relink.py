@@ -9,10 +9,8 @@ the neighbour search and the links are redone.
 
 from django.core.management.base import BaseCommand
 
-from core import models
-
 from graph.models import ItemChunk
-from graph.services.linking import link_item
+from graph.services.linking import link_item, live_files
 
 
 class Command(BaseCommand):
@@ -21,9 +19,7 @@ class Command(BaseCommand):
     help = "Recompute the semantic links of every indexed file."
 
     def handle(self, *args, **options):
-        candidates = models.Item.objects.filter_non_deleted().filter(
-            type=models.ItemTypeChoices.FILE
-        )
+        candidates = live_files()
         items = candidates.filter(id__in=ItemChunk.objects.values("item_id"))
         links = 0
         for item in items:

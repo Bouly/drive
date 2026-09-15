@@ -81,5 +81,8 @@ export const useGraph = () =>
   useQuery({
     queryKey: ["graph"],
     queryFn: fetchGraph,
-    staleTime: 60_000,
+    // Always refetch when the page opens: a file trashed or uploaded a moment
+    // ago must show up right away. The cached graph is drawn meanwhile.
+    staleTime: 0,
+    refetchOnMount: "always",
   });

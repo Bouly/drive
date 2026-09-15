@@ -112,6 +112,29 @@ def test_public_files_are_part_of_the_graph():
     assert [f["title"] for f in client.get(URL).json()["files"]] == ["public"]
 
 
+def test_files_of_a_trashed_folder_are_hidden():
+    """Trashing a folder takes its files out of the graph, links included."""
+    user = factories.UserFactory()
+    folder = factories.ItemFactory(type=models.ItemTypeChoices.FOLDER, users=[user])
+    inside = with_chunk(
+        factories.ItemFactory(
+            parent=folder,
+            type=models.ItemTypeChoices.FILE,
+            update_upload_state=models.ItemUploadStateChoices.READY,
+            users=[user],
+        )
+    )
+    outside = with_chunk(make_file("dehors", users=[user]))
+    storage.replace_links(outside, [{"target": inside, "weight": 0.9, "kind": "semantic"}])
+    folder.soft_delete()
+
+    client = APIClient()
+    client.force_login(user)
+    data = client.get(URL).json()
+    assert [f["id"] for f in data["files"]] == [str(outside.id)]
+    assert data["links"] == []
+
+
 def test_trashed_files_are_hidden():
     """A file in the trash leaves the graph until it is restored."""
     user = factories.UserFactory()

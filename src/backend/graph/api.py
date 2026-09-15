@@ -30,7 +30,9 @@ def graph_items(user):
     )
     return (
         models.Item.objects.readable_per_se(user)
-        .filter_non_deleted()
+        # Not filter_non_deleted: files inside a trashed folder only carry
+        # ancestors_deleted_at, and must leave the graph with their folder.
+        .filter(ancestors_deleted_at__isnull=True)
         .filter(in_graph)
         .select_related("creator")
         .order_by("-updated_at")

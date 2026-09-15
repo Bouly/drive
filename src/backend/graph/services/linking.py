@@ -20,6 +20,18 @@ SURPRISE_MIN_SIMILARITY = 0.62
 NEAREST_MIN_SIMILARITY = 0.5
 
 
+def live_files():
+    """
+    Files that are neither in the trash nor inside a trashed folder.
+
+    ``filter_non_deleted`` is not enough: trashing a folder only marks its
+    descendants with ``ancestors_deleted_at``, which is what Drive checks too.
+    """
+    return models.Item.objects.filter(
+        type=models.ItemTypeChoices.FILE, ancestors_deleted_at__isnull=True
+    )
+
+
 def semantic_links(item, candidates, topic_of=None):
     """
     The links to store for ``item``, as dicts for ``storage.replace_links``.
