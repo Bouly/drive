@@ -161,6 +161,8 @@ class Base(Configuration):
     GRAPH_MAX_FILE_SIZE = values.PositiveIntegerValue(52428800, environ_name="GRAPH_MAX_FILE_SIZE", environ_prefix=None)
     GRAPH_CHUNK_WORDS = values.IntegerValue(350, environ_name="GRAPH_CHUNK_WORDS", environ_prefix=None)
     GRAPH_CHUNK_OVERLAP = values.IntegerValue(50, environ_name="GRAPH_CHUNK_OVERLAP", environ_prefix=None)
+    # Index a file into the graph once its upload is analyzed as safe.
+    GRAPH_INDEX_ON_UPLOAD = values.BooleanValue(True, environ_name="GRAPH_INDEX_ON_UPLOAD", environ_prefix=None)
 
     # File graph storage: size of the vectors stored for each passage.
     # Must match the embedding model (bge-m3 -> 1024, multilingual-e5-base -> 768).
@@ -1756,6 +1758,9 @@ class Test(Base):
     USE_SWAGGER = True
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+
+    # Eager tasks would call Tika and Albert from every upload test.
+    GRAPH_INDEX_ON_UPLOAD = False
 
     FEATURES_INDEXED_SEARCH = True
 
