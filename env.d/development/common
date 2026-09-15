@@ -112,9 +112,5 @@ MALWARE_DETECTION_DUMMY_SLEEP=10
 # To create one, use the bin/fernetkey command.
 # OIDC_STORE_REFRESH_TOKEN_KEY="your-32-byte-encryption-key=="
 
-# File graph (see src/backend/graph): Apache Tika and text-embeddings-inference
-GRAPH_TIKA_URL=http://tika:9998
-GRAPH_EMBEDDING_BACKEND=ollama
-GRAPH_EMBEDDING_URL=http://embeddings:11434
-GRAPH_EMBEDDING_MODEL=bge-m3
+# File graph storage (src/backend/graph): size of the stored vectors
 GRAPH_EMBEDDING_DIM=1024

@@ -27,7 +27,7 @@ for attempt in 1 2 3; do
   echo "Build attempt $attempt failed, retrying in 30s..." >&2
   sleep 30
 done
-"${COMPOSE[@]}" up -d postgresql redis minio kc_postgresql keycloak tika embeddings
+"${COMPOSE[@]}" up -d postgresql redis minio kc_postgresql keycloak
 # OnlyOffice only reads its config at boot: restart it when the file changed.
 sum=$(sha256sum onlyoffice/local-production-linux.json | cut -d' ' -f1)
 if [[ "$(cat .onlyoffice.sum 2>/dev/null)" != "$sum" ]]; then

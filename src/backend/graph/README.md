@@ -1,101 +1,89 @@
 # Graphe des fichiers (app `graph`)
 
-Chaîne backend qui relie les fichiers d'un Drive par leur contenu. Six étapes :
+Chaîne backend qui relie les fichiers d'un Drive par leur contenu, en six étapes :
 
-| Étape | Rôle | Où |
+| Étape | Rôle | Qui / où |
 | --- | --- | --- |
-| 1. Extraire | texte brut du fichier (docx, odt, pdf, pptx, xlsx, images OCR…) via Apache Tika | `services/extraction.py` |
-| 2. Découper | chunks de ~350 mots, chevauchement 50 | `services/chunking.py` |
-| 3. Représenter | un vecteur par chunk, modèle `bge-m3` servi par TEI (prod) ou Ollama (local) | `services/embeddings.py` |
-| 4. Stocker | chunks + vecteurs (pgvector), liens, sujets | `models.py`, `services/storage.py` |
+| 1. Extraire | texte brut du fichier (docx, odt, pdf, images OCR…) | branche `graph-extraction` |
+| 2. Découper | passages de quelques centaines de mots | branche `graph-extraction` |
+| 3. Représenter | un vecteur par passage (modèle d'embedding) | branche `graph-extraction` |
+| **4. Stocker** | passages + vecteurs (pgvector), liens, sujets | **ici** : `models.py`, `services/storage.py` |
 | 5. Relier | plus proches voisins, termes partagés | à venir |
 | 6. Structurer | sujets, rapprochements inattendus | à venir |
 
-`pipeline.prepare_item(item)` enchaîne 1 → 3 et rend des `Chunk` portant leur `embedding`.
+Sur `main`, l'app ne contient que le stockage. Une version complète des étapes 1 à 3
+(Apache Tika, découpage, embeddings `bge-m3` via TEI ou Ollama, commande `graph_prepare`)
+est disponible sur la branche `graph-extraction` pour qui reprend ces étapes.
 
-## Choix fixés
+## Le contrat : ce que le stockage accepte
 
-- **Modèle** : `BAAI/bge-m3`, **1024 dimensions**, multilingue, contexte long, aucun préfixe
-  à ajouter aux textes. Alternative rapide : `intfloat/multilingual-e5-base` (768 dims,
-  préfixes `passage: ` / `query: `). Changer de modèle = changer `GRAPH_EMBEDDING_MODEL`,
-  `GRAPH_EMBEDDING_DIM`, les préfixes, et **recalculer tous les vecteurs**.
-- **Distance** : cosinus, vecteurs normalisés par le serveur (`normalize: true`).
-- **Chunks** : 350 mots, chevauchement 50, découpage par paragraphes. Chaque chunk a un
-  `text_hash` (sha256) pour repérer les passages identiques.
-- **Formats** : bureautique, PDF, texte, JSON, images (OCR fra+eng). Vidéo et audio exclus.
-  Taille max 50 Mo. Voir `GRAPH_ALLOWED_MIMETYPES`.
+Un passage est un `graph.services.chunking.Chunk` :
 
-## Étape 4 · Stockage (pgvector)
+```python
+Chunk(index=0, text="…", text_hash=hash_text("…"), embedding=[...])  # 1024 floats
+```
 
-Les vecteurs vivent dans le Postgres de Drive grâce à l'extension **pgvector**
-(image `pgvector/pgvector:0.8.6-pg16-trixie`, même Postgres 16, données conservées).
-La migration `0001_initial` crée l'extension puis les tables :
+- **Dimension : 1024** (`GRAPH_EMBEDDING_DIM`), choisie pour le modèle `bge-m3`.
+  Changer de modèle = changer ce réglage, une migration `AlterField`, et recalculer tous
+  les vecteurs. À décider avant de remplir la base.
+- Les vecteurs doivent être **normalisés** (norme 1) : la distance cosinus devient un
+  simple produit scalaire et l'index HNSW est configuré pour ça (`vector_cosine_ops`).
+- `text_hash` = sha256 du texte (`hash_text`) : deux passages identiques ont le même hash.
+
+## Comment c'est stocké
+
+Postgres 16 avec l'extension **pgvector** (image `pgvector/pgvector:0.8.6-pg16-trixie`,
+mêmes données que `postgres:16`). La migration `0001_initial` crée l'extension puis :
 
 | Table | Rôle |
 | --- | --- |
-| `drive_graph_chunk` | un passage : `item`, `index`, `text`, `text_hash` (sha256), `embedding vector(1024)`, `signature` (MinHash, optionnel). Index HNSW cosinus. |
-| `drive_graph_link` | un lien `source → target` : `weight` (0..1), `kind` (semantic, lexical, copy, folder), `surprising`, `reason`, `evidence` |
-| `drive_graph_topic` / `drive_graph_item_topic` | un sujet (`label`, `keywords`) et l'appartenance d'un item |
+| `drive_graph_chunk` | un passage : `item`, `index`, `text`, `text_hash`, `embedding vector(1024)`, `signature` (MinHash, libre pour l'étape 5). Index HNSW cosinus. Supprimé avec son item. |
+| `drive_graph_link` | un lien `source → target` : `weight` (0..1), `kind` (semantic, lexical, copy, folder), `surprising`, `reason`, `evidence`. Pas de lien vers soi-même. |
+| `drive_graph_topic` / `drive_graph_item_topic` | un sujet (`label`, `keywords`) et l'appartenance d'un item (un seul sujet par item) |
 
-Les autres étapes n'écrivent jamais de SQL vectoriel : elles passent par
-`graph.services.storage` :
+Une base vectorielle répond à une question : « quels sont les k vecteurs les plus proches
+de celui-ci ? ». L'index HNSW (un graphe de voisinage à plusieurs niveaux) répond en
+quelques millisecondes avec ~99 % de précision, au lieu de comparer à tout. Le garder
+dans Postgres permet de filtrer par droits d'accès dans la même requête et d'avoir des
+suppressions cohérentes (cascade), ce qu'une base vectorielle séparée ne donne pas.
+
+## L'interface pour les autres étapes
+
+Aucun SQL vectoriel ailleurs : tout passe par `graph.services.storage`.
 
 ```python
+from core.models import Item
 from graph.services import storage
 
-storage.save_chunks(item, chunks)          # chunks = sortie de pipeline.prepare_item
-storage.nearest_items(vector, items, k=6)  # items = Item.objects.readable_per_se(user)
-storage.nearest_chunks(vector, items, k=10)
-storage.item_vector(item)                  # moyenne normalisée des chunks
-storage.replace_links(item, [{"target": other, "weight": 0.8, "kind": "semantic", "reason": "…"}])
+storage.save_chunks(item, chunks)             # remplace les passages d'un item, rend le nombre stocké
+vector = storage.item_vector(item)            # moyenne normalisée des passages, None si aucun
+
+readable = Item.objects.readable_per_se(user) # les droits s'appliquent ici, dans la même requête
+storage.nearest_items(vector, readable, k=6, min_similarity=0.55, exclude_item=item)
+# -> [Neighbour(item_id, similarity)] du plus proche au plus lointain, similarity = 1 - distance cosinus
+
+storage.nearest_chunks(vector, readable, k=10)  # pareil au niveau passage, avec le texte (la preuve)
+
+storage.replace_links(item, [
+    {"target": other, "weight": 0.82, "kind": "copy", "reason": "Passage repris", "evidence": "…", "surprising": True},
+])
 storage.delete_chunks(item)
 ```
 
-`nearest_items` renvoie des `Neighbour(item_id, similarity)` triés du plus proche au plus
-lointain, avec `similarity = 1 - distance cosinus` (1.0 = identique). Le seuil par défaut
-est 0,55. Passer un queryset d'items **lisibles par l'utilisateur** est ce qui fait
-respecter les droits : le filtre s'applique dans la même requête SQL.
-
-## Lancer les services en local
+## Vérifier en local
 
 ```bash
-docker compose --profile graph up -d tika embeddings embeddings-pull
+make migrate                      # applique 0001_initial (extension + tables)
+bin/pytest graph                  # 7 tests sur une vraie base pgvector
 ```
 
-En local, les embeddings sont servis par Ollama (fonctionne sur Mac Apple silicon, que
-text-embeddings-inference ne supporte pas). `embeddings-pull` télécharge le modèle
-(~1,2 Go) dans `data/embeddings/` la première fois. Vérifier :
+Dans un shell Django (`docker compose exec app-dev python manage.py shell`) :
 
-```bash
-curl -s localhost:11434/api/tags | jq '.models[].name'   # "bge-m3:latest"
-curl -s localhost:9998/tika                               # page d'accueil Tika
-```
-
-En production (`deploy/`), c'est text-embeddings-inference qui sert `BAAI/bge-m3`,
-plus rapide sur x86 ; le code ne change pas, seul `GRAPH_EMBEDDING_BACKEND` diffère.
-
-Puis tester sur de vrais fichiers du Drive local (sans rien écrire en base) :
-
-```bash
-docker compose exec app-dev python manage.py graph_prepare --latest 3 --show 2
-```
-
-## Variables
-
-| Variable | Défaut | Rôle |
-| --- | --- | --- |
-| `GRAPH_TIKA_URL` | `http://tika:9998` | serveur Tika |
-| `GRAPH_EMBEDDING_BACKEND` | `tei` | `tei` ou `ollama` (local : `ollama`) |
-| `GRAPH_EMBEDDING_URL` | `http://embeddings:80` | serveur d'embeddings (Ollama : port 11434) |
-| `GRAPH_EMBEDDING_MODEL` | `BAAI/bge-m3` | modèle (`bge-m3` côté Ollama) |
-| `GRAPH_EMBEDDING_DIM` | `1024` | taille des vecteurs, doit correspondre au modèle |
-| `GRAPH_EMBEDDING_PASSAGE_PREFIX` / `_QUERY_PREFIX` | vide | préfixes des modèles e5 |
-| `GRAPH_CHUNK_WORDS` / `GRAPH_CHUNK_OVERLAP` | `350` / `50` | découpage |
-| `GRAPH_MAX_FILE_SIZE` | 50 Mo | au-delà, le fichier est ignoré |
-| `GRAPH_ALLOWED_MIMETYPES` | bureautique, pdf, texte, images | préfixes de types acceptés |
-
-## Tests
-
-```bash
-bin/pytest graph
+```python
+from core.models import Item
+from graph.services import storage
+from graph.services.chunking import Chunk, hash_text
+item = Item.objects.filter(type="file", upload_state="ready").first()
+storage.save_chunks(item, [Chunk(0, "test", hash_text("test"), [1.0] + [0.0] * 1023)])
+storage.nearest_items([1.0] + [0.0] * 1023, Item.objects.all())
 ```

@@ -294,37 +294,6 @@ services:
       - server_name=localhost:9980
       - aliasgroup1=app-dev:8000
 
-  # File graph services. Not started by `make run`: they need ~3.5 GB of RAM.
-  #   docker compose --profile graph up -d tika embeddings
-  tika:
-    image: apache/tika:3.3.1.0-full
-    profiles: ["graph"]
-    ports:
-      - "9998:9998"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:9998/tika >/dev/null || exit 1"]
-      interval: 10s
-      retries: 12
-
-  # Ollama runs on Apple silicon as well as x86 (production uses TEI instead).
-  embeddings:
-    image: ollama/ollama:latest
-    profiles: ["graph"]
-    ports:
-      - "11434:11434"
-    volumes:
-      - ./data/embeddings:/root/.ollama
-
-  # One-shot: downloads the model (~1.2 GB) into the volume on first run.
-  embeddings-pull:
-    image: ollama/ollama:latest
-    profiles: ["graph"]
-    entrypoint: ["ollama", "pull", "bge-m3"]
-    environment:
-      OLLAMA_HOST: http://embeddings:11434
-    depends_on:
-      - embeddings
-
   onlyoffice:
     image: onlyoffice/documentserver-de
     healthcheck:
