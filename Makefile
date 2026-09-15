@@ -154,7 +154,9 @@ logs: ## display app-dev logs (follow mode)
 .PHONY: logs
 
 run-backend: ## start the backend container
-	@$(COMPOSE) up --force-recreate -d nginx
+	# --renew-anon-volumes: the Python venv lives in an anonymous volume, so a
+	# rebuilt image (new dependency) would otherwise keep serving the old one.
+	@$(COMPOSE) up --force-recreate --renew-anon-volumes -d nginx
 	@$(MAKE) configure-wopi
 .PHONY: run-backend
 
