@@ -710,6 +710,10 @@
       "graph": {
         "title": "File graph",
         "demo_badge": "Demo · sample data",
+        "empty": {
+          "caption": "Your graph is empty for now",
+          "cta": "Add files to your Drive: once their content has been analysed, they appear here, linked to one another."
+        },
         "hint": "Each dot is a file. Lines join files whose content is close; dashed lines are unexpected connections between different topics. Drag, zoom, click a file to see its links.",
         "search_placeholder": "Find a file",
         "results_one": "{{count}} result",
@@ -1469,6 +1473,10 @@
       "graph": {
         "title": "Graphe des fichiers",
         "demo_badge": "Démo · données fictives",
+        "empty": {
+          "caption": "Votre graphe est vide pour l'instant",
+          "cta": "Ajoutez des fichiers dans votre Drive : une fois leur contenu analysé, ils apparaissent ici, reliés entre eux."
+        },
         "hint": "Chaque point est un fichier. Les traits relient les fichiers proches par leur contenu ; en pointillé, les rapprochements inattendus entre sujets différents. Déplacez, zoomez, cliquez sur un fichier pour voir ses liens.",
         "search_placeholder": "Rechercher un fichier",
         "results_one": "{{count}} résultat",
@@ -2228,6 +2236,10 @@
       "graph": {
         "title": "Bestandsgrafiek",
         "demo_badge": "Demo · voorbeeldgegevens",
+        "empty": {
+          "caption": "Uw grafiek is voorlopig leeg",
+          "cta": "Voeg bestanden toe aan uw Drive: zodra hun inhoud is geanalyseerd, verschijnen ze hier, met elkaar verbonden."
+        },
         "hint": "Elke stip is een bestand. Lijnen verbinden bestanden met vergelijkbare inhoud; stippellijnen zijn onverwachte verbanden tussen verschillende onderwerpen. Sleep, zoom en klik op een bestand om zijn verbanden te zien.",
         "search_placeholder": "Bestand zoeken",
         "results_one": "{{count}} resultaat",

@@ -156,6 +156,37 @@
     touch-action: none;
   }
 
+  // Empty state: same illustration and copy sizes as an empty explorer folder.
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: var(--c--globals--spacings--lg, 24px);
+    text-align: center;
+  }
+
+  &__empty-image {
+    width: 100%;
+    max-width: 140px;
+    margin-bottom: var(--c--globals--spacings--md, 16px);
+  }
+
+  &__empty-caption {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--h3, 20px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
+  }
+
+  &__empty-cta {
+    max-width: 44ch;
+    margin: var(--c--globals--spacings--xs, 8px) 0 0;
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    color: var(--fg-muted);
+  }
+
   &__legend,
   &__card,
   &__tooltip,

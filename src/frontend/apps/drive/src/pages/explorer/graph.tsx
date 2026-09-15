@@ -1,21 +1,20 @@
-import { useMemo } from "react";
 import { getGlobalExplorerLayout } from "@/features/layouts/components/explorer/ExplorerLayout";
 import { FileGraph } from "@/features/graph/components/FileGraph";
+import { GraphEmptyState } from "@/features/graph/components/GraphEmptyState";
 import { useGraph } from "@/features/graph/api";
-import { buildFakeGraph } from "@/features/graph/data/fakeGraph";
 
 export default function GraphPage() {
   const { data, isLoading } = useGraph();
-  const demo = useMemo(buildFakeGraph, []);
 
   if (isLoading) {
     return null;
   }
 
-  // Until files are indexed, the page shows the demo dataset so the graph
-  // can be explored anyway; it is labelled as such.
-  const isDemo = !data || data.files.length === 0;
-  return <FileGraph data={isDemo ? demo : data} demo={isDemo} />;
+  // Nothing analysed yet for this user: say so rather than draw a demo.
+  if (!data || data.files.length === 0) {
+    return <GraphEmptyState />;
+  }
+  return <FileGraph data={data} />;
 }
 
 GraphPage.getLayout = getGlobalExplorerLayout;
