@@ -15,7 +15,18 @@ COMPOSE=(docker compose -f compose.prod.yaml)
 # Refresh generated config (idempotent: secrets are only created once).
 ./setup.sh "$(sed -n 's/^DRIVE_DOMAIN=drive\.//p' .env)"
 
-"${COMPOSE[@]}" build backend frontend
+# The build fetches base images: retry a few times so a DNS or registry hiccup
+# on the server does not fail the whole deploy.
+for attempt in 1 2 3; do
+  if "${COMPOSE[@]}" build backend frontend; then
+    break
+  elif [[ $attempt -eq 3 ]]; then
+    echo "Build failed 3 times, giving up." >&2
+    exit 1
+  fi
+  echo "Build attempt $attempt failed, retrying in 30s..." >&2
+  sleep 30
+done
 "${COMPOSE[@]}" up -d postgresql redis minio kc_postgresql keycloak
 # OnlyOffice only reads its config at boot: restart it when the file changed.
 sum=$(sha256sum onlyoffice/local-production-linux.json | cut -d' ' -f1)
