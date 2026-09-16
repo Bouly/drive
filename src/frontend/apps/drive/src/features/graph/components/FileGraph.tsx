@@ -382,8 +382,14 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     // Isolating a file takes the others off the stage; every other filter
     // only pushes them back, so the shape of the whole graph is still there.
     const onlyOne = uiRef.current.isolated && uiRef.current.selected !== null;
-    const floor = onlyOne || stagedRef.current ? 0 : 0.12;
+    const staged = stagedRef.current;
+    const floor = onlyOne || staged ? 0 : 0.12;
     const dimOf = (i: number) => floor + (1 - floor) * model.emphasis[i];
+    // A subject on stage takes the rest of the drive off it, rather than
+    // fading it towards nothing: at nine hundred files the faint remainder
+    // is still a haze over the answer, and drawing it costs a frame it does
+    // not earn.
+    const onStage = (i: number) => !staged || staged.has(i);
 
     // A cloud of color behind each group, so the topics of the drive read
     // before its files do. It follows the nodes, so it breathes with the
@@ -391,7 +397,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     const clouds = new Map<number, { x: number; y: number; lit: number; count: number }>();
     screen.forEach((node, i) => {
       const cluster = model.clusters[i];
-      if (cluster < 0 || node.intro <= 0) {
+      if (cluster < 0 || node.intro <= 0 || !onStage(i)) {
         return;
       }
       const cloud = clouds.get(cluster) ?? { x: 0, y: 0, lit: 0, count: 0 };
@@ -452,6 +458,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (close < strengthFloor && !touchesFocus && !isActive) {
         return;
       }
+      if (!onStage(link.source) || !onStage(link.target)) {
+        return;
+      }
       const a = screen[link.source];
       const b = screen[link.target];
       const depth = (a.depth + b.depth) / 2;
@@ -504,7 +513,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     }
     for (const i of order) {
       const node = screen[i];
-      if (node.intro <= 0) {
+      if (node.intro <= 0 || !onStage(i)) {
         continue;
       }
       const color = nodeColor(i, uiRef.current.theme);
