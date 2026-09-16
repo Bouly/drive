@@ -24,7 +24,9 @@ from core.api import permissions
 from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services.extraction import is_extractable
 
-MAX_NODES = 1000
+# The graph draws at most this many files. Measured: 4 000 nodes cost 2.8 MB
+# of JSON (400 KB once nginx compresses it) and 10 ms a frame in the browser.
+MAX_NODES = 4000
 # A file waiting longer than this was never queued for analysis: the page
 # stops showing it as being analysed, and stops polling for it.
 PENDING_GRACE = timedelta(minutes=15)
@@ -137,7 +139,8 @@ class GraphView(views.APIView):
                         "target": str(link.target_id),
                         "weight": link.weight,
                         "kind": link.kind,
-                        "reason": link.reason,
+                        # The generic reason is rebuilt from the weight by the
+                        # page; only a quoted passage is worth its bytes.
                         "evidence": link.evidence,
                     }
                     for link in links

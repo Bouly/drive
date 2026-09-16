@@ -1,7 +1,11 @@
 /**
  * Small force-directed layout, written here rather than pulled from d3 so the
- * graph stays dependency-free and readable. Sized for a few hundred nodes:
- * repulsion is computed pairwise, which is plenty fast at that scale.
+ * graph stays dependency-free and readable.
+ *
+ * Repulsion goes through a quadtree (Barnes-Hut): a far-away cluster of nodes
+ * pushes as one, so a frame costs N log N instead of N². Pairwise was fine on
+ * a few hundred files and hopeless on four thousand, where it is eight million
+ * pairs per frame.
  *
  * Nodes carry a depth `z` in [-1, 1] that the renderer turns into size,
  * opacity and parallax: a cheap 3D feel that runs on any machine.
@@ -38,10 +42,106 @@ export type SimLink = {
 
 const REPULSION = 2600;
 const REPULSION_MAX_DISTANCE = 420;
+/**
+ * How far a cell may be seen as one point: the ratio of its width to its
+ * distance. 0.9 is the usual value, precise enough that the layout is
+ * indistinguishable from the pairwise one.
+ */
+const BARNES_HUT_THETA = 0.9;
+/** Below this, walking a tree costs more than comparing every pair. */
+const QUADTREE_FROM = 400;
 const CENTER_PULL = 0.004;
 const VELOCITY_DECAY = 0.4;
 const ALPHA_DECAY = 0.018;
 const ALPHA_MIN = 0.004;
+
+/**
+ * A square of space holding either up to one node, or four smaller squares.
+ * Each cell remembers how much push it carries and where its centre of mass
+ * sits, which is what lets a distant crowd count as a single node.
+ */
+type Cell = {
+  x: number;
+  y: number;
+  size: number;
+  /** Sum of the strengths of the nodes inside. */
+  weight: number;
+  /** Centre of mass, weighted. */
+  cx: number;
+  cy: number;
+  node: SimNode | null;
+  children: (Cell | null)[] | null;
+};
+
+const strengthOf = (node: SimNode) => node.r;
+
+const makeCell = (x: number, y: number, size: number): Cell => ({
+  x,
+  y,
+  size,
+  weight: 0,
+  cx: 0,
+  cy: 0,
+  node: null,
+  children: null,
+});
+
+/** Which of the four quarters of a cell a point falls in. */
+const quadrant = (cell: Cell, x: number, y: number) =>
+  (x >= cell.x + cell.size / 2 ? 1 : 0) + (y >= cell.y + cell.size / 2 ? 2 : 0);
+
+const insert = (cell: Cell, node: SimNode, depth = 0) => {
+  const weight = strengthOf(node);
+  cell.cx += node.x * weight;
+  cell.cy += node.y * weight;
+  cell.weight += weight;
+
+  // Two nodes on the same spot would split forever: past a depth they share
+  // the cell and are pushed apart by the pairwise term below.
+  if (cell.children === null && cell.node === null) {
+    cell.node = node;
+    return;
+  }
+  if (cell.children === null) {
+    const waiting = cell.node;
+    cell.node = null;
+    cell.children = [null, null, null, null];
+    if (waiting && depth < 24) {
+      insert(cell, waiting, depth + 1);
+    }
+  }
+  if (depth >= 24) {
+    cell.node = cell.node ?? node;
+    return;
+  }
+  const half = cell.size / 2;
+  const index = quadrant(cell, node.x, node.y);
+  const children = cell.children;
+  const child =
+    children[index] ??
+    makeCell(cell.x + (index % 2) * half, cell.y + (index >= 2 ? half : 0), half);
+  children[index] = child;
+  insert(child, node, depth + 1);
+};
+
+const buildTree = (nodes: SimNode[]): Cell => {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x);
+    maxY = Math.max(maxY, node.y);
+  }
+  const size = Math.max(maxX - minX, maxY - minY, 1) * 1.01;
+  const root = makeCell(minX, minY, size);
+  for (const node of nodes) {
+    insert(root, node);
+  }
+  return root;
+};
 
 export class ForceSimulation {
   readonly nodes: SimNode[];
@@ -61,28 +161,35 @@ export class ForceSimulation {
     this.alpha += (0 - this.alpha) * ALPHA_DECAY;
     const { nodes, links, alpha } = this;
 
-    for (let i = 0; i < nodes.length; i++) {
-      const a = nodes[i];
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = nodes[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        let d2 = dx * dx + dy * dy;
-        if (d2 > REPULSION_MAX_DISTANCE * REPULSION_MAX_DISTANCE) {
-          continue;
+    if (nodes.length >= QUADTREE_FROM) {
+      const tree = buildTree(nodes);
+      for (const node of nodes) {
+        this.pushAwayFrom(tree, node, alpha);
+      }
+    } else {
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
+        for (let j = i + 1; j < nodes.length; j++) {
+          const b = nodes[j];
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 > REPULSION_MAX_DISTANCE * REPULSION_MAX_DISTANCE) {
+            continue;
+          }
+          if (d2 < 1) {
+            d2 = 1;
+          }
+          const d = Math.sqrt(d2);
+          // Bigger nodes push harder so labels get room.
+          const f = ((REPULSION * (a.r + b.r)) / 16) * alpha / d2;
+          const fx = (dx / d) * f;
+          const fy = (dy / d) * f;
+          a.vx -= fx;
+          a.vy -= fy;
+          b.vx += fx;
+          b.vy += fy;
         }
-        if (d2 < 1) {
-          d2 = 1;
-        }
-        const d = Math.sqrt(d2);
-        // Bigger nodes push harder so labels get room.
-        const f = ((REPULSION * (a.r + b.r)) / 16) * alpha / d2;
-        const fx = (dx / d) * f;
-        const fy = (dy / d) * f;
-        a.vx -= fx;
-        a.vy -= fy;
-        b.vx += fx;
-        b.vy += fy;
       }
     }
 
@@ -121,6 +228,37 @@ export class ForceSimulation {
       }
     }
     return true;
+  }
+
+  /**
+   * Pushes one node away from a cell: from the cell as a whole when it is far
+   * enough to read as one point, from its quarters otherwise.
+   */
+  private pushAwayFrom(cell: Cell, node: SimNode, alpha: number) {
+    if (cell.weight === 0 || (cell.node !== null && cell.node === node)) {
+      return;
+    }
+    const dx = cell.cx / cell.weight - node.x;
+    const dy = cell.cy / cell.weight - node.y;
+    let d2 = dx * dx + dy * dy;
+    if (d2 > REPULSION_MAX_DISTANCE * REPULSION_MAX_DISTANCE) {
+      return;
+    }
+    if (d2 < 1) {
+      d2 = 1;
+    }
+    if (cell.children === null || cell.size * cell.size < BARNES_HUT_THETA * BARNES_HUT_THETA * d2) {
+      const d = Math.sqrt(d2);
+      const f = ((REPULSION * (node.r + cell.weight)) / 16) * alpha / d2;
+      node.vx -= (dx / d) * f;
+      node.vy -= (dy / d) * f;
+      return;
+    }
+    for (const child of cell.children) {
+      if (child) {
+        this.pushAwayFrom(child, node, alpha);
+      }
+    }
   }
 
   /** Wakes the layout up after an interaction. */

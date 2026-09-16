@@ -93,7 +93,8 @@ def test_graph_only_shows_readable_files_and_their_links():
     semantic = next(l for l in data["links"] if l["kind"] == "semantic")
     assert semantic["source"] == str(mine.id)
     assert semantic["weight"] == 0.8
-    assert semantic["reason"] == "proches"
+    # The generic reason is not sent: the page rebuilds it from the weight.
+    assert "reason" not in semantic
 
 
 def test_public_files_are_part_of_the_graph():

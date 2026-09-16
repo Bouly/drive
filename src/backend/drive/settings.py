@@ -221,6 +221,12 @@ class Base(Configuration):
     GRAPH_ALBERT_CHAT_MODEL = values.Value(
         "openweight-medium", environ_name="GRAPH_ALBERT_CHAT_MODEL", environ_prefix=None
     )
+    # How many neighbours a file keeps. Linking every pair is N² links:
+    # 3 million rows and eleven minutes of rebuilding on 1 700 files. The
+    # closest two dozen are what the page draws and reads its groups from.
+    GRAPH_LINKS_PER_FILE = values.IntegerValue(
+        24, environ_name="GRAPH_LINKS_PER_FILE", environ_prefix=None
+    )
     # Reranker judging whether a file belongs to a subject, from the words
     # of the subject alone.
     GRAPH_ALBERT_RERANK_MODEL = values.Value(

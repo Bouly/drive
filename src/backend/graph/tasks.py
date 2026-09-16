@@ -25,7 +25,7 @@ from graph.services.extraction import (
     extract_text,
     is_extractable,
 )
-from graph.services.linking import forget_item, live_files, relink_all
+from graph.services.linking import forget_item, live_files, relink_around
 from graph.services.subjects import sort_into_subjects
 
 logger = logging.getLogger(__name__)
@@ -153,10 +153,10 @@ def index_item(item_id):
     storage.save_chunks(item, chunks)
     _remember(item, ItemIndex.State.DONE, detail)
 
-    # Every indexed file points at all the others, so a newcomer changes
-    # everybody's list. Links are stored for everyone; the API filters by
+    # A newcomer only shifts the neighbourhood it lands in, so only those
+    # files are relinked. Links are stored for everyone; the API filters by
     # access rights when reading, and trashed files are never targets.
-    relink_all(live_files())
+    relink_around(item, live_files())
     # The file also falls into the subjects it fits, without touching theirs.
     sort_into_subjects(item, Topic.objects.exclude(vector=None))
 

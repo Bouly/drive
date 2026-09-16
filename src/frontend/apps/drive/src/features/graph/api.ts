@@ -19,7 +19,6 @@ type ApiGraph = {
     target: string;
     weight: number;
     kind: "semantic" | "lexical" | "copy" | "folder";
-    reason: string;
     evidence: string;
   }[];
   topics: { id: string; name: string; description: string }[];
@@ -41,9 +40,9 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
     source: link.source,
     target: link.target,
     weight: link.weight,
-    // The passage that justifies the link says more than the generic reason;
+    // The passage that justifies the link says more than a generic sentence;
     // the similarity is already shown next to it.
-    reason: link.evidence || link.reason || undefined,
+    reason: link.evidence || undefined,
   })),
   subjects: api.topics,
 });

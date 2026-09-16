@@ -116,23 +116,35 @@ def nearest_chunks(vector, items, k=10, min_similarity=0.0, exclude_item=None):
     ]
 
 
-def item_similarities(vector, items, exclude_item=None):
+def item_similarities(vector, items, exclude_item=None, k=None, scan=8):
     """
-    Every item of ``items`` with its similarity to ``vector``, closest first.
+    The items of ``items`` closest to ``vector``, closest first.
 
-    No threshold and no limit: the graph links all the files together and
-    tells them apart by the weight of the link.
+    Without ``k`` this compares every passage of every item, which reads the
+    whole table: fine for a handful of files, an hour on thousands. With
+    ``k`` it asks Postgres for the nearest passages only, which is what the
+    HNSW index answers in milliseconds; ``scan`` passages are read per item
+    wanted, since a long file holds many of them.
     """
     queryset = ItemChunk.objects.filter(item__in=items)
     if exclude_item is not None:
         queryset = queryset.exclude(item=exclude_item)
-    rows = (
-        queryset.annotate(distance=CosineDistance("embedding", vector))
-        .values("item_id")
-        .annotate(best=Min("distance"))
-        .order_by("best")
-    )
-    return [Neighbour(item_id=str(row["item_id"]), similarity=1 - row["best"]) for row in rows]
+    queryset = queryset.annotate(distance=CosineDistance("embedding", vector))
+
+    if k is None:
+        rows = queryset.values("item_id").annotate(best=Min("distance")).order_by("best")
+        return [Neighbour(item_id=str(row["item_id"]), similarity=1 - row["best"]) for row in rows]
+
+    # The index answers "the nearest passages"; an item is as close as its
+    # nearest one, so reading enough passages gives the nearest items.
+    best = {}
+    for row in queryset.order_by("distance").values("item_id", "distance")[: k * scan]:
+        best.setdefault(str(row["item_id"]), 1 - row["distance"])
+        if len(best) >= k:
+            break
+    return [
+        Neighbour(item_id=item_id, similarity=similarity) for item_id, similarity in best.items()
+    ]
 
 
 def nearest_items(vector, items, k=6, min_similarity=0.55, exclude_item=None):
