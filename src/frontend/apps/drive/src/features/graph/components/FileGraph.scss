@@ -507,6 +507,15 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     overflow: auto;
   }
 
+  // What the panel offers stays put while its list scrolls: writing a subject
+  // must not depend on having scrolled to the end of the ones that exist.
+  &__legend-foot {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    padding-top: 2px;
+  }
+
   // A subject and the pencil that opens it: one row, the pencil on hover.
   &__legend-line {
     display: flex;

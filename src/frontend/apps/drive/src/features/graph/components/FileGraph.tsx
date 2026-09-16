@@ -1462,7 +1462,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           )}
 
           {panelOpen && (
-            <div className="file-graph__legend-body">
+            <>
+              <div className="file-graph__legend-body">
               {model.topics.map((topic, i) => {
                 const id = `${TOPIC_FILTER_PREFIX}${i}`;
                 const color =
@@ -1496,21 +1497,24 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 );
               })}
 
-              {unsorted > 0 && (
-                <p className="file-graph__legend-note">
-                  {t("graph.no_subject", { count: unsorted })}
-                </p>
-              )}
-              {/* Naming a subject is done a handful of times: it earns a button, not a field. */}
-              <button
-                type="button"
-                className="file-graph__subject-create"
-                onClick={() => setEditingSubject("new")}
-              >
-                <Plus />
-                {t("graph.subject_new")}
-              </button>
-            </div>
+              </div>
+              <div className="file-graph__legend-foot">
+                {unsorted > 0 && (
+                  <p className="file-graph__legend-note">
+                    {t("graph.no_subject", { count: unsorted })}
+                  </p>
+                )}
+                {/* Naming a subject is done a handful of times: it earns a button, not a field. */}
+                <button
+                  type="button"
+                  className="file-graph__subject-create"
+                  onClick={() => setEditingSubject("new")}
+                >
+                  <Plus />
+                  {t("graph.subject_new")}
+                </button>
+              </div>
+            </>
           )}
         </aside>
 
