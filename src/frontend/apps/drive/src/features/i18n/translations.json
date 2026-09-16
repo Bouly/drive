@@ -777,8 +777,8 @@
         "in_content": "in the content",
         "strength": "Threads drawn",
         "filter_remove": "Remove this filter",
-        "isolate": "Isolate this file and its {{count}} closest",
-        "isolate_off": "Show every file again",
+        "isolate": "Isolate",
+        "isolate_off": "Show all",
         "scope": {
           "empty": "Nothing in this folder has been analysed yet.",
           "leave": "See the whole drive"
@@ -787,7 +787,8 @@
         "threads_other": "{{count}} threads",
         "no_subject_one": "{{count}} file in no subject",
         "no_subject_other": "{{count}} files in no subject",
-        "loading": "Reading your drive…"
+        "loading": "Reading your drive…",
+        "isolate_hint": "Keep this file and its {{count}} closest on the stage"
       }
     }
   },
@@ -1569,8 +1570,8 @@
         "in_content": "dans le contenu",
         "strength": "Fils affichés",
         "filter_remove": "Retirer ce filtre",
-        "isolate": "Isoler ce fichier et ses {{count}} plus proches",
-        "isolate_off": "Réafficher tous les fichiers",
+        "isolate": "Isoler",
+        "isolate_off": "Tout réafficher",
         "scope": {
           "empty": "Rien n'a encore été analysé dans ce dossier.",
           "leave": "Voir tout le drive"
@@ -1579,7 +1580,8 @@
         "threads_other": "{{count}} fils",
         "no_subject_one": "{{count}} fichier dans aucun sujet",
         "no_subject_other": "{{count}} fichiers dans aucun sujet",
-        "loading": "Lecture de votre drive…"
+        "loading": "Lecture de votre drive…",
+        "isolate_hint": "Ne garder que ce fichier et ses {{count}} plus proches"
       }
     }
   },
@@ -2361,8 +2363,8 @@
         "in_content": "in de inhoud",
         "strength": "Getoonde draden",
         "filter_remove": "Verwijder dit filter",
-        "isolate": "Isoleer dit bestand en zijn {{count}} naaste",
-        "isolate_off": "Toon weer alle bestanden",
+        "isolate": "Isoleren",
+        "isolate_off": "Alles tonen",
         "scope": {
           "empty": "In deze map is nog niets geanalyseerd.",
           "leave": "De hele drive bekijken"
@@ -2371,7 +2373,8 @@
         "threads_other": "{{count}} draden",
         "no_subject_one": "{{count}} bestand in geen enkel onderwerp",
         "no_subject_other": "{{count}} bestanden in geen enkel onderwerp",
-        "loading": "Je drive wordt gelezen…"
+        "loading": "Je drive wordt gelezen…",
+        "isolate_hint": "Alleen dit bestand en zijn {{count}} naaste buren tonen"
       }
     }
   }

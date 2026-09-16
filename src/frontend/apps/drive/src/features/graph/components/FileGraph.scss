@@ -480,6 +480,14 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     }
   }
 
+  // What the panel does not hold: said quietly, under what it does.
+  &__legend-note {
+    margin: var(--c--globals--spacings--xs, 8px) 6px 2px;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    line-height: 1.4;
+    color: var(--fg-faint);
+  }
+
   &__legend-rail {
     display: flex;
     flex-wrap: wrap;
@@ -809,7 +817,18 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     display: flex;
     flex-wrap: wrap;
     gap: var(--c--globals--spacings--xs, 8px);
-    margin-top: var(--c--globals--spacings--sm, 12px);
+    margin-bottom: var(--c--globals--spacings--sm, 12px);
+
+    // The kit draws its bordered buttons for the page's surface; on the card
+    // they come out washed. They read the panel's colours instead.
+    .c__button {
+      border-color: var(--fg-panel-border);
+      color: var(--fg-text);
+
+      &:hover {
+        background: var(--fg-hover);
+      }
+    }
   }
 
   a.file-graph__button {

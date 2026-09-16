@@ -1197,9 +1197,16 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         {formatDate(file.updated_at)}
       </p>
       <div className="file-graph__card-actions">
-        <Button size="small" variant={isolated ? "primary" : "bordered"} color="neutral" onClick={toggleIsolate}>
-          {t(isolated ? "graph.isolate_off" : "graph.isolate", { count: NEIGHBOURHOOD })}
-        </Button>
+        <Tooltip content={t("graph.isolate_hint", { count: NEIGHBOURHOOD })}>
+          <Button
+            size="small"
+            variant={isolated ? "primary" : "bordered"}
+            color="neutral"
+            onClick={toggleIsolate}
+          >
+            {t(isolated ? "graph.isolate_off" : "graph.isolate")}
+          </Button>
+        </Tooltip>
         <Button size="small" variant="bordered" color="neutral" onClick={() => centerOn(i)}>
           {t("graph.center")}
         </Button>
