@@ -90,6 +90,39 @@ def scope_trail(user, folder):
     return [*above, folder.title]
 
 
+def graph_folders(user):
+    """
+    Every folder the reader can open, each named by the trail above it.
+
+    The list is the whole drive's, whatever the graph is currently scoped to:
+    it exists so the reader can step sideways into another folder without
+    leaving the page, not only downwards into this one.
+
+    The trails are built from the paths the folders already carry rather than
+    asked per folder, so the whole list costs one query. A folder whose parent
+    the reader cannot open simply starts its trail lower, the way
+    ``scope_trail`` does.
+    """
+    folders = list(
+        readable_by(user)
+        .filter(
+            type=models.ItemTypeChoices.FOLDER,
+            ancestors_deleted_at__isnull=True,
+        )
+        .only("id", "title", "path")
+        .order_by("path")
+    )
+    titles = {str(folder.id): folder.title for folder in folders}
+    return [
+        {
+            "id": str(folder.id),
+            "title": folder.title,
+            "trail": [titles[label] for label in str(folder.path).split(".") if label in titles],
+        }
+        for folder in folders
+    ]
+
+
 def graph_items(user, root=None):
     """
     The items the user can read that belong in the graph.
@@ -231,6 +264,9 @@ class GraphView(views.APIView):
             {
                 "files": [serialize_item(item, topics_by_item) for item in items],
                 "links": serialize_links(item_ids),
+                # Every folder that can be drawn, so the page can offer a
+                # different one without sending the reader back to the explorer.
+                "folders": graph_folders(request.user),
                 "topics": [
                     {"id": str(topic.id), "name": topic.name, "description": topic.description}
                     for topic in topics

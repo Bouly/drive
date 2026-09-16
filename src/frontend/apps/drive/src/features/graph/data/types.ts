@@ -49,6 +49,14 @@ export type GraphScope = {
   path: string[];
 };
 
+/** A folder the graph can be pointed at, named by the trail above it. */
+export type GraphFolder = {
+  id: string;
+  title: string;
+  /** Root first, ending with the folder itself. */
+  trail: string[];
+};
+
 export type GraphData = {
   files: GraphFile[];
   links: GraphLink[];
@@ -56,4 +64,6 @@ export type GraphData = {
   subjects: Subject[];
   /** The folder being drawn, or null for the whole drive. */
   scope: GraphScope | null;
+  /** Every folder that could be drawn instead, for the picker. */
+  folders: GraphFolder[];
 };

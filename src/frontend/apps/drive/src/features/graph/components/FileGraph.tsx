@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Link from "next/link";
-import { Badge, Button, Icon, Switch, Tooltip, ZoomControls, headerHeight } from "@gouvfr-lasuite/ui-components";
+import { useRouter } from "next/router";
+import {
+  Badge,
+  Button,
+  Icon,
+  Select,
+  Switch,
+  Tooltip,
+  ZoomControls,
+  headerHeight,
+} from "@gouvfr-lasuite/ui-components";
 import { ChevronDown, ChevronRight, Edit, Plus, Settings } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
 import { GraphData, GraphFile, Subject } from "../data/types";
@@ -88,6 +98,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   // The folder this graph is restricted to, when it is not the whole drive.
   const scope = data.scope ?? null;
   const subjects = useSubjects();
+  const router = useRouter();
   /** What the subject modal is on: a subject to edit, "new" to name one. */
   const [editingSubject, setEditingSubject] = useState<Subject | "new" | null>(null);
   const { t, i18n } = useTranslation();
@@ -1422,6 +1433,29 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           <div className="file-graph__display" ref={displayRef}>
             {displayOpen && (
               <div className="file-graph__display-pop" role="group" aria-label={t("graph.display")}>
+                {data.folders.length > 0 && (
+                  <Select
+                    clearable={false}
+                    label={t("graph.folder")}
+                    value={data.scope?.id ?? ""}
+                    options={[
+                      { label: t("graph.folder_all"), value: "" },
+                      ...data.folders.map((one) => ({
+                        label: one.trail.join(" / "),
+                        value: one.id,
+                      })),
+                    ]}
+                    onChange={(event) => {
+                      const id = (event.target.value as string) || null;
+                      setDisplayOpen(false);
+                      router.push(
+                        id
+                          ? { pathname: "/explorer/graph", query: { folder: id } }
+                          : { pathname: "/explorer/graph" },
+                      );
+                    }}
+                  />
+                )}
                 <label className="file-graph__strength">
                   {t("graph.strength")}
                   <input

@@ -25,6 +25,7 @@ type ApiGraph = {
   }[];
   topics: { id: string; name: string; description: string }[];
   scope: { id: string; title: string; path: string[] } | null;
+  folders: { id: string; title: string; trail: string[] }[];
 };
 
 /** Converts the API payload to the dataset shape the graph component draws. */
@@ -49,6 +50,8 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
   })),
   subjects: api.topics,
   scope: api.scope ? { ...api.scope, path: api.scope.path ?? [api.scope.title] } : null,
+  // An older backend sends none: the page then simply offers no picker.
+  folders: api.folders ?? [],
 });
 
 /**
