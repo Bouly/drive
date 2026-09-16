@@ -134,6 +134,8 @@ services:
       # Mount the directory, not the file: git replaces the file on each deploy
       # and a single-file bind mount would keep serving the old copy.
       - ./nginx:/etc/nginx/conf.d:ro
+      # The documentation page, served at /doc/ (see nginx/default.conf).
+      - ./doc:/usr/share/nginx/doc:ro
     depends_on:
       - backend
       - frontend

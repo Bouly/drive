@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Le graphe des fichiers de Drive — documentation</title>
+<meta name="description" content="Comment l'équipe 42 a ajouté un graphe sémantique des fichiers à La Suite Drive (DINUM) : le pipeline d'indexation, les choix techniques et leurs raisons, le modèle de données, l'API et le déploiement.">
+<meta name="robots" content="index, follow">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Le graphe des fichiers de Drive — documentation">
+<meta property="og:description" content="Le pipeline d'indexation, les choix techniques et leurs raisons, le modèle de données, l'API et le déploiement.">
+<meta property="og:locale" content="fr_FR">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='30' cy='35' r='12' fill='%234C6CEF'/><circle cx='72' cy='28' r='8' fill='%23C83F49'/><circle cx='58' cy='72' r='10' fill='%232845C1'/><path d='M30 35L72 28M30 35L58 72M72 28L58 72' stroke='%23C1C7D3' stroke-width='4'/></svg>">
+<style>
+@font-face{font-family:Marianne;font-weight:400;font-display:swap;src:url(fonts/Marianne-Regular.woff2) format("woff2")}
+@font-face{font-family:Marianne;font-weight:500;font-display:swap;src:url(fonts/Marianne-Medium.woff2) format("woff2")}
+@font-face{font-family:Marianne;font-weight:700;font-display:swap;src:url(fonts/Marianne-Bold.woff2) format("woff2")}
+@font-face{font-family:Marianne;font-weight:800;font-display:swap;src:url(fonts/Marianne-ExtraBold.woff2) format("woff2")}
+:root{
+ --brand-050:#EDF0FF;--brand-100:#DAE2FF;--brand-200:#B5C4FF;--brand-400:#6C89FE;
+ --brand-500:#4C6CEF;--brand-600:#304DDF;--brand-650:#2845C1;--brand-700:#223E9E;
+ --w:#fff;--g025:#F7F8FB;--g050:#EFF1F6;--g100:#DFE2EA;--g150:#CFD5DE;--g200:#C1C7D3;
+ --g400:#8891A4;--g500:#6D778C;--g600:#555E74;--g700:#3F4759;--g800:#2B303D;--g900:#181B24;
+ --ok-050:#DEF7E6;--ok-100:#BAEECF;--ok-600:#2B695A;
+ --wa-050:#FFF3E4;--wa-100:#FFE2C2;--wa-500:#B85F03;
+ --red:#C83F49;
+ --font:Marianne,-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+ --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+ --sidebar:300px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);color:var(--g900);background:var(--w);line-height:1.6;
+ -webkit-font-smoothing:antialiased}
+.topbar{position:fixed;top:0;left:0;right:0;height:6px;z-index:50;
+ background:linear-gradient(90deg,var(--brand-600) 0%,var(--brand-400) 55%,var(--red) 100%)}
+.wrap{display:flex;gap:0;max-width:1560px;margin:0 auto}
+
+/* ---- sommaire ---- */
+nav{width:var(--sidebar);flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;
+ padding:54px 26px 40px 34px;border-right:1px solid var(--g100);background:var(--g025)}
+nav .brand{font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+ color:var(--brand-600);margin-bottom:6px}
+nav .ttl{font-size:21px;font-weight:800;line-height:1.2;letter-spacing:-.01em;margin-bottom:26px}
+nav ol{list-style:none;counter-reset:s}
+nav ol>li{counter-increment:s;margin-bottom:3px}
+nav a{display:block;text-decoration:none;color:var(--g600);font-size:15px;padding:7px 10px;
+ border-radius:8px;line-height:1.35}
+nav ol>li>a::before{content:counter(s) ". ";color:var(--g400);font-variant-numeric:tabular-nums}
+nav a:hover{background:var(--brand-050);color:var(--brand-700)}
+nav ul{list-style:none;margin:2px 0 8px 14px;border-left:2px solid var(--g100)}
+nav ul a{font-size:14px;padding:5px 10px;color:var(--g500)}
+nav .meta{margin-top:30px;padding-top:20px;border-top:1px solid var(--g100);
+ font-size:13px;color:var(--g400);line-height:1.6}
+nav .meta a{display:inline;padding:0;color:var(--brand-600);font-size:13px}
+
+/* ---- contenu ---- */
+main{flex:1;min-width:0;padding:54px 72px 120px;max-width:1040px}
+h1{font-size:46px;font-weight:800;line-height:1.08;letter-spacing:-.02em;margin-bottom:18px}
+.sub{font-size:21px;color:var(--g600);line-height:1.5;max-width:800px}
+h2{font-size:31px;font-weight:800;letter-spacing:-.015em;margin:64px 0 14px;padding-top:14px;
+ line-height:1.18;scroll-margin-top:24px}
+h2:first-of-type{margin-top:52px}
+h3{font-size:22px;font-weight:700;margin:34px 0 10px;line-height:1.3;scroll-margin-top:24px}
+h4{font-size:18px;font-weight:700;margin:22px 0 6px;color:var(--g800)}
+p{margin:12px 0;max-width:820px;font-size:17.5px;color:var(--g800)}
+ul.b,ol.b{margin:12px 0 12px 0;max-width:820px;list-style:none}
+ul.b li,ol.b li{position:relative;padding-left:24px;margin:8px 0;font-size:17.5px;color:var(--g800)}
+ul.b li::before{content:"";position:absolute;left:2px;top:12px;width:7px;height:7px;border-radius:50%;
+ background:var(--brand-400)}
+ol.b{counter-reset:n}
+ol.b li{counter-increment:n}
+ol.b li::before{content:counter(n);position:absolute;left:0;top:2px;width:19px;height:19px;
+ border-radius:50%;background:var(--brand-500);color:#fff;font-size:12px;font-weight:700;
+ display:flex;align-items:center;justify-content:center}
+code{font-family:var(--mono);font-size:.88em;background:var(--g050);border-radius:5px;
+ padding:2px 6px;color:var(--brand-700);white-space:nowrap}
+a{color:var(--brand-600)}
+strong{font-weight:700;color:var(--g900)}
+figure{margin:28px 0}
+figure img{width:100%;display:block;border:1px solid var(--g150);border-radius:12px}
+figcaption{font-size:14.5px;color:var(--g500);margin-top:9px}
+table{width:100%;border-collapse:collapse;margin:20px 0;font-size:16.5px}
+th{text-align:left;font-size:12.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
+ color:var(--g500);border-bottom:2px solid var(--g150);padding:8px 12px}
+td{padding:11px 12px;border-bottom:1px solid var(--g100);vertical-align:top;color:var(--g700)}
+td:first-child{color:var(--g900);font-weight:500}
+td code{white-space:normal}
+.callout{border-left:5px solid var(--brand-500);background:var(--brand-050);border-radius:0 10px 10px 0;
+ padding:18px 24px;margin:22px 0;max-width:820px}
+.callout.warn{border-left-color:var(--wa-500);background:var(--wa-050)}
+.callout.ok{border-left-color:var(--ok-600);background:var(--ok-050)}
+.callout .k{font-size:12.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--brand-650);margin-bottom:5px}
+.callout.warn .k{color:var(--wa-500)}
+.callout.ok .k{color:var(--ok-600)}
+.callout p{margin:5px 0;font-size:16.5px}
+.callout p:first-of-type{margin-top:0}
+.decision{border:1px solid var(--g150);border-radius:14px;overflow:hidden;margin:24px 0;max-width:900px}
+.decision .head{display:flex}
+.decision .head>div{flex:1;padding:18px 24px}
+.decision .keep{background:var(--ok-050);border-right:1px solid var(--g150)}
+.decision .drop{background:var(--g025)}
+.decision .tag{font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+ margin-bottom:5px}
+.keep .tag{color:var(--ok-600)}.drop .tag{color:var(--g500)}
+.decision .h{font-size:18px;font-weight:700;line-height:1.3}
+.drop .h{color:var(--g500)}
+.decision .p{font-size:15.5px;color:var(--g600);margin-top:6px;line-height:1.5}
+.decision .why{padding:18px 24px;border-top:1px solid var(--g150);background:#fff}
+.decision .why .k{font-size:11.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+ color:var(--brand-650);margin-bottom:5px}
+.decision .why p{font-size:16.5px;margin:0;color:var(--g800)}
+pre{background:var(--g900);color:#E7EAF2;border-radius:12px;padding:18px 22px;overflow-x:auto;
+ margin:18px 0;max-width:900px;font-family:var(--mono);font-size:14.5px;line-height:1.65}
+pre code{background:none;color:inherit;padding:0;font-size:inherit;white-space:pre}
+.src{font-family:var(--mono);font-size:13.5px;color:var(--g400);margin-top:-4px;margin-bottom:16px}
+footer{border-top:1px solid var(--g100);margin-top:80px;padding-top:26px;font-size:14.5px;color:var(--g500)}
+@media(max-width:1100px){
+ :root{--sidebar:100%}
+ .wrap{flex-direction:column}
+ nav{position:static;height:auto;width:100%;border-right:0;border-bottom:1px solid var(--g100);
+  padding:34px 22px}
+ main{padding:34px 22px 80px;max-width:100%}
+ h1{font-size:34px}h2{font-size:26px}
+ p,ul.b li,ol.b li{font-size:17px}
+}
+</style>
+</head>
+<body>
+<div class="topbar"></div>
+<div class="wrap">
+<nav>
+ <div class="brand">DINUM &times; 42 &middot; VISU DRIVE</div>
+ <div class="ttl">Le graphe des fichiers de Drive</div>
+ <ol>
+  <li><a href="#en-bref">En bref</a></li>
+  <li><a href="#projet">Le projet</a>
+    <ul><li><a href="#perimetre">Ce qu'on a ajouté</a></li>
+        <li><a href="#pieces">Les pièces qui tournent</a></li>
+        <li><a href="#readme">Ne crois pas le README</a></li></ul></li>
+  <li><a href="#pipeline">Le pipeline</a>
+    <ul><li><a href="#six">Les six étapes</a></li>
+        <li><a href="#texte">Devenir du texte</a></li>
+        <li><a href="#decl">Le déclenchement</a></li>
+        <li><a href="#etats">Les états d'un fichier</a></li></ul></li>
+  <li><a href="#choix">Les choix et leurs raisons</a>
+    <ul><li><a href="#c-pgvector">pgvector</a></li>
+        <li><a href="#c-albert">Albert</a></li>
+        <li><a href="#c-seuils">Les seuils</a></li>
+        <li><a href="#c-sujets">Les sujets</a></li></ul></li>
+  <li><a href="#code">Le code</a>
+    <ul><li><a href="#tables">Les cinq tables</a></li>
+        <li><a href="#storage">La façade de stockage</a></li>
+        <li><a href="#api">L'API</a></li>
+        <li><a href="#nombres">Tous les nombres</a></li></ul></li>
+  <li><a href="#infra">Infrastructure et déploiement</a></li>
+  <li><a href="#pieges">Les pièges connus</a></li>
+  <li><a href="#verifier">Vérifier en local</a></li>
+ </ol>
+ <div class="meta">
+  Rédigé le 16 septembre 2026 en relisant le code, commit <code>7d512c83</code>.<br><br>
+  <a href="https://github.com/Bouly/drive">github.com/Bouly/drive</a><br>
+  <a href="https://drive.37-187-129-149.sslip.io/">La démo en production</a>
+ </div>
+</nav>
+<main>
+
+<h1>Le graphe des fichiers de Drive</h1>
+<p class="sub">Ce que l'équipe 42 a ajouté à La Suite&nbsp;Drive, comment ça marche, et pourquoi chaque
+choix a été fait plutôt qu'un autre. Cette page a été écrite en relisant le code — pas la
+documentation du dépôt, qui décrit un état du projet qui n'existe plus.</p>
+
+<h2 id="en-bref">1. En bref</h2>
+<p>Drive range des fichiers dans des dossiers. Le graphe les range <em>par ce qu'ils disent</em> :
+chaque fichier déposé est lu, découpé en passages, transformé en vecteurs, et relié à tous les autres
+fichiers du drive. La page dessine cette toile, la resserre autour de ce qui se ressemble, et laisse
+l'utilisateur écrire ses propres sujets.</p>
+
+<figure>
+ <img src="img/04-six-etapes.png" alt="Les six étapes du pipeline : extraire, découper, représenter, stocker, relier, ranger" loading="lazy">
+ <figcaption>Les six étapes, toutes dans <code>src/backend/graph/</code>.</figcaption>
+</figure>
+
+<h3>Les trois choses à savoir avant de toucher au code</h3>
+<ul class="b">
+ <li><strong>Le README de l'app est périmé.</strong> Sur quinze affirmations vérifiables, quatorze
+ sont fausses. Il renvoie vers une branche morte, décrit des seuils supprimés et un algorithme
+ effacé. Voir <a href="#readme">Ne crois pas le README</a>.</li>
+ <li><strong>Le serveur ne filtre plus rien, la page si.</strong> Le backend stocke un lien entre
+ <em>toutes</em> les paires de fichiers indexés ; c'est le frontend qui décide lesquels méritent un
+ trait. Chercher les seuils dans Python est une perte de temps. Voir <a href="#c-seuils">Les seuils</a>.</li>
+ <li><strong>Un push sur <code>main</code> part directement en production</strong>, sans qu'aucun test
+ ne tourne. Les 69 tests de l'app existent, il faut les lancer à la main. Voir
+ <a href="#infra">Infrastructure</a>.</li>
+</ul>
+
+<h2 id="projet">2. Le projet</h2>
+
+<h3 id="perimetre">Ce qu'on a ajouté</h3>
+<p>Le dépôt <code>Bouly/drive</code> est un fork de <code>suitenumerique/drive</code>, aligné sur la
+v0.22.0&nbsp;+&nbsp;11 commits, sans aucun retard sur l'amont. Tout le produit — explorateur,
+partage, corbeille, authentification, édition en ligne, stockage S3 — vient de la DINUM. L'équipe a
+ajouté une seule chose fonctionnelle, mais elle traverse toute la pile.</p>
+
+<figure>
+ <img src="img/01-ce-quon-a-ajoute.png" alt="Ce que l'équipe a écrit, ce qui vient de l'amont, les points de contact" loading="lazy">
+</figure>
+
+<p>Cinquante-deux commits, 78 fichiers, +7&nbsp;776 / −793 lignes. Le périmètre&nbsp;:</p>
+<ul class="b">
+ <li>une app Django <code>graph</code> — modèles, sept services, API, tâches, signaux, admin&nbsp;;</li>
+ <li>une vue « Graphe des fichiers » dans le frontend Next.js, rendue dans un canvas 2D&nbsp;;</li>
+ <li>une pile de déploiement maison sous <code>deploy/</code>, plus un unique workflow GitHub.</li>
+</ul>
+
+<div class="callout warn">
+ <div class="k">Surface de conflit avec l'amont</div>
+ <p>L'app <code>graph</code> n'est pas isolée. Elle modifie 26 fichiers venus de l'amont, dont
+ <code>core/malware_detection.py</code> (qui déclenche l'indexation), <code>core/api/viewsets.py</code>,
+ <code>settings.py</code>, <code>urls.py</code>, <code>compose.yaml</code>, le <code>Dockerfile</code>
+ et le <code>Makefile</code>. C'est là que le prochain rebase sur l'amont fera mal.</p>
+</div>
+
+<h3 id="pieces">Les pièces qui tournent</h3>
+<p>Presque rien n'est écrit par nous&nbsp;: ce sont des briques assemblées. Ce qu'on a écrit, c'est la
+colle entre elles.</p>
+
+<figure>
+ <img src="img/02-les-pieces.png" alt="Tika et ffmpeg lisent, Albert comprend, Postgres et pgvector retiennent" loading="lazy">
+</figure>
+
+<table>
+<tr><th>Brique</th><th>Version</th><th>Ce qu'elle fait pour le graphe</th></tr>
+<tr><td>Apache Tika</td><td><code>3.3.1.0-full</code></td><td>Extrait le texte de tous les formats bureautiques et fait l'OCR (la variante <em>full</em> embarque tesseract).</td></tr>
+<tr><td>ffmpeg / ffprobe</td><td>image backend</td><td>Vérifie qu'une vidéo a du son, puis en sort la piste audio découpée en segments.</td></tr>
+<tr><td>Albert (DINUM)</td><td>API publique</td><td>Vecteurs <code>bge-m3</code>, description d'images, transcription <code>Whisper large v3</code>.</td></tr>
+<tr><td>Postgres + pgvector</td><td><code>0.8.6-pg16-trixie</code></td><td>Stocke passages, vecteurs, liens et sujets&nbsp;; index HNSW cosinus.</td></tr>
+<tr><td>Redis + Celery</td><td>—</td><td>La file d'analyse. Un seul worker, avec <code>beat</code> embarqué.</td></tr>
+<tr><td>MinIO</td><td>—</td><td>Les octets des fichiers. Le graphe y lit par blocs de 8&nbsp;Mio.</td></tr>
+</table>
+
+<h3 id="readme">Ne crois pas le README</h3>
+<p><code>src/backend/graph/README.md</code> est la seule documentation du graphe dans le dépôt, et elle
+décrit l'état du projet d'il y a une vingtaine de commits.</p>
+
+<figure>
+ <img src="img/03-readme-perime.png" alt="Ce que le README affirme encore et qui est faux" loading="lazy">
+</figure>
+
+<table>
+<tr><th>Le README dit</th><th>Le code fait</th></tr>
+<tr><td>Les étapes 1 à 3 sont sur la branche <code>graph-extraction</code>, <code>main</code> ne garde que le stockage.</td><td>Tout est sur <code>main</code>. <code>graph-extraction</code> est un simple ancêtre de <code>main</code>&nbsp;: il n'y a rien à y chercher.</td></tr>
+<tr><td>Quatre voisins maximum, seuils 0,62 et 0,70, plancher 0,50.</td><td>Aucun seuil, aucun plafond&nbsp;: chaque fichier indexé pointe vers tous les autres.</td></tr>
+<tr><td>Un lien porte un drapeau <code>surprising</code> (« rapprochement inattendu »).</td><td>Champ supprimé par la migration <code>0004</code>. L'exemple du README le passe encore à <code>replace_links</code>, où il est ignoré en silence.</td></tr>
+<tr><td>Les sujets sont trouvés par détection de communautés (Louvain) dans <code>services/topics.py</code>, nommés par Albert.</td><td>Module supprimé. Les sujets sont écrits par l'utilisateur&nbsp;; le regroupement automatique a été réécrit en TypeScript dans la page.</td></tr>
+<tr><td>7 tests, 1 migration.</td><td>69 tests dans 8 fichiers, 5 migrations.</td></tr>
+<tr><td><code>storage.nearest_items(k=6, min_similarity=0.55)</code> est le chemin de production.</td><td>Cette fonction n'est plus appelée que par les tests&nbsp;; la production passe par <code>item_similarities</code>, sans seuil.</td></tr>
+</table>
+
+<div class="callout warn">
+ <div class="k">Autre fausse piste</div>
+ <p>Des fichiers <code>.pyc</code> orphelins traînent dans <code>graph/services/__pycache__/</code>
+ (<code>topics</code>, <code>embeddings</code>) et dans <code>management/commands/__pycache__/</code>
+ (<code>graph_topics</code>). Ils donnent l'impression que des modules supprimés existent encore.</p>
+</div>
+
+<h2 id="pipeline">3. Le pipeline</h2>
+
+<h3 id="six">Les six étapes</h3>
+<ol class="b">
+ <li><strong>Extraire</strong> — le fichier devient du texte brut. Tika pour les documents, OCR pour
+ les images, transcription pour les vidéos, description par un modèle de vision pour les photos
+ muettes. À défaut, le nom du fichier.</li>
+ <li><strong>Découper</strong> — le texte est normalisé puis coupé par paragraphes en passages de
+ 350 mots au plus. Un paragraphe plus long est fenêtré avec 50 mots de recouvrement. Deux passages
+ issus de paragraphes différents ne partagent jamais un mot.</li>
+ <li><strong>Représenter</strong> — chaque passage devient un vecteur de 1&nbsp;024 nombres, calculé
+ par Albert par lots de 32. Un passage déjà vu (même <code>sha256</code>) ne coûte aucun appel.</li>
+ <li><strong>Stocker</strong> — passages et vecteurs entrent dans <code>drive_graph_chunk</code>,
+ indexés par HNSW en distance cosinus.</li>
+ <li><strong>Relier</strong> — chaque fichier indexé reçoit un lien vers tous les autres, dont le
+ poids est la similarité cosinus. Les trois plus proches portent en plus un extrait de passage,
+ en guise de preuve.</li>
+ <li><strong>Ranger</strong> — le fichier tombe dans chaque sujet utilisateur dont il est à 0,52 ou
+ plus.</li>
+</ol>
+
+<h3 id="texte">Comment un fichier devient du texte</h3>
+<figure>
+ <img src="img/05-devenir-du-texte.png" alt="Les cinq chemins d'extraction : document, image, vidéo" loading="lazy">
+</figure>
+
+<h4>Un document</h4>
+<p>Un fichier <code>text/*</code> est lu directement depuis MinIO, au plus
+<code>GRAPH_MAX_TEXT_CHARS × 4</code> octets — un caractère UTF-8 tient en quatre octets au maximum.
+Tout le reste est d'abord recopié par blocs de 8&nbsp;Mio dans un fichier temporaire, puis envoyé en
+<code>PUT</code> au serveur Tika. La copie sur disque n'est pas un caprice&nbsp;: une vidéo peut peser
+plusieurs gigaoctets, et ffmpeg a besoin d'un chemin, pas d'un flux.</p>
+
+<h4>Une image ou un scan</h4>
+<p>L'OCR est délégué à Tika par un simple en-tête, <code>X-Tika-OCRLanguage: fra+eng</code>. Si rien
+n'en sort, Albert <em>regarde</em> l'image et écrit une phrase plus six mots-clés, à
+<code>temperature&nbsp;=&nbsp;0</code> pour que la même image revienne toujours avec les mêmes mots.
+Le nom du fichier, la phrase et les mots-clés forment <strong>un seul</strong> passage.</p>
+
+<div class="callout">
+ <div class="k">Pourquoi un seul passage, et pas deux</div>
+ <p>Séparés, la phrase de description et les mots-clés donnaient à toutes les images un passage
+ commun, fait de la tournure partagée par toutes les descriptions. Les photos se rapprochaient alors
+ <em>par la tournure</em>&nbsp;: sur le drive de test, une photo d'abeilles ressortait plus proche
+ d'une photo de vélo (0,59) que d'un PDF sur les abeilles (0,55). Fusionnés, ce sont les mots-clés
+ qui l'emportent.</p>
+</div>
+
+<h4>Une vidéo ou un son</h4>
+<p><code>ffprobe</code> vérifie d'abord qu'il existe un flux audio&nbsp;: une vidéo muette ne coûte
+alors aucun appel à Albert. Sinon <code>ffmpeg</code> découpe la piste en segments mp3 de dix minutes
+(mono, 16&nbsp;kHz, 32&nbsp;kbit/s — environ 2,4&nbsp;Mo par segment), transcrits quatre par quatre en
+parallèle. Tika tourne en même temps, mais seulement pour les métadonnées&nbsp;: sur une vidéo, il ne
+trouve qu'un titre. Un échec de Tika est avalé, un échec de transcription est fatal — sans la parole,
+il n'y a rien à indexer.</p>
+
+<h3 id="decl">Le déclenchement</h3>
+<figure>
+ <img src="img/06-au-depot.png" alt="Ce qui se passe quand on dépose un fichier, et les cinq états" loading="lazy">
+</figure>
+<p>Le téléversement ne déclenche rien. C'est le <em>callback</em> de l'antivirus qui, en déclarant le
+fichier <code>SAFE</code> puis <code>READY</code>, poste la tâche <code>index_item</code>
+(<code>core/malware_detection.py:53</code>). C'est le seul endroit où les octets sont déclarés sûrs, et
+<code>is_extractable</code> refuse de toute façon tout fichier qui n'est pas <code>READY</code>.</p>
+
+<p>La tâche fait ensuite, dans l'ordre&nbsp;: extraire, décrire l'image s'il n'y a pas de texte,
+découper, demander à Albert les vecteurs manquants, stocker les passages, <strong>réécrire les liens
+de tous les fichiers indexés</strong> (<code>relink_all</code>), puis ranger le fichier dans les
+sujets.</p>
+
+<div class="callout warn">
+ <div class="k">Quatre points de déclenchement, dont deux non protégés</div>
+ <p><code>GRAPH_INDEX_ON_UPLOAD=False</code> ne coupe que la voie de l'upload. Renommer un fichier et
+ le restaurer de la corbeille appellent <code>index_item.delay()</code> sans condition&nbsp;: en test,
+ ces deux chemins appellent vraiment Tika et Albert.</p>
+</div>
+
+<p>Côté corbeille, un unique receveur <code>post_save</code> sur <code>Item</code> réagit aux
+sauvegardes qui portent à la fois <code>deleted_at</code> et <code>ancestors_deleted_at</code> —
+la signature exacte de <code>soft_delete</code> et de <code>restore</code>. Mettre un dossier à la
+corbeille marque ses descendants par un <code>queryset.update()</code>, qui n'émet aucun signal&nbsp;:
+la tâche parcourt donc explicitement les descendants, sans quoi les fichiers d'un dossier jeté
+resteraient cibles de liens.</p>
+
+<h3 id="etats">Les états d'un fichier</h3>
+<table>
+<tr><th>Statut</th><th>Ce que ça veut dire</th><th>Ce que fait la page</th></tr>
+<tr><td><code>pending</code></td><td>En cours d'analyse, ou en attente d'un worker.</td><td>Le point pulse, la page re-demande le graphe toutes les 4&nbsp;s.</td></tr>
+<tr><td><code>empty</code></td><td>Analysé, mais sans texte à comparer.</td><td>Affiché, sans lien.</td></tr>
+<tr><td><code>skipped</code></td><td>Rien à analyser&nbsp;: trop gros, format hors périmètre.</td><td>Affiché, sans lien.</td></tr>
+<tr><td><code>failed</code></td><td>L'analyse a cassé. Elle repartira à la prochaine sauvegarde.</td><td>Affiché, sans lien.</td></tr>
+<tr><td><code>idle</code></td><td>Jamais analysé et plus attendu — au-delà de 15 minutes.</td><td>La page arrête de sonder.</td></tr>
+</table>
+<div class="callout warn">
+ <div class="k">Un cas qui ne s'éteint jamais</div>
+ <p><code>PENDING_GRACE</code> ne s'applique qu'aux fichiers <em>sans</em> ligne d'indexation. Un
+ worker tué juste après avoir écrit l'état <code>PENDING</code> laisse le fichier pulser et la page
+ sonder indéfiniment.</p>
+</div>
+
+<h2 id="choix">4. Les choix et leurs raisons</h2>
+<p>Cette section est la raison d'être de cette page. L'historique du projet est une succession de
+décisions prises puis défaites en quelques heures&nbsp;; ce qui suit dit ce qui a été retenu, ce qui a
+été essayé et jeté, et pourquoi.</p>
+
+<h3 id="c-pgvector">Pourquoi les vecteurs vivent dans Postgres</h3>
+<figure><img src="img/07-pgvector.png" alt="pgvector contre une base vectorielle dédiée" loading="lazy"></figure>
+<div class="decision">
+ <div class="head">
+  <div class="keep"><div class="tag">Retenu</div><div class="h">pgvector, dans la base du produit</div>
+   <div class="p">Les passages et leurs vecteurs sont des tables Postgres ordinaires, indexées par HNSW (<code>m=16</code>, <code>ef_construction=64</code>, opclass <code>vector_cosine_ops</code>).</div></div>
+  <div class="drop"><div class="tag">Écarté</div><div class="h">Une base vectorielle dédiée</div>
+   <div class="p">Qdrant, Milvus ou Weaviate à côté de Postgres, à tenir synchronisée avec les fichiers.</div></div>
+ </div>
+ <div class="why"><div class="k">Pourquoi</div>
+  <p>Les droits d'accès entrent dans <strong>la même requête SQL</strong> que la recherche de voisins&nbsp;:
+  <code>Item.objects.readable_per_se(user)</code> est passé en argument à <code>nearest_items</code>. Un
+  fichier que tu ne peux pas ouvrir n'est jamais matérialisé, donc jamais révélé par un lien. Et quand un
+  fichier part, ses passages partent en cascade&nbsp;; une base séparée aurait gardé des vecteurs fantômes.</p>
+ </div>
+</div>
+<p>Les vecteurs sont normalisés (norme 1), ce qui réduit la distance cosinus à un simple produit
+scalaire. C'est le seul choix structurant du projet qui n'a jamais été remis en cause.</p>
+
+<h3 id="c-albert">Pourquoi Albert plutôt qu'un modèle chez nous</h3>
+<figure><img src="img/08-albert.png" alt="L'API Albert contre un serveur d'embeddings auto-hébergé" loading="lazy"></figure>
+<div class="decision">
+ <div class="head">
+  <div class="keep"><div class="tag">Retenu</div><div class="h">L'API Albert de la DINUM</div>
+   <div class="p"><code>albert.api.etalab.gouv.fr/v1</code>, quatre usages&nbsp;: vecteurs (<code>openweight-embeddings</code>, alias de <code>BAAI/bge-m3</code>), vision, transcription, chat.</div></div>
+  <div class="drop"><div class="tag">Écarté</div><div class="h">bge-m3 auto-hébergé</div>
+   <div class="p"><code>text-embeddings-inference</code> en production, Ollama en local, piloté par <code>GRAPH_EMBEDDING_BACKEND</code>. Écrit en entier (142 lignes), livré, puis supprimé.</div></div>
+ </div>
+ <div class="why"><div class="k">Pourquoi</div>
+  <p>Pas de GPU à héberger, et le modèle est déjà fourni par le partenaire. Du chemin local il ne reste
+  qu'un réglage, <code>GRAPH_EMBEDDING_DIM&nbsp;=&nbsp;1024</code>, parce qu'Albert sert exactement le même
+  <code>bge-m3</code>.</p>
+ </div>
+</div>
+<p>Le client vérifie chaque vecteur reçu&nbsp;: la dimension doit valoir <code>GRAPH_EMBEDDING_DIM</code>
+et la norme doit valoir 1 à 10<sup>−3</sup> près. Un écart lève une <code>AlbertError</code> au lieu
+d'être corrigé en silence — un vecteur non unitaire signale un autre modèle derrière l'alias, pas un
+arrondi, et le normaliser remplirait la base de vecteurs d'un autre espace.</p>
+
+<div class="callout ok">
+ <div class="k">Détail qui fait économiser des appels</div>
+ <p>Chaque passage est identifié par le <code>sha256</code> de son texte normalisé. Une ré-indexation,
+ une copie de fichier ou un passage répété ne coûtent aucun appel à Albert&nbsp;: le vecteur déjà stocké
+ est réutilisé.</p>
+</div>
+
+<h3 id="c-seuils">Le seuil qui a été retiré</h3>
+<figure><img src="img/09-le-seuil-disparu.png" alt="Tout relier et laisser la page élaguer" loading="lazy"></figure>
+<div class="decision">
+ <div class="head">
+  <div class="keep"><div class="tag">Retenu</div><div class="h">Tout relier, et laisser la page élaguer</div>
+   <div class="p">Chaque fichier indexé porte un lien vers tous les autres, avec sa similarité en poids (négatif ramené à 0, arrondi à trois décimales).</div></div>
+  <div class="drop"><div class="tag">Écarté</div><div class="h">Les 4 plus proches au-dessus d'un seuil</div>
+   <div class="p">≥&nbsp;0,62 dans le même sujet, ≥&nbsp;0,70 entre deux sujets (le « rapprochement inattendu »), plancher à 0,50 pour qu'aucun fichier ne reste isolé.</div></div>
+ </div>
+ <div class="why"><div class="k">Pourquoi</div>
+  <p>Un seuil unique ne distingue pas un fichier <strong>proche de tout</strong> d'un fichier
+  <strong>proche de quelque chose</strong>&nbsp;: un texte long et général finit voisin de la moitié du
+  drive. Le seuil a été rafistolé quatre fois sans jamais tenir. Aujourd'hui chaque fichier juge une
+  paire par rapport à ses propres habitudes (un z-score calculé sur ses propres poids) et la paire garde
+  le plus faible des deux avis. Sur un drive de 101 fichiers, cela fait tomber les liens inter-groupes
+  parasites de 92 à 2 sur 352.</p>
+ </div>
+</div>
+
+<div class="callout warn">
+ <div class="k">Le seuil n'a pas disparu, il a déménagé</div>
+ <p>Chercher un seuil dans le Python est une perte de temps&nbsp;: l'élagage est dans
+ <code>FileGraph.tsx</code>. <code>LINK_MIN_CLOSENESS&nbsp;=&nbsp;0.35</code> décide quelles paires sont
+ dessinées&nbsp;; <code>MUTUAL_Z_LOW/HIGH&nbsp;=&nbsp;0.6/2.2</code> bornent le z-score mutuel. Une paire
+ en dessous du seuil n'est pas supprimée pour autant&nbsp;: elle reste dans la simulation comme un ressort
+ « spacer » qui ne tire jamais et ne fait qu'écarter. Et chaque fichier garde toujours son plus proche
+ voisin, seuil ou pas, pour qu'un sujet porté par deux fichiers ne parte pas à la dérive.</p>
+</div>
+
+<h3 id="c-sujets">Les sujets&nbsp;: inventés, supprimés, puis rendus à l'utilisateur</h3>
+<figure><img src="img/10-les-sujets.png" alt="Un sujet écrit par quelqu'un contre des sujets trouvés tout seuls" loading="lazy"></figure>
+<div class="decision">
+ <div class="head">
+  <div class="keep"><div class="tag">Retenu</div><div class="h">Un sujet est écrit par quelqu'un</div>
+   <div class="p">Un nom, une description, des fichiers épinglés. Le sujet prend pour vecteur la moyenne normalisée de ces mots et de ces fichiers&nbsp;; tout fichier indexé à 0,52 ou plus y tombe.</div></div>
+  <div class="drop"><div class="tag">Écarté</div><div class="h">Des sujets trouvés tout seuls</div>
+   <div class="p">Détection de communautés (Louvain) sur le graphe des voisins, nom généré par le modèle de chat d'Albert. Deux tables, 261 lignes, une commande, 193 lignes de tests.</div></div>
+ </div>
+ <div class="why"><div class="k">Pourquoi</div>
+  <p>L'automatique réunissait des fichiers sans rapport sous des étiquettes que personne n'avait
+  demandées, et il fallait garder ces noms stables à mesure que les fichiers arrivaient. La règle
+  retenue&nbsp;: <strong>ce que l'utilisateur a décidé l'emporte sur ce qui est calculé</strong> — un
+  fichier épinglé ne peut plus être sorti par un recalcul.</p>
+ </div>
+</div>
+<p>Les modèles <code>Topic</code> et <code>ItemTopic</code> ont été créés en <code>0001</code>, détruits
+en <code>0004</code>, puis recréés en <code>0005</code> avec une sémantique inverse. Un lecteur des
+migrations seules peut légitimement croire que l'automatique existe encore.</p>
+
+<div class="callout">
+ <div class="k">Le regroupement automatique n'a pas disparu non plus</div>
+ <p>Il a été réécrit en TypeScript dans la page. <code>findClusters()</code> est une propagation
+ d'étiquettes pondérée sur les liens retenus (8 tours), et <code>nameTopics()</code> baptise chaque amas
+ à partir des mots de ses fichiers — deux mots au maximum, joints par «&nbsp;·&nbsp;». Ce sont ces amas
+ qui reçoivent une couleur. Les sujets du serveur et les amas de la page sont deux notions différentes
+ qui coexistent à l'écran.</p>
+</div>
+
+<p>Le seuil de 0,52 mérite une note. Il vaut ce qu'il vaut&nbsp;: mesuré sur un seul drive de
+production, où ce qui appartient à un sujet se tient à 0,56 et au-dessus, ce qui n'y appartient pas à
+0,46, et la ligne est tirée entre les deux. Il était à 0,45 le matin même, valeur à laquelle une photo
+de cerf tombait dans un sujet sur les abeilles.</p>
+
+<h2 id="code">5. Le code</h2>
+
+<h3 id="tables">Les cinq tables</h3>
+<figure><img src="img/11-les-cinq-tables.png" alt="Les cinq tables du graphe" loading="lazy"></figure>
+<table>
+<tr><th>Table</th><th>Une ligne, c'est</th><th>Ce qu'il faut savoir</th></tr>
+<tr><td><code>drive_graph_chunk</code></td><td>un passage et son vecteur</td><td>Index HNSW cosinus. Le champ <code>signature</code> (MinHash) n'est écrit nulle part&nbsp;: il était réservé à une étape lexicale jamais faite.</td></tr>
+<tr><td><code>drive_graph_index</code></td><td>l'état d'analyse d'un fichier</td><td>Sans elle, une photo sans texte aurait l'air de s'analyser pour toujours.</td></tr>
+<tr><td><code>drive_graph_link</code></td><td>un lien orienté source&nbsp;→&nbsp;cible</td><td>Poids de 0 à 1, unicité sur <code>(source, target, kind)</code>. Seul le <code>kind</code> <code>semantic</code> est produit&nbsp;; <code>lexical</code>, <code>copy</code> et <code>folder</code> n'existent que dans les tests.</td></tr>
+<tr><td><code>drive_graph_topic</code></td><td>un sujet écrit par un utilisateur</td><td>Nom, description, vecteur, créateur.</td></tr>
+<tr><td><code>drive_graph_item_topic</code></td><td>un fichier dans un sujet</td><td>Score de 0 à 1, ou <code>pinned</code> à 1,0 si l'utilisateur l'a épinglé.</td></tr>
+</table>
+<p class="src">src/backend/graph/models.py</p>
+
+<h3 id="storage">La façade de stockage</h3>
+<p>Aucun SQL vectoriel n'existe ailleurs que dans <code>graph/services/storage.py</code>. Les autres
+étapes passent par sa poignée de fonctions&nbsp;:</p>
+<pre><code>from core.models import Item
+from graph.services import storage
+
+storage.save_chunks(item, chunks)        # remplace les passages d'un item
+vector = storage.item_vector(item)       # moyenne normalisée des passages, None si aucun
+
+readable = Item.objects.readable_per_se(user)   # les droits s'appliquent ici
+storage.item_similarities(vector, readable, exclude_item=item)
+storage.nearest_chunks(vector, readable, k=10)  # au niveau passage, avec le texte (la preuve)
+
+storage.replace_links(item, [{"target": other, "weight": 0.82,
+                              "kind": "semantic", "reason": "…", "evidence": "…"}])
+storage.delete_chunks(item)</code></pre>
+<p><code>replace_links</code> n'a pas de <code>**kwargs</code> et ne valide rien&nbsp;: une clé inconnue
+(par exemple <code>surprising</code>, que l'exemple du README passe encore) est ignorée en silence.</p>
+
+<h3 id="api">L'API</h3>
+<figure><img src="img/12-lapi.png" alt="Les deux surfaces HTTP du graphe" loading="lazy"></figure>
+<ul class="b">
+ <li><code>GET /api/v1.0/graph/</code> renvoie <strong>tout</strong> d'un bloc — nœuds, liens, sujets —
+ sans pagination, avec un plafond de 1&nbsp;000 nœuds. La page dessine le graphe complet&nbsp;; agréger
+ des pages l'empêcherait d'afficher quoi que ce soit avant d'avoir tout reçu.</li>
+ <li><code>/api/v1.0/graph/topics/</code> est un ViewSet DRF classique, paginé par 20, avec deux actions
+ <code>pin</code> et <code>unpin</code>. Elles renvoient le sujet complet plutôt qu'un 204&nbsp;: le
+ nombre de fichiers change à chaque épinglage, autant l'envoyer tout de suite.</li>
+ <li>Le sujet est recalculé <strong>en synchrone dans la requête</strong>, pas dans une tâche Celery. En
+ contrepartie, ce chemin appelle Albert sans aucun rejeu&nbsp;: une panne d'Albert fige le vecteur du
+ sujet en silence.</li>
+</ul>
+<p>Les droits ne passent par aucune permission d'objet DRF, mais par le queryset&nbsp;:
+<code>Item.objects.readable_per_se(user)</code> pour les fichiers,
+<code>Topic.objects.filter(creator=user)</code> pour les sujets, et un lien n'est gardé que si
+<strong>ses deux bouts</strong> sont déjà dans l'ensemble lisible. L'admin Django est en lecture seule
+sur les trois tables du stockage&nbsp;: les modifier à la main désynchroniserait passages, vecteurs et
+liens.</p>
+
+<h3 id="nombres">Tous les nombres</h3>
+<figure><img src="img/13-les-nombres.png" alt="Les constantes du serveur et de la page" loading="lazy"></figure>
+<table>
+<tr><th>Réglage</th><th>Valeur</th><th>Ce que ça décide</th></tr>
+<tr><td><code>GRAPH_EMBEDDING_DIM</code></td><td>1024</td><td>Taille d'un vecteur, imposée par <code>bge-m3</code>. En changer impose une migration <code>AlterField</code> <em>et</em> le recalcul de tous les vecteurs&nbsp;: à décider avant de remplir la base.</td></tr>
+<tr><td><code>GRAPH_CHUNK_WORDS</code></td><td>350</td><td>Mots par passage.</td></tr>
+<tr><td><code>GRAPH_CHUNK_OVERLAP</code></td><td>50</td><td>Recouvrement, dans un paragraphe trop long seulement.</td></tr>
+<tr><td><code>GRAPH_MAX_TEXT_CHARS</code></td><td>2 000 000</td><td>Texte conservé par fichier (~1 000 passages). Borne les appels facturés à Albert&nbsp;; au-delà on tronque, on ne refuse pas.</td></tr>
+<tr><td><code>GRAPH_MAX_FILE_SIZE</code></td><td>2 Gio</td><td>Au-delà, le fichier n'est pas analysé du tout.</td></tr>
+<tr><td><code>GRAPH_TOPIC_MIN_SIMILARITY</code></td><td>0,52</td><td>Le seul seuil du serveur.</td></tr>
+<tr><td><code>GRAPH_VISION_MAX_FILE_SIZE</code></td><td>6 Mio</td><td>Au-delà, l'image n'est pas décrite&nbsp;: elle voyagerait dans la requête.</td></tr>
+<tr><td><code>GRAPH_TIKA_TIMEOUT</code></td><td>120 s</td><td>Attente d'une réponse de Tika.</td></tr>
+<tr><td><code>GRAPH_TRANSCRIPTION_SEGMENT_SECONDS</code></td><td>600 s</td><td>Durée d'un segment audio, transcrit sous un délai de 300 s.</td></tr>
+<tr><td><code>GRAPH_TRANSCRIPTION_WORKERS</code></td><td>4</td><td>Segments transcrits en parallèle.</td></tr>
+<tr><td><code>GRAPH_FFMPEG_TIMEOUT</code></td><td>1 800 s</td><td>Attente de ffmpeg et ffprobe.</td></tr>
+<tr><td><code>EVIDENCE_LINKS</code></td><td>3</td><td>Liens les plus proches qui citent un passage (tronqué à 300 caractères).</td></tr>
+<tr><td><code>MAX_NODES</code></td><td>1 000</td><td>Fichiers renvoyés au maximum. Les liens, eux, ne sont pas plafonnés.</td></tr>
+<tr><td><code>PENDING_GRACE</code></td><td>15 min</td><td>Au-delà, la page arrête de sonder un fichier jamais analysé.</td></tr>
+<tr><td><code>max_retries</code> (<code>index_item</code>)</td><td>5</td><td>Rejeux après l'essai initial, sur <code>AlbertError</code> seulement&nbsp;: soit 6 exécutions au maximum. Un fichier corrompu refusé par Tika ne deviendra pas lisible en le rejouant.</td></tr>
+</table>
+<table>
+<tr><th>Constante de la page</th><th>Valeur</th><th>Ce que ça décide</th></tr>
+<tr><td><code>LINK_MIN_CLOSENESS</code></td><td>0,35</td><td>En dessous, aucun trait&nbsp;: la paire devient un ressort qui écarte.</td></tr>
+<tr><td><code>MUTUAL_Z_LOW</code> / <code>HIGH</code></td><td>0,6 / 2,2</td><td>Bornes du z-score par fichier, ramenées sur 0..1.</td></tr>
+<tr><td><code>CLUSTER_ROUNDS</code></td><td>8</td><td>Tours de propagation d'étiquettes.</td></tr>
+<tr><td><code>PENDING_POLL_MS</code></td><td>4 000</td><td>Rafraîchissement tant qu'un fichier s'analyse.</td></tr>
+<tr><td>palette de groupes</td><td>8</td><td>Au-delà, l'amas perd sa couleur mais garde son nom&nbsp;: une teinte partagée serait un mensonge.</td></tr>
+<tr><td><code>REPULSION</code> / <code>CENTER_PULL</code></td><td>2 600 / 0,004</td><td>Forces de la simulation, écrite à la main (pas de d3-force).</td></tr>
+<tr><td><code>MIN</code> / <code>MAX_SCALE</code></td><td>0,35 / 14</td><td>Bornes de zoom de la caméra.</td></tr>
+</table>
+
+<h2 id="infra">6. Infrastructure et déploiement</h2>
+<figure><img src="img/14-ou-ca-tourne.png" alt="Les couches : navigateur, Caddy, nginx, la pile Docker" loading="lazy"></figure>
+<p>Deux piles distinctes. Celle de développement (<code>compose.yaml</code>, 18 services) publie ses
+ports en local. Celle de démonstration et de production (<code>deploy/compose.prod.yaml</code>, projet
+<code>drive-prod</code>) n'en publie aucun&nbsp;: tout passe par un nginx interne, puis par un Caddy
+extérieur à la pile qui termine le TLS.</p>
+
+<h3>Les quatre domaines</h3>
+<p>Ils sont dérivés de l'IP publique par <code>sslip.io</code>, donc aucune zone DNS à configurer&nbsp;:
+<code>drive.&lt;ip-tirets&gt;.sslip.io</code> pour l'application, <code>auth.drive.…</code> pour Keycloak,
+<code>office.drive.…</code> pour OnlyOffice, <code>s3.drive.…</code> pour MinIO. Le navigateur dépose les
+fichiers <em>directement</em> sur <code>s3.drive.…</code> par URL présignée&nbsp;: un téléversement ne
+traverse jamais nginx.</p>
+
+<h3>Pourquoi deux proxys</h3>
+<p>Caddy ne fait que du <code>reverse_proxy</code> par nom de conteneur. nginx reste nécessaire pour le
+service des médias, qui exige un <code>auth_request</code> vers le backend afin d'obtenir la signature
+S3 — un mécanisme propre à nginx. Deux détails de sa configuration valent d'être connus&nbsp;: les
+upstreams sont résolus par variable avec le resolver Docker (un déploiement recrée les conteneurs avec
+de nouvelles IP, un upstream statique renverrait des 502), et c'est le <em>répertoire</em>
+<code>deploy/nginx</code> qui est monté, pas le fichier (git remplace le fichier à chaque déploiement,
+un bind-mount de fichier continuerait de servir l'ancienne copie).</p>
+
+<h3>Déployer</h3>
+<figure><img src="img/15-deployer.png" alt="Un push sur main déclenche le déploiement en production" loading="lazy"></figure>
+<p>Un push sur <code>main</code> déclenche <code>.github/workflows/deploy-prod.yml</code>, qui se
+connecte en SSH au VDS, fait <code>git reset --hard origin/main</code> et lance
+<code>deploy/deploy.sh</code>. Les images sont construites <strong>sur le serveur</strong>, pas dans
+GitHub Actions&nbsp;: pas de registre à gérer, mais une logique de reprise (3 tentatives, 30 s) contre
+les aléas DNS.</p>
+
+<div class="callout warn">
+ <div class="k">Aucun test ne tourne avant une mise en production</div>
+ <p>Les neuf workflows de l'amont ont été supprimés, y compris ceux qui lançaient les tests back et
+ front, « parce qu'ils ont besoin de secrets que nous n'avons pas ». Il ne reste que le déploiement.
+ Les 69 tests de l'app <code>graph</code> existent et passent&nbsp;: il faut les lancer à la main.</p>
+</div>
+
+<h3>Les secrets</h3>
+<p><code>deploy/setup.sh</code> génère une seule fois <code>deploy/.env</code> et
+<code>deploy/env/*.env</code> (mots de passe Postgres, Keycloak, MinIO, secret OIDC, clé Django), tous
+en <code>chmod 600</code> et git-ignorés. Ils sont lus par <code>SecretFileValue</code>, qui accepte
+aussi bien une variable d'environnement qu'un fichier monté.</p>
+<div class="callout warn">
+ <div class="k">La clé Albert n'est pas générée</div>
+ <p><code>ALBERT_API_KEY</code> est le seul secret que <code>setup.sh</code> ne produit pas&nbsp;: il faut
+ l'ajouter à la main. Sans elle, le client Albert lève une erreur dès son instanciation et toute
+ l'indexation échoue. Aucune des quelque vingt-deux variables <code>GRAPH_*</code> n'est documentée dans
+ <code>docs/env.md</code>.</p>
+</div>
+
+<h2 id="pieges">7. Les pièges connus</h2>
+<p>Relevés en relisant le code. Ce ne sont pas des bugs ouverts, mais des choses qui surprennent.</p>
+<ul class="b">
+ <li><strong>Le coût de <code>relink_all</code> est quadratique.</strong> Il est appelé à
+ <em>chaque</em> indexation de fichier et réécrit les liens de tous les fichiers indexés, chacun
+ pointant vers tous les autres. Rien ne le plafonne.</li>
+ <li><strong>Les appartenances aux sujets traversent les utilisateurs.</strong> La tâche passe
+ <code>Topic.objects.exclude(vector=None)</code> — les sujets de <em>tous</em> les utilisateurs, pas
+ seulement du propriétaire du fichier. L'API cache le résultat, mais les lignes existent en base.</li>
+ <li><strong>Une panne d'Albert fige un sujet en silence.</strong> Le calcul du vecteur d'un sujet
+ avale l'erreur en avertissement&nbsp;; sans fichier épinglé, le vecteur devient <code>None</code> et
+ est écrit tel quel.</li>
+ <li><strong>Le score d'un fichier épinglé peut être écrasé</strong> par un recalcul, qui fait un
+ <code>update_or_create</code> sans exclure les épinglés.</li>
+ <li><strong>Le vocabulaire diverge entre les couches</strong>&nbsp;: le backend parle de
+ <code>topics</code> (modèle, clé JSON, route), le service s'appelle <code>subjects.py</code>, et le
+ frontend renomme la clé en <code>subjects</code> à la frontière.</li>
+ <li><strong>Du code mort laissé par les annulations</strong>&nbsp;: <code>ItemChunk.signature</code>
+ n'est jamais écrit, trois des quatre <code>kind</code> de lien ne sont jamais produits,
+ <code>storage.nearest_items</code> n'a plus d'appelant en production, et
+ <code>link_item(item, candidates, **_ignored)</code> avale silencieusement tout argument en trop.</li>
+ <li><strong>Le CHANGELOG n'a jamais été touché.</strong> Aucun des 52 commits de l'équipe n'y figure.</li>
+ <li><strong>Les seuils sont calés sur un seul jeu de données</strong> — le drive de démonstration, une
+ centaine de fichiers. Ils tiendront peut-être moins bien ailleurs.</li>
+</ul>
+
+<h2 id="verifier">8. Vérifier en local</h2>
+<pre><code>make migrate                 # applique les 5 migrations (extension pgvector + tables)
+bin/pytest graph             # 69 tests sur une vraie base pgvector
+
+# le graphe complet, sans rappeler Albert
+docker compose exec app-dev python manage.py graph_relink
+
+# amorcer un drive de démonstration depuis le corpus public d'Albert
+docker compose exec app-dev python manage.py graph_seed_albert</code></pre>
+<p>Tika n'est pas démarré par défaut en développement&nbsp;: il est derrière le profil compose
+<code>graph</code>. En production, il tourne en permanence.</p>
+<p>Dans un shell Django&nbsp;:</p>
+<pre><code>from core.models import Item
+from graph.services import storage
+from graph.services.chunking import Chunk, hash_text
+
+item = Item.objects.filter(type="file", upload_state="ready").first()
+storage.save_chunks(item, [Chunk(0, "test", hash_text("test"), [1.0] + [0.0] * 1023)])
+storage.item_similarities([1.0] + [0.0] * 1023, Item.objects.all())</code></pre>
+
+<footer>
+ <p>Documentation du graphe des fichiers de Drive — DINUM&nbsp;×&nbsp;42, projet VISU&nbsp;DRIVE.
+ Rédigée le 16&nbsp;septembre&nbsp;2026 à partir du code au commit <code>7d512c83</code>.
+ Les planches de cette page sont aussi publiées, une par thème, dans la catégorie
+ <strong>DOC</strong> du Discord de l'équipe.</p>
+ <p>Typographie Marianne, palette du système de design de La Suite numérique.</p>
+</footer>
+
+</main>
+</div>
+</body>
+</html>
