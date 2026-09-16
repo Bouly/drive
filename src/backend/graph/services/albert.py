@@ -93,7 +93,7 @@ class AlbertClient:
                 raise AlbertError("Albert returned a vector that is not unit length")
         return vectors
 
-    def chat(self, prompt, max_tokens=40, image=None, model=None):
+    def chat(self, prompt, max_tokens=40, image=None, model=None, temperature=0.2):
         """
         The answer of the chat model to a single user prompt, stripped.
 
@@ -118,7 +118,7 @@ class AlbertClient:
                 "model": model or settings.GRAPH_ALBERT_CHAT_MODEL,
                 "messages": [{"role": "user", "content": content}],
                 "max_tokens": max_tokens,
-                "temperature": 0.2,
+                "temperature": temperature,
             },
         )
         try:
@@ -146,6 +146,11 @@ class AlbertClient:
             max_tokens=160,
             image=(raw, mimetype),
             model=settings.GRAPH_ALBERT_VISION_MODEL,
+            # No sampling: the same picture must come back with the same
+            # words. Re-indexing one with a different wording moves its
+            # vector, and a file whose two closest neighbours sit within
+            # 0.01 of each other then changes group for no reason.
+            temperature=0,
         )
 
     def transcribe(self, audio, filename, language=None):

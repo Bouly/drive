@@ -3,13 +3,13 @@ Fill the graph storage with public documents from the Albert API.
 
 Each Albert document becomes a real text file in a "test data" folder of a
 user's Drive (so it opens in the explorer), its chunks are stored with
-vectors from Albert's embeddings endpoint, topics come from the documents'
-themes and links from nearest-neighbour search in our own storage.
+vectors from Albert's embeddings endpoint, and the files are then linked to
+one another from our own storage.
 """
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from io import BytesIO
 
 from django.core.files.storage import default_storage
@@ -17,7 +17,6 @@ from django.db import transaction
 
 from core import models
 
-from graph.models import ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
 from graph.services.linking import link_item
@@ -25,15 +24,6 @@ from graph.services.linking import link_item
 logger = logging.getLogger(__name__)
 
 FOLDER_TITLE = "Albert · données de test"
-# Readable topic names for collections whose documents carry no theme.
-COLLECTION_LABELS = {
-    "mediatech-fiches-travail-emploi": "Travail - Emploi",
-    "mediatech-fiches-service-public": "Service public",
-    "mediatech-decisions-cnil": "CNIL",
-    "mediatech-dossiers-legislatifs": "Dossiers législatifs",
-    "mediatech-decisions-conseil-constitutionnel": "Conseil constitutionnel",
-    "mediatech-legifrance": "Légifrance",
-}
 
 
 @dataclass
@@ -43,7 +33,6 @@ class SeedReport:
     items: int = 0
     chunks: int = 0
     links: int = 0
-    topics: list = field(default_factory=list)
     skipped: int = 0
 
 
@@ -51,13 +40,6 @@ def slugify(text, max_length=80):
     """A safe file name from a document title."""
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return slug[:max_length] or "document"
-
-
-def topic_label(collection_name, metadata):
-    """The theme of a document when Albert gives one, else the collection name."""
-    theme = (metadata or {}).get("theme") or ""
-    first = theme.split(",")[0].strip()
-    return first or COLLECTION_LABELS.get(collection_name, collection_name)
 
 
 def get_or_create_folder(user):
@@ -118,7 +100,6 @@ def seed_documents(user, client, collection, documents, report):
             report.skipped += 1
             continue
         vectors = client.embed(texts)
-        metadata = chunks[0].get("metadata") or {}
 
         with transaction.atomic():
             item = create_file(user, folder, title, "\n\n".join(texts))
@@ -129,13 +110,6 @@ def seed_documents(user, client, collection, documents, report):
                     for i, (text, vector) in enumerate(zip(texts, vectors, strict=True))
                 ],
             )
-            label = topic_label(collection["name"], metadata)
-            topic, _ = Topic.objects.get_or_create(
-                label=label, defaults={"keywords": [collection["name"]]}
-            )
-            ItemTopic.objects.update_or_create(item=item, defaults={"topic": topic})
-            if label not in report.topics:
-                report.topics.append(label)
         existing.add(title)
         report.items += 1
         logger.info("Seeded %s (%d chunks)", title, len(texts))
@@ -149,13 +123,8 @@ def link_seeded_items(user, report):
             type=models.ItemTypeChoices.FILE, ancestors_deleted_at=None
         )
     )
-    # Keys as strings: Neighbour.item_id is a string, Item.id a UUID.
-    topic_of = {
-        str(membership.item_id): membership.topic_id
-        for membership in ItemTopic.objects.filter(item__in=items)
-    }
     for item in items:
-        report.links += link_item(item, items, topic_of)
+        report.links += link_item(item, items)
 
 
 def seed_from_albert(user, client, collection_ids, documents_per_collection=30):

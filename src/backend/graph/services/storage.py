@@ -116,6 +116,25 @@ def nearest_chunks(vector, items, k=10, min_similarity=0.0, exclude_item=None):
     ]
 
 
+def item_similarities(vector, items, exclude_item=None):
+    """
+    Every item of ``items`` with its similarity to ``vector``, closest first.
+
+    No threshold and no limit: the graph links all the files together and
+    tells them apart by the weight of the link.
+    """
+    queryset = ItemChunk.objects.filter(item__in=items)
+    if exclude_item is not None:
+        queryset = queryset.exclude(item=exclude_item)
+    rows = (
+        queryset.annotate(distance=CosineDistance("embedding", vector))
+        .values("item_id")
+        .annotate(best=Min("distance"))
+        .order_by("best")
+    )
+    return [Neighbour(item_id=str(row["item_id"]), similarity=1 - row["best"]) for row in rows]
+
+
 def nearest_items(vector, items, k=6, min_similarity=0.55, exclude_item=None):
     """
     The k items closest to ``vector`` among ``items``: an item's distance is
@@ -140,8 +159,8 @@ def replace_links(item, links):
     Rewrite the links starting from ``item``.
 
     ``links`` is an iterable of dicts with ``target`` (Item or id),
-    ``weight``, ``kind`` and optionally ``reason``, ``evidence``,
-    ``surprising``. Returns the number of links stored.
+    ``weight``, ``kind`` and optionally ``reason`` and ``evidence``.
+    Returns the number of links stored.
     """
     rows = []
     for link in links:
@@ -154,7 +173,6 @@ def replace_links(item, links):
                 kind=link["kind"],
                 reason=link.get("reason", ""),
                 evidence=link.get("evidence", ""),
-                surprising=link.get("surprising", False),
             )
         )
     with transaction.atomic():

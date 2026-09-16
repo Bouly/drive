@@ -10,10 +10,10 @@ import pytest
 
 from core import factories, models
 
-from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
+from graph.models import ItemChunk, ItemIndex, ItemLink
 from graph.services import storage
 from graph.services.albert import AlbertError
-from graph.services.chunking import Chunk, hash_text
+from graph.services.chunking import Chunk, chunk_text, hash_text
 from graph.tasks import index_item, picture_chunks, readable_title
 
 pytestmark = pytest.mark.django_db
@@ -65,48 +65,32 @@ def test_index_item_stores_chunks_and_links(settings):
         index_item.apply(args=[item.id], throw=True)
 
     assert ItemChunk.objects.filter(item=item).count() == 1
-    links = list(ItemLink.objects.filter(source=item))
-    assert [link.target_id for link in links] == [neighbour.id]
+    # Both other files are linked: the weight is what tells them apart.
+    links = list(ItemLink.objects.filter(source=item).order_by("-weight"))
+    assert [link.target_id for link in links] == [neighbour.id, stranger.id]
     assert links[0].kind == ItemLink.Kind.SEMANTIC
     assert links[0].weight == 1.0
-    assert links[0].surprising is False
+    assert links[1].weight == 0.0
     assert "Le préavis" in links[0].evidence
     assert "100 %" in links[0].reason
 
 
-def test_index_item_links_to_other_topics_are_not_surprising_without_topic(settings):
-    """An upload has no topic: its links to a file with a topic are plain links."""
+def test_index_item_links_every_file_by_decreasing_weight(settings):
+    """Nothing is left out: every indexed file is a neighbour, closest first."""
     settings.GRAPH_CHUNK_WORDS = 350
-    neighbour = make_text_file("fiche", "Licenciement économique.")
-    storage.save_chunks(neighbour, [Chunk(0, "Licenciement", hash_text("l"), unit(0))])
-    topic = Topic.objects.create(label="Travail - Emploi")
-    ItemTopic.objects.create(item=neighbour, topic=topic)
-    item = make_text_file("upload", "Réorganisation et suppression de postes.")
-
-    with mock.patch("graph.tasks.AlbertClient") as client:
-        client.return_value.embed.side_effect = lambda texts: [mix(0, 1, 0.8) for _ in texts]
-        index_item.apply(args=[item.id], throw=True)
-
-    link = ItemLink.objects.get(source=item)
-    assert link.target_id == neighbour.id
-    assert link.surprising is False
-
-
-def test_index_item_keeps_the_closest_neighbour_below_the_threshold(settings):
-    """A file whose best neighbour is only fairly close still gets that one link."""
-    settings.GRAPH_CHUNK_WORDS = 350
-    fair = make_text_file("assez proche", "a")
-    storage.save_chunks(fair, [Chunk(0, "a", hash_text("a"), unit(0))])
-    weak = make_text_file("un peu proche", "b")
-    storage.save_chunks(weak, [Chunk(0, "b", hash_text("b"), mix(0, 2, 0.4))])
+    close = make_text_file("proche", "a")
+    storage.save_chunks(close, [Chunk(0, "a", hash_text("a"), unit(0))])
+    distant = make_text_file("lointain", "b")
+    storage.save_chunks(distant, [Chunk(0, "b", hash_text("b"), mix(0, 2, 0.4))])
     item = make_text_file("nouveau", "c")
 
     with mock.patch("graph.tasks.AlbertClient") as client:
         client.return_value.embed.side_effect = lambda texts: [mix(0, 1, 0.55) for _ in texts]
         index_item.apply(args=[item.id], throw=True)
 
-    targets = list(ItemLink.objects.filter(source=item).values_list("target_id", flat=True))
-    assert targets == [fair.id]
+    links = list(ItemLink.objects.filter(source=item).order_by("-weight"))
+    assert [link.target_id for link in links] == [close.id, distant.id]
+    assert links[0].weight > links[1].weight > 0
 
 
 def test_index_item_relinks_files_indexed_before(settings):
@@ -210,12 +194,12 @@ def test_index_item_describes_a_picture_with_albert(settings):
     raw, mimetype = client.return_value.describe_image.call_args.args
     assert mimetype == "image/jpeg"
     assert raw.startswith(b"\xff\xd8\xff")
-    # The sentence and the keywords are two passages: the first one reads
-    # well as the reason of a link, the second one carries the subject.
+    # Name, sentence and keywords make one passage: a description kept apart
+    # would place the picture by the wording it shares with every other one.
     passages = list(
         ItemChunk.objects.filter(item=item).order_by("index").values_list("text", flat=True)
     )
-    assert passages == ["IMG 4032 Un chat roux dort sur un canapé.", "chat, animal, canapé"]
+    assert passages == ["IMG 4032 Un chat roux dort sur un canapé. chat, animal, canapé"]
     assert ItemIndex.objects.get(item=item).detail == "described by Albert"
 
 
@@ -247,22 +231,18 @@ def test_index_item_does_not_describe_a_huge_picture(settings):
     assert ItemIndex.objects.get(item=item).detail == "title only"
 
 
-def test_picture_chunks_split_the_keywords_from_the_sentence():
-    """Keywords are their own passage, whether the model wrote one line or two."""
+def test_picture_chunks_hold_the_name_sentence_and_keywords_together():
+    """One passage, whether the model answered on one line, two, or a list."""
     two_lines = picture_chunks("Ruche", "On y voit des abeilles.\nabeilles, insectes, nature")
-    assert [c.text for c in two_lines] == [
-        "Ruche On y voit des abeilles.",
-        "abeilles, insectes, nature",
-    ]
+    assert [c.text for c in two_lines] == ["Ruche On y voit des abeilles. abeilles, insectes, nature"]
 
     one_line = picture_chunks("Ruche", "On y voit des abeilles. abeilles, insectes, nature.")
-    assert [c.text for c in one_line] == [
-        "Ruche On y voit des abeilles.",
-        "abeilles, insectes, nature",
-    ]
+    assert [c.text for c in one_line] == ["Ruche On y voit des abeilles. abeilles, insectes, nature."]
 
-    plain = picture_chunks("Ruche", "Une photo floue")
-    assert [c.text for c in plain] == ["Ruche Une photo floue"]
+    listed = picture_chunks("Ruche", "- On y voit des abeilles.\n- abeilles, insectes, nature")
+    assert [c.text for c in listed] == ["Ruche On y voit des abeilles. abeilles, insectes, nature"]
+
+    assert picture_chunks("", "  ") == []
 
 
 def test_readable_title_drops_extension_and_dashes():
@@ -304,3 +284,36 @@ def test_index_item_skips_non_extractable_items():
         index_item.apply(args=[folder.id], throw=True)
     client.assert_not_called()
     assert not ItemChunk.objects.filter(item=folder).exists()
+
+
+def test_index_item_reuses_known_embeddings(settings):
+    """A passage already embedded (a copy, a re-upload) costs no call to Albert."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    text = "La démission met fin au CDI."
+    original = make_text_file("note", text)
+    # The indexed passage holds the title too: store it as the task would.
+    passage = chunk_text(f"note\n\n{text}")[0].text
+    storage.save_chunks(original, [Chunk(0, passage, hash_text(passage), unit(3))])
+    copy = make_text_file("note", text)
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        index_item.apply(args=[copy.id], throw=True)
+
+    client.return_value.embed.assert_not_called()
+    assert list(ItemChunk.objects.get(item=copy).embedding) == unit(3)
+
+
+def test_index_item_embeds_a_repeated_passage_once(settings):
+    """Identical passages of a file are sent once and share their vector."""
+    settings.GRAPH_CHUNK_WORDS = 3
+    settings.GRAPH_CHUNK_OVERLAP = 0
+    item = make_text_file("refrain", "un deux trois un deux trois quatre")
+
+    with mock.patch("graph.tasks.AlbertClient") as client:
+        client.return_value.embed.side_effect = lambda texts: [unit(i) for i in range(len(texts))]
+        index_item.apply(args=[item.id], throw=True)
+
+    # The title is a passage of its own; "un deux trois" is sent once for two chunks.
+    client.return_value.embed.assert_called_once_with(["refrain", "un deux trois", "quatre"])
+    vectors = [list(chunk.embedding) for chunk in ItemChunk.objects.filter(item=item)]
+    assert vectors == [unit(0), unit(1), unit(1), unit(2)]
