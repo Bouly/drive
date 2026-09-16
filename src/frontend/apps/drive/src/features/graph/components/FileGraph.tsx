@@ -69,7 +69,17 @@ const MAX_SCALE = 14;
 const MARK_ZOOM_EXPONENT = 0.55;
 const markScale = (scale: number) => (scale <= 1 ? scale : scale ** MARK_ZOOM_EXPONENT);
 const INTRO_DURATION = 700;
+/**
+ * How the files arrive: one after another, but the whole sweep is held to
+ * INTRO_SWEEP however many there are.
+ *
+ * A fixed delay per file reads well on forty and is unusable on nine hundred:
+ * at 14ms each the last dot lands twelve seconds after the first, and for the
+ * first several seconds the stage looks empty ‒ a broken page, right at the
+ * moment the reader is deciding what this screen is.
+ */
 const INTRO_STAGGER = 14;
+const INTRO_SWEEP = 900;
 /** Per-frame convergence of emphasis and camera animations (0..1). */
 const EASE = 0.22;
 const MAX_SEARCH_RESULTS = 6;
@@ -430,10 +440,11 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     const lit = litNodes();
     const nodes = model.nodes;
     const introStart = introStartRef.current ?? now;
+    const stagger = Math.min(INTRO_STAGGER, INTRO_SWEEP / Math.max(1, nodes.length));
     const screen: ScreenNode[] = nodes.map((node, i) => {
       const depth = (node.z + 1) / 2;
       const parallax = 1 + PARALLAX * node.z;
-      const intro = easeOutCubic(Math.min(1, Math.max(0, (now - introStart - i * INTRO_STAGGER) / INTRO_DURATION)));
+      const intro = easeOutCubic(Math.min(1, Math.max(0, (now - introStart - i * stagger) / INTRO_DURATION)));
       if (intro < 1) {
         animating = true;
       }
