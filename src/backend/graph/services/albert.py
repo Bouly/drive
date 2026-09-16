@@ -54,10 +54,31 @@ class AlbertClient:
             "GET", "/collections", params={"visibility": visibility, "limit": 100}
         )["data"]
 
-    def documents(self, collection_id, limit=50, offset=0):
-        """Documents of a collection: id, name, chunks (count), size."""
-        params = {"collection_id": collection_id, "limit": limit, "offset": offset}
-        return self._request("GET", "/documents", params=params)["data"]
+    def documents(self, collection_id, limit=50, offset=0, page_size=10):
+        """
+        Documents of a collection: id, name, chunks (count), size.
+
+        Asked page by page, as the chunks are. The API answers a page at a
+        time whatever ``limit`` says ‒ mediatech-legifrance handed back six
+        documents to a request for forty-five, and a bank meant to draw half
+        of itself from that collection came out with six.
+        """
+        documents = []
+        while len(documents) < limit:
+            page = self._request(
+                "GET",
+                "/documents",
+                params={
+                    "collection_id": collection_id,
+                    "limit": min(page_size, limit - len(documents)),
+                    "offset": offset + len(documents),
+                },
+            )["data"]
+            documents.extend(page)
+            # A short page is the last one: asking again answers the same.
+            if len(page) < page_size:
+                break
+        return documents[:limit]
 
     def chunks(self, document_id):
         """All chunks of a document, in order: content and metadata."""

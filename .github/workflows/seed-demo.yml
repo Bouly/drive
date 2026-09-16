@@ -17,6 +17,10 @@ on:
         description: "Documents per collection (two collections)"
         required: true
         default: "15"
+      collection:
+        description: "One Albert collection id, to top up a bank that is short of one corpus (empty: both)"
+        required: false
+        default: ""
 
 concurrency:
   group: seed-demo
@@ -33,13 +37,16 @@ jobs:
         env:
           EMAIL: ${{ inputs.email }}
           DOCUMENTS: ${{ inputs.documents }}
+          COLLECTION: ${{ inputs.collection }}
         run: |
-          # Both travel into a shell on the server: they are checked here
+          # All three travel into a shell on the server: they are checked here
           # rather than trusted for being ours.
           [[ "$EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] \
             || { echo "Not an email address: $EMAIL" >&2; exit 1; }
           [[ "$DOCUMENTS" =~ ^[0-9]{1,3}$ ]] \
             || { echo "Not a count: $DOCUMENTS" >&2; exit 1; }
+          [[ "$COLLECTION" =~ ^[0-9]{0,9}$ ]] \
+            || { echo "Not a collection id: $COLLECTION" >&2; exit 1; }
 
       - name: Configure SSH
         env:
@@ -57,8 +64,13 @@ jobs:
           PROD_PATH: ${{ secrets.PROD_PATH }}
           EMAIL: ${{ inputs.email }}
           DOCUMENTS: ${{ inputs.documents }}
+          COLLECTION: ${{ inputs.collection }}
         run: |
+          ONE=""
+          if [[ -n "$COLLECTION" ]]; then
+            ONE="--collection $COLLECTION"
+          fi
           ssh "$PROD_HOST" "set -e
             cd '$PROD_PATH/deploy'
             docker compose -f compose.prod.yaml run --rm backend \
-              python manage.py graph_seed_albert '$EMAIL' --documents '$DOCUMENTS'"
+              python manage.py graph_seed_albert '$EMAIL' --documents '$DOCUMENTS' $ONE"

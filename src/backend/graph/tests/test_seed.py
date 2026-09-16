@@ -236,6 +236,27 @@ def test_albert_client_embeds_and_checks_vectors(settings):
     assert client.chunks(7) == [{"content": "x", "metadata": {}}]
 
 
+@responses.activate
+def test_albert_client_reads_every_page_of_a_collection(settings):
+    """A collection is listed page by page: one request sees ten documents."""
+    settings.GRAPH_ALBERT_URL = ALBERT
+    settings.GRAPH_ALBERT_API_KEY = "sk-test"
+    pages = [
+        {"data": [{"id": i, "name": f"doc-{i}.pdf"} for i in range(10)]},
+        {"data": [{"id": i, "name": f"doc-{i}.pdf"} for i in range(10, 14)]},
+    ]
+    responses.get(f"{ALBERT}/documents", json=pages[0])
+    responses.get(f"{ALBERT}/documents", json=pages[1])
+
+    documents = AlbertClient().documents(139226, limit=45)
+
+    assert [document["id"] for document in documents] == list(range(14))
+    # The second page is asked for from where the first one stopped, and a
+    # short page ends it rather than being asked for again.
+    assert len(responses.calls) == 2
+    assert "offset=10" in responses.calls[1].request.url
+
+
 def test_albert_client_needs_a_key(settings):
     """Without ALBERT_API_KEY the client refuses to start."""
     settings.GRAPH_ALBERT_API_KEY = None
