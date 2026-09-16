@@ -2,7 +2,7 @@
 import { getMimeCategory } from "@gouvfr-lasuite/ui-components";
 import { FOLDER_MIMETYPE, GraphData, GraphFile, GraphLink } from "./types";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
-import { mutualCloseness } from "./clusters";
+import { findClusters, mutualCloseness } from "./clusters";
 import { colorOfName, normalize } from "./naming";
 
 /** Smallest and largest dot, in world units: the range recency is mapped to. */
@@ -216,12 +216,16 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       .filter((i) => data.files[i].topics?.some((t) => t.id === subject.id)),
   }));
 
-  // Now that the groups are known, the layout can say so: a pair inside a
-  // group rests closer, a pair across two groups is held further apart, and
-  // the subjects come apart on their own.
+  // Where the files sit is read off the links themselves, whether or not
+  // anybody has written a subject: files that hang together rest closer, and
+  // are held further from the ones they have nothing to do with, so the stage
+  // comes out in small packets instead of one crowd. Subjects say what a
+  // packet is called and what color it takes ‒ never where it lands, so a
+  // drive with no subject is still laid out and not piled up.
+  const groups = findClusters(data.files.length, links, linkCloseness, linkTies);
   links.forEach((link) => {
-    const group = clusters[link.source];
-    const same = group >= 0 && group === clusters[link.target];
+    const group = groups[link.source];
+    const same = group >= 0 && group === groups[link.target];
     if (link.spacer) {
       link.length *= same ? 1 : CROSS_GROUP_SPREAD;
     } else if (same) {

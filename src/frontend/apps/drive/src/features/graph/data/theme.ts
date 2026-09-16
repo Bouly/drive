@@ -45,6 +45,9 @@ export const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "im
  * was already set by two of the original eight. Going on to twenty is what
  * finally costs them: protanopia drops to 7.52 on the light stage.
  */
+/** How many passes of label propagation before the groups stop moving. */
+export const CLUSTER_ROUNDS = 8;
+
 export const CLUSTER_COLORS: Record<"dark" | "light", string[]> = {
   dark: [
     "#B0005C", "#65A800", "#332CFF", "#009ED9", "#FF199D", "#955900", "#8D00C1", "#8A6FFF",

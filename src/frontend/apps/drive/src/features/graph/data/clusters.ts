@@ -1,4 +1,6 @@
-// Extracted from FileGraph.tsx: how close a pair of files really is.
+// How close a pair of files really is, and which files hang together.
+import { SimLink } from "../simulation";
+import { CLUSTER_ROUNDS } from "./theme";
 
 /**
  * How close a pair is, in 0..1, judged from each of its two files rather than
@@ -46,4 +48,65 @@ export const mutualCloseness = (weights: number[], ends: [number, number][], cou
     const z = Math.min((weight - mean[a]) / deviation[a], (weight - mean[b]) / deviation[b]);
     return Math.min(1, Math.max(0, (z - MUTUAL_Z_LOW) / (MUTUAL_Z_HIGH - MUTUAL_Z_LOW)));
   });
+};
+
+/**
+ * Which files hang together, by label propagation over the ties: each file
+ * repeatedly takes the group its closest neighbours share, weighted by how
+ * close they are. One group index per file, -1 for a file in none.
+ *
+ * This decides where files sit and nothing else. It used to name them too,
+ * which is how a drive ended up showing subjects nobody had written; the
+ * names come from the subjects now, and the shape of the stage from here.
+ */
+export const findClusters = (count: number, links: SimLink[], weights: number[], ties: boolean[]) => {
+  const adjacency: { node: number; weight: number }[][] = Array.from({ length: count }, () => []);
+  links.forEach((link, i) => {
+    // Groups are read off the ties: a pair the graph holds apart says nothing
+    // about what its two files are about.
+    if (!ties[i]) {
+      return;
+    }
+    adjacency[link.source].push({ node: link.target, weight: weights[i] });
+    adjacency[link.target].push({ node: link.source, weight: weights[i] });
+  });
+
+  const label = Array.from({ length: count }, (_, i) => i);
+  for (let round = 0; round < CLUSTER_ROUNDS; round++) {
+    let moved = false;
+    for (let i = 0; i < count; i++) {
+      const score = new Map<number, number>();
+      for (const { node, weight } of adjacency[i]) {
+        score.set(label[node], (score.get(label[node]) ?? 0) + weight);
+      }
+      let best = label[i];
+      let bestScore = score.get(best) ?? 0;
+      for (const [candidate, value] of score) {
+        // Ties go to the lowest label so the result does not depend on order.
+        if (value > bestScore || (value === bestScore && candidate < best)) {
+          best = candidate;
+          bestScore = value;
+        }
+      }
+      if (best !== label[i]) {
+        label[i] = best;
+        moved = true;
+      }
+    }
+    if (!moved) {
+      break;
+    }
+  }
+
+  const members = new Map<number, number>();
+  for (const value of label) {
+    members.set(value, (members.get(value) ?? 0) + 1);
+  }
+  // A file on its own is no group: nothing pulls it in or holds it off.
+  const ranked = [...members.entries()]
+    .filter(([, size]) => size > 1)
+    .sort((a, b) => b[1] - a[1])
+    .map(([value]) => value);
+  const rank = new Map(ranked.map((value, i) => [value, i]));
+  return label.map((value) => rank.get(value) ?? -1);
 };
