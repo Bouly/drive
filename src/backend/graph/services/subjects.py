@@ -31,6 +31,9 @@ from graph.services.scope import live_files_of
 # How many files the reranker judges at once: the closest ones by content,
 # so a large drive does not travel through the API on every write.
 RERANK_CANDIDATES = 60
+# ...of which this many are kept for the files closest to the subject's
+# words alone, whatever its pinned files did to its vector.
+WORDS_SLOTS = 20
 # How much of a file the reranker reads: its name and the start of its text.
 RERANK_CHARS = 900
 # Read over several passages, not just the first one: a video whose first
@@ -235,19 +238,23 @@ def worth_reading(files, vector, words):
     fill the shortlist of a subject called "abeille" with network headers ‒
     the only video about bees never even reached the reader.
     """
-    closeness = {}
-    for side, how_many in ((vector, RERANK_CANDIDATES), (words, RERANK_CANDIDATES // 2)):
+    by_id = {str(item.id): item for item in files}
+    sides = [(vector, RERANK_CANDIDATES - WORDS_SLOTS), (words, WORDS_SLOTS)]
+    if vector is None or words is None:
+        sides = [(vector or words, RERANK_CANDIDATES)]
+    chosen = {}
+    # Each side has its own seats. Ranking the two together would give them
+    # all to the subject's vector, whose files are simply closer to it than
+    # the ones the words alone bring in ‒ which is the whole point of asking
+    # the words separately.
+    for side, seats in sides:
         if side is None:
             continue
-        for neighbour in storage.item_similarities(side, files, exclude_item=None, k=how_many):
-            closeness[neighbour.item_id] = max(
-                closeness.get(neighbour.item_id, 0.0), neighbour.similarity
-            )
-    ranked = sorted(
-        (item for item in files if str(item.id) in closeness),
-        key=lambda item: -closeness[str(item.id)],
-    )
-    return ranked[:RERANK_CANDIDATES]
+        for neighbour in storage.item_similarities(side, files, exclude_item=None, k=seats):
+            item = by_id.get(neighbour.item_id)
+            if item is not None:
+                chosen.setdefault(neighbour.item_id, item)
+    return list(chosen.values())[:RERANK_CANDIDATES]
 
 
 def sort_files_into(topic, candidates=None):
