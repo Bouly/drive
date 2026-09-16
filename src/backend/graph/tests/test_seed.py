@@ -9,6 +9,7 @@ from core import factories, models
 
 from graph.models import ItemChunk, ItemLink
 from graph.services.albert import AlbertClient, AlbertError
+from graph.services.scope import readable_by
 from graph.services.seed import FOLDER_TITLE, seed_from_albert, slugify
 
 pytestmark = pytest.mark.django_db
@@ -100,11 +101,11 @@ def test_seed_creates_files_chunks_and_links():
     assert all(f.mimetype == "text/plain" and f.upload_state == "ready" for f in files)
     assert save.call_count == 3
     # Every file is readable by its owner, so it shows in the graph API...
-    assert models.Item.objects.readable_per_se(user).filter(id__in=files).count() == 3
+    assert readable_by(user).filter(id__in=files).count() == 3
     # ...and by nobody else: seeded files are restricted, not shared by link.
     assert all(f.link_reach == models.LinkReachChoices.RESTRICTED for f in files)
     stranger = factories.UserFactory()
-    assert models.Item.objects.readable_per_se(stranger).filter(id__in=files).count() == 0
+    assert readable_by(stranger).filter(id__in=files).count() == 0
 
     assert ItemChunk.objects.count() == 4
 
