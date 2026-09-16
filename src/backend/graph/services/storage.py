@@ -62,6 +62,19 @@ def delete_chunks(item):
     ItemChunk.objects.filter(item=item).delete()
 
 
+def embeddings_by_hash(text_hashes):
+    """
+    Vectors already stored for passages with these hashes, as {hash: vector}.
+
+    The same text always gets the same vector: a re-indexed or duplicated
+    file does not need to be embedded again.
+    """
+    rows = ItemChunk.objects.filter(text_hash__in=set(text_hashes)).values_list(
+        "text_hash", "embedding"
+    )
+    return {text_hash: list(embedding) for text_hash, embedding in rows}
+
+
 def item_vector(item):
     """
     One unit vector standing for the whole item: the normalized mean of its

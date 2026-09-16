@@ -2,11 +2,21 @@
 Extract the text of an item's file (step 1 of the pipeline).
 
 Plain text files are read directly; everything else (docx, odt, pdf, pptx,
-xlsx, images with OCR...) goes through an Apache Tika server, which returns
-the text of any format it knows.
+xlsx, images with OCR, videos, audio...) goes through an Apache Tika server,
+which returns the text of any format it knows. For videos and audio Tika only
+finds the metadata (title, comment): the speech is transcribed by Albert from
+the audio track, cut into segments by ffmpeg and sent side by side.
+
+A file is copied block by block to a temporary file rather than loaded in
+memory: a video can weigh gigabytes.
 """
 
 import logging
+import subprocess
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from pathlib import Path
 
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -15,7 +25,13 @@ import requests
 
 from core import models
 
+from graph.services.albert import AlbertClient
+
 logger = logging.getLogger(__name__)
+
+MEDIA_PREFIXES = ("video/", "audio/")
+# Bytes read at once when copying a file out of object storage.
+COPY_BLOCK_SIZE = 8 * 1024 * 1024
 
 
 class ExtractionError(Exception):
@@ -38,6 +54,11 @@ def is_extractable(item):
     return any(mimetype.startswith(prefix) for prefix in settings.GRAPH_ALLOWED_MIMETYPES)
 
 
+def is_media(mimetype):
+    """Videos and audio: their text is mostly speech."""
+    return (mimetype or "").startswith(MEDIA_PREFIXES)
+
+
 class TikaExtractor:
     """Text extraction through the Apache Tika REST server."""
 
@@ -46,7 +67,7 @@ class TikaExtractor:
         self.timeout = timeout or settings.GRAPH_TIKA_TIMEOUT
 
     def extract(self, content, mimetype=None, filename=None):
-        """Send raw bytes to Tika and return the extracted text."""
+        """Send raw bytes or an open binary file (streamed) to Tika, return the text."""
         headers = {"Accept": "text/plain; charset=UTF-8"}
         if mimetype:
             headers["Content-Type"] = mimetype
@@ -70,7 +91,143 @@ class TikaExtractor:
         return response.text
 
 
-def extract_text(item, extractor=None):
+def _run(command):
+    """Run ffmpeg or ffprobe and return its output; ExtractionError when it fails."""
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed program, arguments are not a shell
+            command,
+            capture_output=True,
+            text=True,
+            timeout=settings.GRAPH_FFMPEG_TIMEOUT,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ExtractionError(f"{command[0]} is not installed") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ExtractionError(f"{command[0]} took too long") from exc
+    if result.returncode != 0:
+        raise ExtractionError(f"{command[0]} failed: {result.stderr.strip()[-300:]}")
+    return result.stdout
+
+
+class Transcriber:
+    """The speech of a video or audio file, through ffmpeg and Albert."""
+
+    def __init__(self, client=None, segment_seconds=None, workers=None):
+        self.client = client or AlbertClient()
+        self.segment_seconds = segment_seconds or settings.GRAPH_TRANSCRIPTION_SEGMENT_SECONDS
+        self.workers = workers or settings.GRAPH_TRANSCRIPTION_WORKERS
+
+    @staticmethod
+    def has_audio(path):
+        """True if the file has at least one audio stream."""
+        output = _run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a",
+                "-show_entries",
+                "stream=index",
+                "-of",
+                "csv=p=0",
+                path,
+            ]
+        )
+        return bool(output.strip())
+
+    def split(self, path, directory):
+        """
+        The audio track as small mp3 segments, in order: mono, 16 kHz, 32 kbit/s
+        (what speech recognition needs), about 2.4 MB per 10 minutes.
+        """
+        _run(
+            [
+                "ffmpeg",
+                "-nostdin",
+                "-v",
+                "error",
+                "-i",
+                path,
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "32k",
+                "-f",
+                "segment",
+                "-segment_time",
+                str(self.segment_seconds),
+                "-reset_timestamps",
+                "1",
+                str(Path(directory) / "part%05d.mp3"),
+            ]
+        )
+        return sorted(Path(directory).glob("part*.mp3"))
+
+    def _transcribe_segment(self, segment):
+        with segment.open("rb") as audio:
+            return self.client.transcribe(audio, segment.name)
+
+    def transcribe(self, path):
+        """The text spoken in the file, empty when it has no audio track."""
+        if not self.has_audio(path):
+            return ""
+        with tempfile.TemporaryDirectory() as directory:
+            segments = self.split(path, directory)
+            if not segments:
+                return ""
+            with ThreadPoolExecutor(max_workers=min(self.workers, len(segments))) as pool:
+                texts = list(pool.map(self._transcribe_segment, segments))
+        logger.info("Transcribed %d audio segments of %s", len(segments), path)
+        return "\n\n".join(text for text in texts if text)
+
+
+@contextmanager
+def local_copy(item):
+    """The item's file, copied block by block to a temporary file removed afterwards."""
+    with tempfile.NamedTemporaryFile(suffix=Path(item.filename or "").suffix) as copy:
+        with default_storage.open(item.file_key, "rb") as source:
+            for block in iter(lambda: source.read(COPY_BLOCK_SIZE), b""):
+                copy.write(block)
+        copy.flush()
+        yield copy.name
+
+
+def _media_metadata(path, item, extractor):
+    """Title, comment... found by Tika; a failure here must not lose the speech."""
+    try:
+        with open(path, "rb") as content:
+            return extractor.extract(content, mimetype=item.mimetype, filename=item.filename)
+    except ExtractionError as exc:
+        logger.warning("Tika could not read the metadata of item %s: %s", item.id, exc)
+        return ""
+
+
+def _extract_media(path, item, extractor, transcriber):
+    """Metadata from Tika and speech from Albert, obtained side by side."""
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        metadata = pool.submit(_media_metadata, path, item, extractor)
+        speech = pool.submit(transcriber.transcribe, path)
+        parts = (metadata.result().strip(), speech.result().strip())
+    return "\n\n".join(part for part in parts if part)
+
+
+def _cap(text, item):
+    """Keep at most GRAPH_MAX_TEXT_CHARS characters of a text."""
+    limit = settings.GRAPH_MAX_TEXT_CHARS
+    if len(text) <= limit:
+        return text
+    logger.warning("Item %s: text cut from %d to %d characters", item.id, len(text), limit)
+    return text[:limit]
+
+
+def extract_text(item, extractor=None, transcriber=None):
     """
     Return the text of an item's file.
 
@@ -81,13 +238,18 @@ def extract_text(item, extractor=None):
         raise ExtractionSkipped(f"Item {item.id} is not extractable")
 
     mimetype = item.mimetype or ""
-    with default_storage.open(item.file_key, "rb") as fd:
-        content = fd.read()
-
     if mimetype.startswith("text/"):
-        return content.decode("utf-8", errors="replace")
+        # A UTF-8 character is at most 4 bytes: no need to read further.
+        with default_storage.open(item.file_key, "rb") as source:
+            content = source.read(settings.GRAPH_MAX_TEXT_CHARS * 4)
+        return _cap(content.decode("utf-8", errors="replace"), item)
 
     extractor = extractor or TikaExtractor()
-    text = extractor.extract(content, mimetype=mimetype, filename=item.filename)
+    with local_copy(item) as path:
+        if is_media(mimetype):
+            text = _extract_media(path, item, extractor, transcriber or Transcriber())
+        else:
+            with open(path, "rb") as content:
+                text = extractor.extract(content, mimetype=mimetype, filename=item.filename)
     logger.info("Extracted %d characters from item %s (%s)", len(text), item.id, mimetype)
-    return text
+    return _cap(text, item)

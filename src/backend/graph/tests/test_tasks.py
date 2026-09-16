@@ -286,16 +286,16 @@ def test_index_item_indexes_the_title_with_the_text(settings):
 
 
 def test_index_item_remembers_what_it_skipped():
-    """A video is recorded as skipped, so the page stops waiting for it."""
-    video = factories.ItemFactory(
-        title="film.mp4",
+    """An archive is recorded as skipped, so the page stops waiting for it."""
+    archive = factories.ItemFactory(
+        title="sauvegarde.zip",
         type=models.ItemTypeChoices.FILE,
         update_upload_state=models.ItemUploadStateChoices.READY,
-        mimetype="video/mp4",
+        mimetype="application/zip",
         size=10,
     )
-    index_item.apply(args=[video.id], throw=True)
-    assert ItemIndex.objects.get(item=video).state == ItemIndex.State.SKIPPED
+    index_item.apply(args=[archive.id], throw=True)
+    assert ItemIndex.objects.get(item=archive).state == ItemIndex.State.SKIPPED
 
 
 def test_index_item_skips_non_extractable_items():

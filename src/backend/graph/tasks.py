@@ -15,7 +15,7 @@ from django.core.files.storage import default_storage
 
 from celery import shared_task
 
-from core.models import Item
+from core.models import Item, ItemTypeChoices
 
 from graph.models import ItemIndex
 from graph.services import storage
@@ -27,12 +27,14 @@ from graph.services.extraction import (
     extract_text,
     is_extractable,
 )
-from graph.services.linking import link_item, live_files, relink_neighbours
+from graph.services.linking import forget_item, link_item, live_files, relink_neighbours
 from graph.services.topics import assign_topics
 
 logger = logging.getLogger(__name__)
 
 TOPICS_LOCK = "graph-refresh-topics"
+# Set while a refresh is queued: uploads in the meantime join it.
+TOPICS_SCHEDULED = "graph-refresh-topics-scheduled"
 # Seconds to wait before regrouping, so several uploads are grouped in one run.
 TOPICS_DELAY = 10
 
@@ -121,6 +123,30 @@ def _remember(item, state, detail=""):
     ItemIndex.objects.update_or_create(item=item, defaults={"state": state, "detail": detail})
 
 
+def embed_chunks(chunks):
+    """
+    Set the vector of each chunk, asking Albert only for passages whose text
+    has never been embedded: a re-indexed file or a copy costs no call, and a
+    passage repeated in a file is sent once.
+    """
+    vectors = storage.embeddings_by_hash(chunk.text_hash for chunk in chunks)
+    missing = {}
+    for chunk in chunks:
+        if chunk.text_hash not in vectors:
+            missing.setdefault(chunk.text_hash, chunk.text)
+    if missing:
+        embedded = AlbertClient().embed(list(missing.values()))
+        vectors.update(zip(missing, embedded, strict=True))
+    for chunk in chunks:
+        chunk.embedding = vectors[chunk.text_hash]
+
+
+def schedule_topics_refresh():
+    """Queue one topic refresh for a burst of uploads rather than one per file."""
+    if cache.add(TOPICS_SCHEDULED, "1", timeout=TOPICS_DELAY):
+        refresh_topics.apply_async(countdown=TOPICS_DELAY)
+
+
 @shared_task(autoretry_for=(AlbertError,), retry_backoff=True, max_retries=5)
 def index_item(item_id):
     """Extract, chunk, embed and link an item. Idempotent: rerunning replaces its chunks."""
@@ -163,9 +189,7 @@ def index_item(item_id):
     else:
         detail = "title only"
 
-    for chunk, vector in zip(chunks, AlbertClient().embed([c.text for c in chunks]), strict=True):
-        chunk.embedding = vector
-
+    embed_chunks(chunks)
     storage.save_chunks(item, chunks)
     _remember(item, ItemIndex.State.DONE, detail)
 
@@ -176,7 +200,31 @@ def index_item(item_id):
     # Files indexed earlier may now have this one among their closest.
     relink_neighbours(item, candidates)
     # Topics depend on the whole graph: regroup once a burst of uploads settles.
-    refresh_topics.apply_async(countdown=TOPICS_DELAY)
+    schedule_topics_refresh()
+
+
+@shared_task
+def forget_from_graph(item_id, restore=False):
+    """
+    Take a file (or every file of a folder) out of the graph, or bring it back.
+
+    Trashing a file must not leave its neighbours pointing at it. Descendants
+    of a folder are updated in bulk by ``soft_delete``, which sends no signal
+    of its own, hence the walk here.
+    """
+    item = Item.objects.get(pk=item_id)
+    if item.type == ItemTypeChoices.FOLDER:
+        files = list(item.descendants().filter(type=ItemTypeChoices.FILE))
+    else:
+        files = [item]
+
+    for file in files:
+        if restore:
+            index_item.delay(file.id)
+        else:
+            forget_item(file)
+    if files and not restore:
+        schedule_topics_refresh()
 
 
 @shared_task(bind=True, max_retries=30)
