@@ -12,7 +12,7 @@ import {
   ZoomControls,
   headerHeight,
 } from "@gouvfr-lasuite/ui-components";
-import { ChevronDown, ChevronRight, Edit, Plus, Settings } from "@gouvfr-lasuite/ui-components/icons";
+import { ChevronDown, ChevronRight, Edit, Plus, Settings, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
 import { GraphData, GraphFile, Subject } from "../data/types";
 import { ForceSimulation, SimNode } from "../simulation";
@@ -46,7 +46,15 @@ const STAGE_WARMUP = 320;
 const NEIGHBOURHOOD = 8;
 
 /** The strength slider runs the drawing threshold from every tie to the few strongest. */
-const STRENGTH_CEILING = 0.95;
+/**
+ * How many threads per file the stage draws before anyone touches the slider.
+ *
+ * Every file is linked to every other one, so the drive decides nothing here:
+ * on nine hundred files the backend sends ten ties each, and drawing them all
+ * gives a ball of wool where a map should be. Two and a half is what keeps a
+ * packet readable while still showing the bridges between packets.
+ */
+const DEFAULT_THREADS_PER_FILE = 2.5;
 
 /** How much depth shifts a node when panning: the fake-3D parallax. */
 const PARALLAX = 0.1;
@@ -139,7 +147,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   });
   const { selected, facets, activeLink, isolated } = filters;
   /** 0 draws every tie, 1 keeps only the closest pairs. */
+  /** 0 draws every tie, 1 keeps only the closest pair of the whole drive. */
   const [strength, setStrength] = useState(0);
+  /** True once the reader has moved the slider: the default stops applying. */
+  const strengthTouched = useRef(false);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -256,6 +267,64 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     [model],
   );
 
+  /**
+   * The closeness of every drawn tie, sorted.
+   *
+   * The slider reads its threshold off this table rather than off the raw
+   * 0.35..0.95 range, because that range is not where the links are: on this
+   * drive half of them sit above 0.74, so four fifths of the slider's travel
+   * used to remove nothing at all and the last fifth removed everything. By
+   * rank, every millimetre of the slider takes the same number of threads off
+   * the stage, whatever the drive.
+   */
+  const closeness = useMemo(() => {
+    const kept: number[] = [];
+    model.linkCloseness.forEach((value, i) => {
+      if (model.linkTies[i]) {
+        kept.push(value);
+      }
+    });
+    return Float64Array.from(kept).sort();
+  }, [model]);
+  const closenessRef = useRef(closeness);
+  closenessRef.current = closeness;
+
+  /**
+   * Files no subject holds. On a drive of nine hundred with nine subjects
+   * over forty-nine files, saying so is the difference between a panel that
+   * lists what exists and one that says what is left to do.
+   */
+  const unsorted = useMemo(
+    () => model.data.files.filter((file) => !file.topics?.length).length,
+    [model],
+  );
+
+  /** The closeness below which the slider stops drawing, at that position. */
+  const closenessAt = useCallback((strengthValue: number) => {
+    const table = closenessRef.current;
+    if (!table.length) {
+      return LINK_MIN_CLOSENESS;
+    }
+    const at = Math.min(table.length - 1, Math.floor(strengthValue * table.length));
+    return table[at];
+  }, []);
+
+  /** How many threads the stage draws at a given slider position. */
+  const threadsAt = useCallback(
+    (strengthValue: number) => Math.round(closenessRef.current.length * (1 - strengthValue)),
+    [],
+  );
+
+  // A drive arrives with ten ties per file: the slider starts where the stage
+  // reads as a map rather than a ball of wool, unless the reader moved it.
+  useEffect(() => {
+    if (strengthTouched.current || !closeness.length) {
+      return;
+    }
+    const wanted = model.nodes.length * DEFAULT_THREADS_PER_FILE;
+    setStrength(closeness.length > wanted ? 1 - wanted / closeness.length : 0);
+  }, [closeness, model]);
+
   /** Color of a node: its file family. */
   const nodeColor = useCallback(
     (i: number, themeName: "dark" | "light") => THEMES[themeName].categoryColor(model.categories[i]),
@@ -357,8 +426,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
     const focus = hoverRef.current ?? uiRef.current.selected;
     const activeLinkIndex = uiRef.current.activeLink;
-    const strengthFloor =
-      LINK_MIN_CLOSENESS + uiRef.current.strength * (STRENGTH_CEILING - LINK_MIN_CLOSENESS);
+    const strengthFloor = closenessAt(uiRef.current.strength);
     const lit = litNodes();
     const nodes = model.nodes;
     const introStart = introStartRef.current ?? now;
@@ -1115,16 +1183,41 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
   const renderCard = (i: number, file: GraphFile) => (
     <aside className="file-graph__card">
-      <button type="button" className="file-graph__close" onClick={() => selectNode(null)} aria-label={t("graph.close")}>
-        ×
-      </button>
-      <span className="file-graph__dot file-graph__dot--large" style={{ background: colorOf(i), color: colorOf(i) }} />
-      <h2 className="file-graph__card-title">{file.title}</h2>
-      <Button size="small" variant={isolated ? "primary" : "bordered"} color="neutral" onClick={toggleIsolate}>
-        {t(isolated ? "graph.isolate_off" : "graph.isolate", { count: NEIGHBOURHOOD })}
-      </Button>
+      <div className="file-graph__card-head">
+        <span className="file-graph__dot file-graph__dot--large" style={{ background: colorOf(i), color: colorOf(i) }} />
+        <h2 className="file-graph__card-title">{file.title}</h2>
+        <button type="button" className="file-graph__close" onClick={() => selectNode(null)} aria-label={t("graph.close")}>
+          <XMark />
+        </button>
+      </div>
+      <p className="file-graph__card-line">
+        {t(`graph.categories.${model.categories[i]}`)}
+        {file.size > 0 && <> · {prettyBytes(file.size, { locale: i18n.language })}</>}
+        {" · "}
+        {formatDate(file.updated_at)}
+      </p>
+      <div className="file-graph__card-actions">
+        <Button size="small" variant={isolated ? "primary" : "bordered"} color="neutral" onClick={toggleIsolate}>
+          {t(isolated ? "graph.isolate_off" : "graph.isolate", { count: NEIGHBOURHOOD })}
+        </Button>
+        <Button size="small" variant="bordered" color="neutral" onClick={() => centerOn(i)}>
+          {t("graph.center")}
+        </Button>
+        {!demo && (
+          <Button
+            size="small"
+            variant="bordered"
+            color="neutral"
+            href={`/explorer/items/files/${file.id}`}
+          >
+            {t("graph.open_file")}
+          </Button>
+        )}
+      </div>
       {model.subjects.length > 0 && (
-        <div className="file-graph__subjects">
+        <details className="file-graph__card-fold">
+          <summary>{t("graph.subject_put")}</summary>
+          <div className="file-graph__subjects">
           {model.subjects.map((subject) => {
             const membership = file.topics?.find((t) => t.id === subject.id);
             return (
@@ -1151,7 +1244,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               </button>
             );
           })}
-        </div>
+          </div>
+        </details>
       )}
       {file.status === "pending" && (
         <p className="file-graph__pending">
@@ -1165,34 +1259,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         file.status === "idle") && (
         <p className="file-graph__pending">{t(`graph.status_${file.status}`)}</p>
       )}
-      <dl className="file-graph__meta">
-        <dt>{t("graph.category")}</dt>
-        <dd>
-          <button type="button" className="file-graph__inline-link" onClick={() => toggleFacet(CATEGORY_FILTER_PREFIX + model.categories[i])}>
-            {t(`graph.categories.${model.categories[i]}`)}
-          </button>
-        </dd>
-        {file.size > 0 && (
-          <>
-            <dt>{t("graph.size")}</dt>
-            <dd>{prettyBytes(file.size, { locale: i18n.language })}</dd>
-          </>
-        )}
-        <dt>{t("graph.last_update")}</dt>
-        <dd>{formatDate(file.updated_at)}</dd>
-        <dt>{t("graph.created_by")}</dt>
-        <dd>{file.creator}</dd>
-      </dl>
-      <div className="file-graph__card-actions">
-        <button type="button" className="file-graph__button file-graph__button--text" onClick={() => centerOn(i)}>
-          {t("graph.center")}
-        </button>
-        {!demo && (
-          <a className="file-graph__button file-graph__button--text" href={`/explorer/items/files/${file.id}`}>
-            {t("graph.open_file")}
-          </a>
-        )}
-      </div>
       <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
       <ul className="file-graph__links">
         {selectedNeighbors.map(({ node, link }) => (
@@ -1222,7 +1288,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       <div className="file-graph__stage" ref={wrapperRef}>
         <canvas
           ref={canvasRef}
-          className="file-graph__canvas"
+          className={`file-graph__canvas${hovered !== null ? " file-graph__canvas--over" : ""}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -1412,6 +1478,11 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 );
               })}
 
+              {unsorted > 0 && (
+                <p className="file-graph__legend-note">
+                  {t("graph.no_subject", { count: unsorted })}
+                </p>
+              )}
               {/* Naming a subject is done a handful of times: it earns a button, not a field. */}
               <button
                 type="button"
@@ -1425,7 +1496,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           )}
         </aside>
 
-        <div className="file-graph__viewtools">
+        <div
+          className={`file-graph__viewtools${selectedFile ? " file-graph__viewtools--aside" : ""}`}
+        >
           <div className="file-graph__display" ref={displayRef}>
             {displayOpen && (
               <div className="file-graph__display-pop" role="group" aria-label={t("graph.display")}>
@@ -1453,13 +1526,21 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                   />
                 )}
                 <label className="file-graph__strength">
-                  {t("graph.strength")}
+                  <span className="file-graph__strength-head">
+                    {t("graph.strength")}
+                    <span className="file-graph__strength-count">
+                      {t("graph.threads", { count: threadsAt(strength) })}
+                    </span>
+                  </span>
                   <input
                     type="range"
                     min={0}
                     max={100}
                     value={Math.round(strength * 100)}
-                    onChange={(event) => setStrength(Number(event.target.value) / 100)}
+                    onChange={(event) => {
+                      strengthTouched.current = true;
+                      setStrength(Number(event.target.value) / 100);
+                    }}
                     aria-label={t("graph.strength")}
                   />
                 </label>

@@ -775,14 +775,19 @@
         "results_more_other": "{{count}} more…",
         "open_file": "Open in the explorer",
         "in_content": "in the content",
-        "strength": "Link strength",
+        "strength": "Threads drawn",
         "filter_remove": "Remove this filter",
         "isolate": "Isolate this file and its {{count}} closest",
         "isolate_off": "Show every file again",
         "scope": {
           "empty": "Nothing in this folder has been analysed yet.",
           "leave": "See the whole drive"
-        }
+        },
+        "threads_one": "{{count}} thread",
+        "threads_other": "{{count}} threads",
+        "no_subject_one": "{{count}} file in no subject",
+        "no_subject_other": "{{count}} files in no subject",
+        "loading": "Reading your drive…"
       }
     }
   },
@@ -1562,14 +1567,19 @@
         "results_more_other": "{{count}} de plus…",
         "open_file": "Ouvrir dans l'explorateur",
         "in_content": "dans le contenu",
-        "strength": "Force des liens",
+        "strength": "Fils affichés",
         "filter_remove": "Retirer ce filtre",
         "isolate": "Isoler ce fichier et ses {{count}} plus proches",
         "isolate_off": "Réafficher tous les fichiers",
         "scope": {
           "empty": "Rien n'a encore été analysé dans ce dossier.",
           "leave": "Voir tout le drive"
-        }
+        },
+        "threads_one": "{{count}} fil",
+        "threads_other": "{{count}} fils",
+        "no_subject_one": "{{count}} fichier dans aucun sujet",
+        "no_subject_other": "{{count}} fichiers dans aucun sujet",
+        "loading": "Lecture de votre drive…"
       }
     }
   },
@@ -2349,14 +2359,19 @@
         "results_more_other": "nog {{count}}…",
         "open_file": "Openen in de verkenner",
         "in_content": "in de inhoud",
-        "strength": "Sterkte van de verbindingen",
+        "strength": "Getoonde draden",
         "filter_remove": "Verwijder dit filter",
         "isolate": "Isoleer dit bestand en zijn {{count}} naaste",
         "isolate_off": "Toon weer alle bestanden",
         "scope": {
           "empty": "In deze map is nog niets geanalyseerd.",
           "leave": "De hele drive bekijken"
-        }
+        },
+        "threads_one": "{{count}} draad",
+        "threads_other": "{{count}} draden",
+        "no_subject_one": "{{count}} bestand in geen enkel onderwerp",
+        "no_subject_other": "{{count}} bestanden in geen enkel onderwerp",
+        "loading": "Je drive wordt gelezen…"
       }
     }
   }

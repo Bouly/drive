@@ -150,6 +150,21 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   }
 
   // Trims the web from every tie down to the closest pairs only.
+  &__strength-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__strength-count {
+    font-weight: var(--c--globals--font--weights--regular, 400);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
   &__strength {
     display: flex;
     flex-direction: column;
@@ -238,6 +253,9 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   // Zoom, recentring and the settings that are set once and left alone.
   &__viewtools {
     position: absolute;
+    // An open card takes the right edge: the controls step aside rather than
+    // hide underneath it.
+    transition: right 0.28s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 4;
     right: var(--c--globals--spacings--md, 16px);
     bottom: var(--c--globals--spacings--md, 16px);
@@ -245,6 +263,10 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     flex-direction: column;
     align-items: flex-end;
     gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__viewtools--aside {
+    right: calc(320px + var(--c--globals--spacings--lg, 24px));
   }
 
   &__display {
@@ -311,6 +333,48 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     display: block;
     cursor: grab;
     touch-action: none;
+
+    // Over a file: it opens, it does not drag the stage.
+    &--over {
+      cursor: pointer;
+    }
+  }
+
+  // Waiting for the drive: three dots settling, the shape of what is coming.
+  &__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--c--globals--spacings--md, 16px);
+    height: 100%;
+  }
+
+  &__loading-dots {
+    display: flex;
+    gap: 10px;
+
+    i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--fg-link);
+      animation: file-graph-settle 1.2s ease-in-out infinite;
+
+      &:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+
+      &:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+    }
+  }
+
+  &__loading-text {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    color: var(--fg-muted);
   }
 
   // Empty state: same illustration and copy sizes as an empty explorer folder.
@@ -625,6 +689,53 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     animation: file-graph-card-in 220ms ease-out;
   }
 
+  &__card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--c--globals--spacings--xs, 8px);
+    margin-bottom: 2px;
+
+    .file-graph__dot--large {
+      margin-top: 5px;
+      margin-bottom: 0;
+    }
+
+    .file-graph__close {
+      position: static;
+      flex: none;
+      margin-left: auto;
+    }
+  }
+
+  // Type, weight and age on one line: three facts nobody reads as a table.
+  &__card-line {
+    margin: 0 0 var(--c--globals--spacings--sm, 12px);
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-faint);
+  }
+
+  // Putting a file in a subject is a rare act: it waits under a word.
+  &__card-fold {
+    margin-bottom: var(--c--globals--spacings--sm, 12px);
+
+    summary {
+      font-size: var(--c--globals--font--sizes--xs, 12px);
+      color: var(--fg-muted);
+      cursor: pointer;
+
+      &:focus-visible {
+        outline: 2px solid var(--fg-link);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+    }
+
+    &[open] summary {
+      margin-bottom: 2px;
+      color: var(--fg-text);
+    }
+  }
+
   &__card {
     top: var(--c--globals--spacings--md, 16px);
     right: var(--c--globals--spacings--md, 16px);
@@ -896,6 +1007,19 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
       right: 8px;
       bottom: auto;
     }
+  }
+}
+
+@keyframes file-graph-settle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(3px);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
