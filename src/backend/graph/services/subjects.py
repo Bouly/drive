@@ -40,13 +40,6 @@ RERANK_PASSAGES = 4
 # How many questions a subject may ask. Each one is a call to the reranker,
 # and past a handful a description is prose, not a list of subjects.
 MAX_QUESTIONS = 8
-# How far behind the strongest question of a subject a question may be and
-# still count. Answers to two different questions are not on the same
-# scale, but their best answers are a fair measure of the questions
-# themselves: "abeille" was answered 0.77 by a film about bees while
-# "frelon" was answered 0.02 by a role-playing sheet ‒ and the second
-# question, normalized on its own, crowned that sheet.
-QUESTION_SHARE = 0.25
 # How long a subject that has no bar yet waits before sorting itself whole
 # again. Without it, dropping four thousand files in at once would sort
 # such a subject four thousand times.
@@ -141,13 +134,11 @@ def beginnings_of(items):
 
 def answers_to(question, texts):
     """
-    How each text answers one question, or None when the reader is guessing.
+    How each text answers one question, as raw scores and their best.
 
-    Its scores mean nothing on their own ‒ the same reader answers 0.53 to
-    "cv" and 0.07 to "curriculum vitae" on the very same two files ‒ so they
-    are brought back to the best answer of the batch, and a question whose
-    best answer sits near the middle of the batch is dropped: nothing in
-    there answers it.
+    A question whose best answer sits near the middle of the batch is
+    dropped: nothing in there answers it, and what the reader would hand back
+    is the order it happened to put a batch of strangers in.
     """
     try:
         scores = AlbertClient().rerank(question, texts)
@@ -160,7 +151,7 @@ def answers_to(question, texts):
     middle = ranked[len(ranked) // 2] if len(ranked) >= 3 else 0.0
     if best <= 0 or best < middle * settings.GRAPH_TOPIC_RERANK_STANDOUT:
         return None
-    return [score / best for score in scores], best
+    return scores, best
 
 
 def read_files(topic, items):
@@ -169,7 +160,7 @@ def read_files(topic, items):
 
     Every question of the subject is asked in turn and a file keeps its best
     answer: it belongs here if it is about any one of the things the subject
-    names.
+    names, as well as the subject's best file is about what it answers to.
     """
     return read_and_lead(topic, items)[0]
 
@@ -194,16 +185,16 @@ def read_and_lead(topic, items):
     if not answered:
         return {}, "", 0.0
 
-    # A question left far behind the strongest one is not a facet of the
-    # subject, it is a word nothing here is about: heard on its own it would
-    # crown whatever came closest to it.
+    # Every question is measured against the best answer of the strongest
+    # one, never against its own: a word nothing here is about would
+    # otherwise crown whatever came closest to it, and "abeille" described
+    # with "frelon" and "guêpe" took in a role-playing sheet at full score
+    # beside its film about bees.
     lead, _, lead_best = max(answered, key=lambda answer: answer[2])
     belonging = {}
-    for _, shares, best in answered:
-        if best < lead_best * QUESTION_SHARE:
-            continue
-        for item_id, share in zip(ids, shares, strict=True):
-            belonging[item_id] = max(belonging.get(item_id, 0.0), share)
+    for _, scores, _best in answered:
+        for item_id, score in zip(ids, scores, strict=True):
+            belonging[item_id] = min(1.0, max(belonging.get(item_id, 0.0), score / lead_best))
     return belonging, lead, lead_best * settings.GRAPH_TOPIC_RERANK_RATIO
 
 
