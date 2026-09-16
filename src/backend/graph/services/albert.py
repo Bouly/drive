@@ -128,6 +128,30 @@ class AlbertClient:
         except (KeyError, IndexError) as exc:
             raise AlbertError("Albert returned no chat answer") from exc
 
+    def rerank(self, query, documents):
+        """
+        How relevant each document is to ``query``, as a list of scores.
+
+        A reranker reads the query and the document together, where an
+        embedding compares two vectors computed apart. It is the only way to
+        answer "is this file a CV?" from the word "cv" alone: measured on a
+        real drive, cosine ranked the two CVs below unrelated files, the
+        reranker put them first by a wide margin.
+        """
+        data = self._request(
+            "POST",
+            "/rerank",
+            json={
+                "model": settings.GRAPH_ALBERT_RERANK_MODEL,
+                "query": query,
+                "documents": list(documents),
+            },
+        )
+        scores = [0.0] * len(list(documents))
+        for row in data.get("results", []):
+            scores[row["index"]] = row["relevance_score"]
+        return scores
+
     def describe_image(self, raw, mimetype):
         """
         One sentence describing a picture, in French, or "" when refused.

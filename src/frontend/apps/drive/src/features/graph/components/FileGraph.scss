@@ -781,3 +781,55 @@
     }
   }
 }
+
+// Renaming, describing or dropping a subject, from the legend itself.
+.file-graph {
+  &__subject-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--fg-link);
+    border-radius: 6px;
+  }
+
+  &__subject-area {
+    resize: vertical;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+  }
+
+  &__subject-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  &__subject-action {
+    padding: 2px 6px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fg-text);
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--fg-hover);
+    }
+
+    &--danger {
+      margin-left: auto;
+      color: var(--fg-accent);
+    }
+  }
+
+  &__subject-edit-open {
+    margin-left: 4px;
+    color: var(--fg-faint);
+    cursor: pointer;
+
+    &:hover {
+      color: var(--fg-text);
+    }
+  }
+}

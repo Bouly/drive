@@ -221,6 +221,21 @@ class Base(Configuration):
     GRAPH_ALBERT_CHAT_MODEL = values.Value(
         "openweight-medium", environ_name="GRAPH_ALBERT_CHAT_MODEL", environ_prefix=None
     )
+    # Reranker judging whether a file belongs to a subject, from the words
+    # of the subject alone.
+    GRAPH_ALBERT_RERANK_MODEL = values.Value(
+        "openweight-rerank", environ_name="GRAPH_ALBERT_RERANK_MODEL", environ_prefix=None
+    )
+    # A file is relevant to a subject when the reranker gives it at least this
+    # share of the best score, and the best score is itself worth something:
+    # measured on a real drive, what belongs scores above a quarter of the
+    # best, what does not falls an order of magnitude below.
+    GRAPH_TOPIC_RERANK_RATIO = values.FloatValue(
+        0.25, environ_name="GRAPH_TOPIC_RERANK_RATIO", environ_prefix=None
+    )
+    GRAPH_TOPIC_RERANK_FLOOR = values.FloatValue(
+        0.25, environ_name="GRAPH_TOPIC_RERANK_FLOOR", environ_prefix=None
+    )
     # How close a file must be to a subject to fall into it. Measured on a
     # real drive: what belongs sits at 0.56 and above, what does not at 0.46,
     # so the line is drawn between the two.

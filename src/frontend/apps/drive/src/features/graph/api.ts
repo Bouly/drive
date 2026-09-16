@@ -99,6 +99,11 @@ export const useSubjects = () => {
         fetchAPI("graph/topics/", { method: "POST", body: JSON.stringify(subject) }),
       ...refresh,
     }),
+    rename: useMutation({
+      mutationFn: ({ id, ...subject }: { id: string; name: string; description: string }) =>
+        fetchAPI(`graph/topics/${id}/`, { method: "PATCH", body: JSON.stringify(subject) }),
+      ...refresh,
+    }),
     remove: useMutation({
       mutationFn: (id: string) => fetchAPI(`graph/topics/${id}/`, { method: "DELETE" }),
       ...refresh,

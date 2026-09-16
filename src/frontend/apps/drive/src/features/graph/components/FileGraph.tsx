@@ -640,6 +640,8 @@ type FileGraphProps = {
 export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const subjects = useSubjects();
   const [newSubject, setNewSubject] = useState("");
+  /** The subject being edited in the panel, with the fields as typed. */
+  const [editing, setEditing] = useState<{ id: string; name: string; description: string } | null>(null);
   const { t, i18n } = useTranslation();
   /** Where each file sits, so a refetch does not shuffle the whole graph. */
   const placedRef = useRef(new Map<string, SimNode>());
@@ -1801,6 +1803,55 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             const id = `${TOPIC_FILTER_PREFIX}${i}`;
             const color =
               topic.color === null ? dotColor("other") : THEMES[theme].clusterColor(topic.color);
+            const subject = model.data.subjects[i];
+            if (subject && editing?.id === subject.id) {
+              return (
+                <form
+                  key={subject.id}
+                  className="file-graph__subject-edit"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (editing.name.trim()) {
+                      subjects.rename.mutate({ ...editing, name: editing.name.trim() });
+                      setEditing(null);
+                    }
+                  }}
+                >
+                  <input
+                    className="file-graph__subject-input"
+                    value={editing.name}
+                    aria-label={t("graph.subject_name")}
+                    onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+                  />
+                  <textarea
+                    className="file-graph__subject-input file-graph__subject-area"
+                    value={editing.description}
+                    rows={2}
+                    placeholder={t("graph.subject_describe")}
+                    aria-label={t("graph.subject_describe")}
+                    onChange={(event) => setEditing({ ...editing, description: event.target.value })}
+                  />
+                  <div className="file-graph__subject-actions">
+                    <button type="submit" className="file-graph__subject-action">
+                      {t("graph.subject_save")}
+                    </button>
+                    <button type="button" className="file-graph__subject-action" onClick={() => setEditing(null)}>
+                      {t("graph.close")}
+                    </button>
+                    <button
+                      type="button"
+                      className="file-graph__subject-action file-graph__subject-action--danger"
+                      onClick={() => {
+                        subjects.remove.mutate(subject.id);
+                        setEditing(null);
+                      }}
+                    >
+                      {t("graph.subject_delete")}
+                    </button>
+                  </div>
+                </form>
+              );
+            }
             return (
               <button
                 key={id}
@@ -1814,6 +1865,26 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 <span className="file-graph__dot" style={{ background: color }} />
                 {topic.label}
                 <span className="file-graph__legend-count">{topic.files.length}</span>
+                {subject && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="file-graph__subject-edit-open"
+                    aria-label={t("graph.subject_edit", { name: subject.name })}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setEditing({ ...subject });
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.stopPropagation();
+                        setEditing({ ...subject });
+                      }
+                    }}
+                  >
+                    ✎
+                  </span>
+                )}
               </button>
             );
           })}

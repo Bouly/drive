@@ -40,10 +40,13 @@ def indexed_file(title, vector, user=None):
 
 
 @contextmanager
-def albert(vector):
-    """Albert answering with one fixed vector for the subject's words."""
+def albert(vector, rerank=None):
+    """Albert answering with one vector for the words, and reranker scores."""
     with mock.patch("graph.services.subjects.AlbertClient") as client:
         client.return_value.embed.return_value = [vector]
+        client.return_value.rerank.side_effect = lambda query, documents: [
+            (rerank or {}).get(text.split("\n")[0], 0.0) for text in documents
+        ]
         yield client
 
 
@@ -148,3 +151,31 @@ def test_pinning_a_file_through_the_api_keeps_it_in_the_subject():
     with albert(mix({0: 1.0})):
         client.delete(f"{TOPICS}{topic.id}/files/{item.id}/")
     assert not ItemTopic.objects.filter(item=item, topic=topic).exists()
+
+
+def test_a_file_the_reranker_judges_relevant_joins_the_subject():
+    """A subject named in one word catches files cosine would leave out."""
+    user = factories.UserFactory()
+    cv = indexed_file("CV_Ahmed.pdf", mix({30: 1.0}), user)
+    other = indexed_file("Facture EDF", mix({31: 1.0}), user)
+    topic = Topic.objects.create(name="cv", creator=user)
+
+    # The words of the subject sit far from both files; the reranker reads
+    # them and puts the CV first by a wide margin.
+    with albert(mix({0: 1.0}), rerank={"CV_Ahmed.pdf": 0.53, "Facture EDF": 0.02}):
+        sort_files_into(topic)
+
+    assert set(topic.memberships.values_list("item_id", flat=True)) == {cv.id}
+    assert not ItemTopic.objects.filter(item=other).exists()
+
+
+def test_a_subject_nothing_answers_to_stays_empty():
+    """When the best score is weak, the reranker brings nobody in."""
+    user = factories.UserFactory()
+    indexed_file("Facture EDF", mix({31: 1.0}), user)
+    topic = Topic.objects.create(name="photo", creator=user)
+
+    with albert(mix({0: 1.0}), rerank={"Facture EDF": 0.19}):
+        sort_files_into(topic)
+
+    assert not topic.memberships.exists()
