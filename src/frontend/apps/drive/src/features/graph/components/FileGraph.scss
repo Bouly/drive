@@ -271,7 +271,11 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   // grey and the select drops a white box onto the stage. They are given the
   // panel's colours here rather than their own theme.
   &__display-pop {
-    .c__switch {
+    // The text of the switch sits two wrappers down, and the field around it
+    // carries a slate that vanishes on this panel: all three are told.
+    .c__switch,
+    .c__field,
+    .c__checkbox__label {
       color: var(--fg-text);
       font-size: var(--c--globals--font--sizes--xs, 12px);
     }
