@@ -1,3 +1,9 @@
+@use "sass:map";
+@use "@/styles/cunningham-tokens-sass" as *;
+
+// The width below which the floating panels give the stage its room back.
+$mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
+
 // Values follow the DSFR tokens of the ui-kit (cunningham-tokens.css):
 // gray-* / brand-* / warning-* colors, 4px and 8px radii, the t/xs/sm/md/xl
 // font scale and weights up to 600.
@@ -19,7 +25,8 @@
 
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 52px);
+  // --fg-header-height is set from the ui-kit's headerHeight by the component.
+  height: calc(100vh - var(--fg-header-height, 52px));
   min-height: 480px;
   background: var(--fg-stage);
 
@@ -38,44 +45,50 @@
     --fg-stage: var(--c--globals--colors--gray-900, #1b1b23);
   }
 
-  &__header {
+  // Finding a file and reading how many there are: the two everyday needs,
+  // floated over the top left of the stage instead of a band above it.
+  &__topbar {
+    position: absolute;
+    z-index: 5;
+    top: var(--c--globals--spacings--sm, 12px);
+    left: var(--c--globals--spacings--md, 16px);
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__counter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-muted);
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  &__counter-pending {
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    color: var(--fg-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Which filters are in force is a state of the stage, so it sits on it.
+  &__facets {
+    position: absolute;
+    z-index: 4;
+    top: 60px;
+    left: var(--c--globals--spacings--md, 16px);
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: var(--c--globals--spacings--sm, 12px);
-    padding: var(--c--globals--spacings--md, 16px) var(--c--globals--spacings--lg, 24px) var(--c--globals--spacings--sm, 12px);
-    border-bottom: 1px solid var(--c--contextuals--border--semantic--neutral--tertiary, #d3d4e0);
-    background: var(--c--globals--colors--gray-000, #fff);
-  }
-
-  &__title {
-    display: flex;
     align-items: center;
     gap: var(--c--globals--spacings--xs, 8px);
-    margin: 0;
-    font-size: var(--c--globals--font--sizes--xl, 20px);
-    font-weight: var(--c--globals--font--weights--bold, 600);
-    color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
-  }
-
-  &__hint {
-    margin: 4px 0 0;
-    max-width: 640px;
-    font-size: var(--c--globals--font--sizes--sm, 14px);
-    color: var(--c--contextuals--content--semantic--neutral--tertiary, #69697d);
-  }
-
-  &__stats {
-    margin-right: 4px;
-    font-weight: var(--c--globals--font--weights--bold, 600);
-    color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
-  }
-
-  &__toolbar {
-    display: flex;
-    align-items: center;
-    gap: var(--c--globals--spacings--xs, 8px);
+    max-width: min(560px, calc(100% - 32px));
+    padding: 6px 10px;
+    border-radius: 8px;
   }
 
   &__search-wrap {
@@ -96,14 +109,17 @@
   // Trims the web from every tie down to the closest pairs only.
   &__strength {
     display: flex;
-    align-items: center;
-    gap: var(--c--globals--spacings--xs, 8px);
+    flex-direction: column;
+    gap: 6px;
     font-size: var(--c--globals--font--sizes--t, 11px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     color: var(--fg-faint);
     white-space: nowrap;
 
     input[type="range"] {
-      width: 96px;
+      width: 100%;
       accent-color: var(--c--contextuals--content--semantic--brand--primary, #6969df);
       cursor: pointer;
     }
@@ -112,7 +128,7 @@
   &__search-icon {
     position: absolute;
     top: 50%;
-    left: 10px;
+    left: 12px;
     display: flex;
     color: var(--c--contextuals--content--semantic--neutral--tertiary, #69697d);
     transform: translateY(-50%);
@@ -122,9 +138,9 @@
   &__search {
     width: 100%;
     height: 36px;
-    padding: 0 12px 0 34px;
-    border: 1px solid var(--c--contextuals--border--semantic--neutral--secondary, #a9a9bf);
-    border-radius: var(--c--components--forms-input--border-radius, 4px);
+    padding: 0 14px 0 36px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 999px;
     font: inherit;
     font-size: var(--c--globals--font--sizes--sm, 14px);
     color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
@@ -176,6 +192,49 @@
     overflow: hidden;
   }
 
+  // Zoom, recentring and the settings that are set once and left alone.
+  &__viewtools {
+    position: absolute;
+    z-index: 4;
+    right: var(--c--globals--spacings--md, 16px);
+    bottom: var(--c--globals--spacings--md, 16px);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__display {
+    position: relative;
+    display: flex;
+  }
+
+  &__display-pop {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--sm, 12px);
+    width: 218px;
+    max-height: 60vh;
+    overflow: auto;
+    padding: var(--c--globals--spacings--sm, 12px);
+  }
+
+  &__display-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  &__zoomtools {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--3xs, 4px);
+  }
+
   &__canvas {
     display: block;
     cursor: grab;
@@ -216,7 +275,10 @@
   &__legend,
   &__card,
   &__tooltip,
-  &__callout {
+  &__callout,
+  &__counter,
+  &__facets,
+  &__display-pop {
     position: absolute;
     border: 1px solid var(--fg-panel-border);
     border-radius: 8px;
@@ -229,12 +291,91 @@
   &__legend {
     left: var(--c--globals--spacings--md, 16px);
     bottom: var(--c--globals--spacings--md, 16px);
+    z-index: 2;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    width: 202px;
     max-height: calc(100% - 32px);
+    padding: var(--c--globals--spacings--2xs, 6px);
+  }
+
+  // Folded, the panel still answers what the colors on the stage mean.
+  &__legend--closed {
+    width: auto;
+    min-width: 150px;
+    max-width: 260px;
+  }
+
+  &__legend-head {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+    width: 100%;
+    padding: 3px 4px 3px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--fg-hover);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--fg-link);
+      outline-offset: 1px;
+    }
+  }
+
+  &__legend-chevron {
+    display: flex;
+    margin-left: auto;
+    color: var(--fg-faint);
+
+    svg {
+      width: 14px;
+      height: 14px;
+    }
+  }
+
+  &__legend-rail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px 4px;
+  }
+
+  &__legend-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-height: 0;
     overflow: auto;
-    padding: var(--c--globals--spacings--xs, 8px);
+  }
+
+  // A subject and the pencil that opens it: one row, the pencil on hover.
+  &__legend-line {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+
+    .file-graph__legend-item {
+      flex: 1;
+      min-width: 0;
+    }
+
+    &:hover .file-graph__subject-edit-open,
+    .file-graph__subject-edit-open:focus-visible {
+      opacity: 1;
+    }
   }
 
   &__legend-mode {
@@ -416,8 +557,10 @@
   &__card {
     top: var(--c--globals--spacings--md, 16px);
     right: var(--c--globals--spacings--md, 16px);
+    z-index: 3;
     width: 320px;
-    max-height: calc(100% - 32px);
+    // Stops short of the view controls in the corner below it.
+    max-height: calc(100% - 96px);
     overflow: auto;
     padding: var(--c--globals--spacings--md, 16px);
     animation: file-graph-card-in 220ms ease-out;
@@ -649,9 +792,13 @@
     color: var(--fg-accent);
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: $mobile) {
     &__search-wrap {
-      width: 160px;
+      width: 150px;
+    }
+
+    &__counter {
+      display: none;
     }
 
     &__card {
@@ -663,8 +810,20 @@
       max-height: 50%;
     }
 
+    // The panel stays reachable: it just starts folded down to its dots.
     &__legend {
-      display: none;
+      left: 8px;
+      bottom: 8px;
+      max-width: calc(100% - 16px);
+      max-height: 40%;
+    }
+
+    // An open card takes the bottom of a phone screen, so the view controls
+    // move up out of it rather than sitting under it.
+    &__viewtools {
+      top: 8px;
+      right: 8px;
+      bottom: auto;
     }
   }
 }
@@ -705,45 +864,48 @@
 // Subjects the user writes: the panel that creates them, the chips that
 // put a file in one.
 .file-graph {
-  &__subject-new {
+
+  // The fields of the subject modal, stacked with the kit's own spacing.
+  &__subject-form {
     display: flex;
-    gap: 4px;
-    margin-bottom: var(--c--globals--spacings--xs, 8px);
+    flex-direction: column;
+    gap: var(--c--globals--spacings--sm, 12px);
   }
 
-  &__subject-input {
-    flex: 1;
-    min-width: 0;
-    padding: 4px 8px;
-    border: 1px solid var(--fg-panel-border);
+  // Naming a subject is rare: it waits behind a button instead of a field.
+  &__subject-create {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+    margin-top: 3px;
+    padding: 5px 6px;
+    border: 1px dashed var(--fg-panel-border);
     border-radius: 4px;
     background: transparent;
-    color: var(--fg-text);
     font: inherit;
-    font-size: var(--c--globals--font--sizes--sm, 13px);
-  }
-
-  &__subject-add {
-    flex: none;
-    width: 26px;
-    border: 1px solid var(--fg-panel-border);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--fg-text);
-    font-size: 16px;
-    line-height: 1;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-muted);
+    text-align: left;
     cursor: pointer;
 
+    svg {
+      width: 13px;
+      height: 13px;
+    }
+
     &:hover {
-      background: var(--fg-hover);
+      border-color: var(--fg-link);
+      border-style: solid;
+      color: var(--fg-text);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--fg-link);
+      outline-offset: 1px;
     }
   }
 
-  &__legend-note {
-    margin: 2px 0 0;
-    font-size: var(--c--globals--font--sizes--t, 11px);
-    color: var(--fg-faint);
-  }
+
 
   &__subjects {
     display: flex;
@@ -784,52 +946,45 @@
 
 // Renaming, describing or dropping a subject, from the legend itself.
 .file-graph {
-  &__subject-edit {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 6px;
-    border: 1px solid var(--fg-link);
-    border-radius: 6px;
-  }
 
-  &__subject-area {
-    resize: vertical;
-    font-size: var(--c--globals--font--sizes--t, 11px);
-  }
 
-  &__subject-actions {
-    display: flex;
-    gap: 4px;
-  }
 
-  &__subject-action {
-    padding: 2px 6px;
-    border: 1px solid var(--fg-panel-border);
+
+  &__subject-edit-open {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
     border-radius: 4px;
     background: transparent;
-    color: var(--fg-text);
-    font: inherit;
-    font-size: var(--c--globals--font--sizes--t, 11px);
+    color: var(--fg-faint);
+    opacity: 0;
     cursor: pointer;
+    transition: opacity 0.15s ease;
+
+    svg {
+      width: 13px;
+      height: 13px;
+    }
 
     &:hover {
       background: var(--fg-hover);
+      color: var(--fg-text);
     }
 
-    &--danger {
-      margin-left: auto;
-      color: var(--fg-accent);
+    &:focus-visible {
+      opacity: 1;
+      outline: 2px solid var(--fg-link);
+      outline-offset: 1px;
     }
   }
 
-  &__subject-edit-open {
-    margin-left: 4px;
-    color: var(--fg-faint);
-    cursor: pointer;
-
-    &:hover {
-      color: var(--fg-text);
+  // Touch has no hover, so the pencil is simply always there.
+  @media (hover: none) {
+    &__subject-edit-open {
+      opacity: 1;
     }
   }
 }
