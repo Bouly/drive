@@ -16,7 +16,6 @@ export type SimNode = {
   vy: number;
   /** Base radius in world units. */
   r: number;
-  cluster: number;
   degree: number;
   /** Set while the node is dragged: pins it in place. */
   fx: number | null;
@@ -29,11 +28,16 @@ export type SimLink = {
   /** Resting length in world units. */
   length: number;
   strength: number;
+  /**
+   * Set on a pair with nothing in common: the link then only keeps the two
+   * apart, never pulls them together, so strangers drift away from each other
+   * instead of being packed in by the crowd of faint ties.
+   */
+  spacer?: boolean;
 };
 
 const REPULSION = 2600;
 const REPULSION_MAX_DISTANCE = 420;
-const CLUSTER_PULL = 0.035;
 const CENTER_PULL = 0.004;
 const VELOCITY_DECAY = 0.4;
 const ALPHA_DECAY = 0.018;
@@ -42,16 +46,11 @@ const ALPHA_MIN = 0.004;
 export class ForceSimulation {
   readonly nodes: SimNode[];
   readonly links: SimLink[];
-  readonly centers: { x: number; y: number }[];
   alpha = 1;
 
-  readonly clusterPull: number;
-
-  constructor(nodes: SimNode[], links: SimLink[], centers: { x: number; y: number }[], clusterPull = CLUSTER_PULL) {
+  constructor(nodes: SimNode[], links: SimLink[]) {
     this.nodes = nodes;
     this.links = links;
-    this.centers = centers;
-    this.clusterPull = clusterPull;
   }
 
   /** Runs one step. Returns false once the layout has settled. */
@@ -60,7 +59,7 @@ export class ForceSimulation {
       return false;
     }
     this.alpha += (0 - this.alpha) * ALPHA_DECAY;
-    const { nodes, links, centers, alpha } = this;
+    const { nodes, links, alpha } = this;
 
     for (let i = 0; i < nodes.length; i++) {
       const a = nodes[i];
@@ -93,6 +92,9 @@ export class ForceSimulation {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      if (link.spacer && d >= link.length) {
+        continue;
+      }
       const f = ((d - link.length) / d) * link.strength * alpha;
       const fx = dx * f;
       const fy = dy * f;
@@ -103,9 +105,6 @@ export class ForceSimulation {
     }
 
     for (const node of nodes) {
-      const center = centers[node.cluster];
-      node.vx += (center.x - node.x) * this.clusterPull * alpha;
-      node.vy += (center.y - node.y) * this.clusterPull * alpha;
       node.vx -= node.x * CENTER_PULL * alpha;
       node.vy -= node.y * CENTER_PULL * alpha;
 
