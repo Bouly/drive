@@ -5,7 +5,7 @@ import { Badge, Button, Icon, Switch, Tooltip, ZoomControls, headerHeight } from
 import { ChevronDown, ChevronRight, Edit, Plus, Settings } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
 import { GraphData, GraphFile, Subject } from "../data/types";
-import { SimNode } from "../simulation";
+import { ForceSimulation, SimNode } from "../simulation";
 import {
   CATEGORY_ORDER,
   PANEL_STORAGE_KEY,
@@ -256,6 +256,20 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   );
 
   /** Nodes emphasised by the current interaction, or null when nothing is. */
+  /**
+   * The files a chosen subject puts on stage, or null when the whole drive is.
+   *
+   * Picking a subject is not a highlight: the stage is laid out again over
+   * those files alone, so the shape you read is the shape of the subject and
+   * not a corner of a bigger web. A file type keeps dimming rather than
+   * removing ‒ narrowing to "PDF" is a question about the whole drive.
+   */
+  const stagedNodes = useMemo(() => {
+    const chosen = facets.filter((f) => f.startsWith(TOPIC_FILTER_PREFIX));
+    return chosen.length ? nodesOfFacets(chosen) : null;
+  }, [facets, nodesOfFacets]);
+  const stagedRef = useRef<Set<number> | null>(null);
+
   const litNodes = useCallback((): Set<number> | null => {
     const ui = uiRef.current;
     const focus = hoverRef.current ?? ui.selected;
@@ -362,7 +376,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     screenRef.current = screen;
     // Isolating a file takes the others off the stage; every other filter
     // only pushes them back, so the shape of the whole graph is still there.
-    const floor = uiRef.current.isolated && uiRef.current.selected !== null ? 0 : 0.12;
+    const onlyOne = uiRef.current.isolated && uiRef.current.selected !== null;
+    const floor = onlyOne || stagedRef.current ? 0 : 0.12;
     const dimOf = (i: number) => floor + (1 - floor) * model.emphasis[i];
 
     // A cloud of color behind each group, so the topics of the drive read
@@ -633,9 +648,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return animating;
   }, [groupColor, litNodes, model, nodeColor]);
 
+  /** The simulation being stepped: the whole drive, or the subject on stage. */
+  const simRef = useRef(model.simulation);
+
   const frame = useCallback(() => {
     frameRef.current = null;
-    const running = model.simulation.tick();
+    const running = simRef.current.tick();
     const animating = draw();
     if (running || animating) {
       frameRef.current = requestAnimationFrame(frame);
@@ -820,6 +838,45 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     requestRender();
   }, [filters, theme, strength, matches, requestRender]);
 
+  /** What was on stage last time, so a refetch does not re-frame the camera. */
+  const stagedBeforeRef = useRef<string | null>(null);
+
+  // A subject came or went: lay the stage out again over what it holds, and
+  // frame it. The nodes are the same objects, so the files that stay keep
+  // their places and the others simply leave.
+  useEffect(() => {
+    stagedRef.current = stagedNodes && new Set(stagedNodes);
+    if (!stagedNodes) {
+      simRef.current = model.simulation;
+    } else {
+      const rank = new Map(stagedNodes.map((node, at) => [node, at]));
+      simRef.current = new ForceSimulation(
+        stagedNodes.map((node) => model.nodes[node]),
+        model.links
+          .filter((link) => rank.has(link.source) && rank.has(link.target))
+          .map((link) => ({
+            ...link,
+            source: rank.get(link.source) as number,
+            target: rank.get(link.target) as number,
+          })),
+      );
+    }
+    // Only move the camera when the staging itself changed: a refetch keeps
+    // whatever the reader was looking at, and the effect above frames new files.
+    const key = stagedNodes ? stagedNodes.join(",") : null;
+    if (key !== stagedBeforeRef.current) {
+      stagedBeforeRef.current = key;
+      if (stagedNodes) {
+        fitToNodes(stagedNodes);
+      } else {
+        // The whole drive settled long ago: warm it so the files come back.
+        model.simulation.reheat(0.3);
+        fitToNodes();
+      }
+    }
+    requestRender();
+  }, [stagedNodes, model, fitToNodes, requestRender]);
+
   // --- Filters -------------------------------------------------------------
 
   const clearFilters = useCallback(() => {
@@ -955,7 +1012,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const parallax = 1 + PARALLAX * node.z;
       node.fx = (node.fx ?? node.x) + dx / (scale * parallax);
       node.fy = (node.fy ?? node.y) + dy / (scale * parallax);
-      model.simulation.reheat(0.2);
+      simRef.current.reheat(0.2);
     } else {
       viewRef.current.ox += dx;
       viewRef.current.oy += dy;
@@ -975,7 +1032,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const node = model.nodes[gesture.node];
       node.fx = null;
       node.fy = null;
-      model.simulation.reheat(0.1);
+      simRef.current.reheat(0.1);
       if (!gesture.moved) {
         selectNode(gesture.node);
       }

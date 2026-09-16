@@ -58,6 +58,8 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   }
 
   &__counter {
+    // Sits in the topbar's flow: it shares the panel look, not the placement.
+    position: static;
     display: flex;
     align-items: center;
     gap: 6px;

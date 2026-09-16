@@ -5,7 +5,7 @@ import { ForceSimulation, SimLink, SimNode } from "../simulation";
 import { mutualCloseness } from "./clusters";
 import { colorOfName, normalize } from "./naming";
 
-/** Smallest and largest dot, in world units: the range a degree is mapped to. */
+/** Smallest and largest dot, in world units: the range recency is mapped to. */
 const NODE_MIN_RADIUS = 3;
 const NODE_MAX_RADIUS = 7;
 /** How much further apart two files of two different groups are held. */
@@ -131,10 +131,31 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     return seed / 4294967296;
   };
   const categories = data.files.map(categoryOf);
-  // A dot reads its degree against the busiest file of this drive, not
-  // against a fixed count: on a graph where everyone has twenty ties, a
-  // fixed scale saturates and every file ends up the same big blob.
-  const busiest = Math.max(1, ...degree);
+  /**
+   * The size of a dot says how recently the file was touched: the newest file
+   * on the stage is the largest, the oldest the smallest.
+   *
+   * The scale is the drive's own span rather than a fixed number of days, so
+   * the whole range is always in use ‒ on a drive filled in one afternoon the
+   * dots still separate the morning from the evening, and on one built over
+   * three years the last month still stands out. A drive touched all at once
+   * draws every dot the same size, which is the truth about it.
+   *
+   * It replaces the degree, which said how many ties a file had: that number
+   * is already drawn, by the threads leaving the dot, and it left the files
+   * somebody is working on indistinguishable from the rest. The degree is
+   * still carried on the node, for the card and the naming.
+   */
+  const times = data.files.map((file) => Date.parse(file.updated_at) || 0);
+  let newest = -Infinity;
+  let oldest = Infinity;
+  for (const time of times) {
+    newest = Math.max(newest, time);
+    oldest = Math.min(oldest, time);
+  }
+  const span = Math.max(1, newest - oldest);
+  // Square root, so recency follows the area of a dot rather than its width.
+  const freshness = (i: number) => Math.sqrt(Math.max(0, times[i] - oldest) / span);
   const nodes: SimNode[] = data.files.map((file, i) => {
     // A file already on screen keeps its place when the graph is refetched,
     // so a new file simply appears instead of everything moving.
@@ -149,7 +170,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       r:
         categories[i] === "folder"
           ? NODE_MAX_RADIUS
-          : NODE_MIN_RADIUS + (NODE_MAX_RADIUS - NODE_MIN_RADIUS) * Math.sqrt(degree[i] / busiest),
+          : NODE_MIN_RADIUS + (NODE_MAX_RADIUS - NODE_MIN_RADIUS) * freshness(i),
       degree: degree[i],
       fx: null,
       fy: null,
