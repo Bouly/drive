@@ -157,6 +157,7 @@ footer{border-top:1px solid var(--g100);margin-top:80px;padding-top:26px;font-si
   <li><a href="#infra">Infrastructure et déploiement</a></li>
   <li><a href="#pieges">Les pièges connus</a></li>
   <li><a href="#verifier">Vérifier en local</a></li>
+  <li><a href="#depuis">Depuis le 17 septembre</a></li>
  </ol>
  <div class="meta">
   Rédigé le 16 septembre 2026 en relisant le code, commit <code>7d512c83</code>.<br><br>
@@ -659,6 +660,40 @@ from graph.services.chunking import Chunk, hash_text
 item = Item.objects.filter(type="file", upload_state="ready").first()
 storage.save_chunks(item, [Chunk(0, "test", hash_text("test"), [1.0] + [0.0] * 1023)])
 storage.item_similarities([1.0] + [0.0] * 1023, Item.objects.all())</code></pre>
+
+<h2 id="depuis">9. Depuis le 17&nbsp;septembre&nbsp;2026</h2>
+<p>Cette page décrit le graphe tel qu'il était le 16&nbsp;septembre. Ce qui suit a changé le
+lendemain&nbsp;; le reste de la page reste vrai.</p>
+<ul class="b">
+ <li><strong>La couleur d'un point, ce sont vos droits</strong>, plus sa famille de format&nbsp;:
+ fichier à vous, modifiable, en lecture seule, ou atteint par un lien. Sur un drive partagé, c'est
+ la première chose à savoir d'un document qu'on vous montre. Le format reste le carré d'un dossier
+ et un filtre.</li>
+ <li><strong>La taille d'un point, c'est le jour de l'ajout</strong> du fichier au drive, plus le
+ jour de sa dernière écriture&nbsp;: un fichier renommé ce matin n'est pas un fichier nouveau.</li>
+ <li><strong>Quatre filtres</strong> se cumulent dans un panneau à eux&nbsp;: date d'ajout, auteur,
+ type, droits. Chaque famille restreint, chaque facette d'une même famille élargit. Les sujets
+ restent dans leur panneau de gauche.</li>
+ <li><strong>Les fils portent leur similarité en chiffres</strong> autour du fichier ouvert, et un
+ fil survolé nomme les deux fichiers qu'il joint. Avec un sujet en scène, un fil se voit à la
+ mesure de ce que ce sujet tient ses deux extrémités.</li>
+ <li><strong>La carte d'un fichier</strong> donne ses métadonnées, ce qu'il dit du sujet regardé
+ — trois phrases lues par Albert — et, sous chaque voisin, une phrase sur ce que les deux ont en
+ commun. Lues à l'ouverture de la carte&nbsp;; gardées une semaine, contre la date du fichier.
+ Albert injoignable&nbsp;: la carte perd ses phrases, jamais son contenu.</li>
+ <li><strong>Deux fichiers au même contenu</strong> sont nommés comme tels et la carte propose d'en
+ garder un. Sur l'empreinte des passages, nom du fichier retiré — pas sur le poids du lien, qui
+ pour deux copies d'un document de douze passages lit 0,96 et n'atteint jamais 1.</li>
+ <li><strong>La banque de démonstration</strong> (<code>graph_seed_albert</code>) écrit trente
+ documents de Légifrance et des fiches travail-emploi en trois formats — texte, tableur, page
+ scannée — répartis sur trois dossiers aux droits différents, plusieurs auteurs et dix-huit mois de
+ dates. Chaque fichier est ensuite lu par le pipeline ordinaire&nbsp;: le scan passe par l'OCR de
+ Tika comme n'importe quel dépôt. Elle se lance depuis l'onglet Actions de GitHub
+ (<em>Seed demo bank</em>), le serveur n'étant accessible qu'à la clé de déploiement.</li>
+ <li><strong>Une collection Albert se lit page par page.</strong> L'API rend une page à la fois quoi
+ que dise <code>limit</code>&nbsp;; <code>mediatech-legifrance</code> n'expose en tout que six
+ documents distincts, d'où une banque de six documents Légifrance et vingt-quatre fiches.</li>
+</ul>
 
 <footer>
  <p>Documentation du graphe des fichiers de Drive — DINUM&nbsp;×&nbsp;42, projet VISU&nbsp;DRIVE.
