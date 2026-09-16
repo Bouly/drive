@@ -1062,7 +1062,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           {t("graph.analysing_file")}
         </p>
       )}
-      {(file.status === "skipped" || file.status === "empty" || file.status === "failed") && (
+      {(file.status === "skipped" ||
+        file.status === "empty" ||
+        file.status === "failed" ||
+        file.status === "idle") && (
         <p className="file-graph__pending">{t(`graph.status_${file.status}`)}</p>
       )}
       <dl className="file-graph__meta">

@@ -66,6 +66,8 @@ from wopi.services import access as access_service
 from wopi.tasks.conversion import convert_file
 from wopi.utils import compute_wopi_launch_url, get_wopi_client_config
 
+from graph.tasks import index_item
+
 from . import permissions, serializers, utils
 from .filters import (
     ItemFilter,
@@ -680,6 +682,10 @@ class ItemViewSet(
         )
         if extension:
             self._create_file_from_template(obj, extension)
+            # A file created from a template holds no text yet; indexing it
+            # records that, so the graph does not wait on it forever.
+            if settings.GRAPH_INDEX_ON_UPLOAD:
+                transaction.on_commit(lambda: index_item.delay(obj.id))
         serializer.instance = obj
         models.ItemAccess.objects.create(
             item=obj,

@@ -12,7 +12,7 @@ type ApiGraph = {
     updated_at: string;
     creator: string;
     cluster: string | null;
-    status: "indexed" | "pending" | "empty" | "failed" | "skipped";
+    status: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
   }[];
   links: {
     source: string;

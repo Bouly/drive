@@ -26,7 +26,7 @@ export type GraphFile = {
    * analysed, drawn pulsing), "empty" (analysed, no text inside), "failed"
    * (analysis broke) or "skipped" (nothing to analyse).
    */
-  status?: "indexed" | "pending" | "empty" | "failed" | "skipped";
+  status?: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
 };
 
 export type GraphLink = {

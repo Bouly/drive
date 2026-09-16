@@ -8,7 +8,10 @@ files the user cannot read are simply left out: the graph never reveals the
 existence of a file to someone who cannot open it.
 """
 
+from datetime import timedelta
+
 from django.db.models import Exists, OuterRef, Q, Subquery
+from django.utils import timezone
 
 from rest_framework import views
 from rest_framework.response import Response
@@ -20,6 +23,9 @@ from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services.extraction import is_extractable
 
 MAX_NODES = 1000
+# A file waiting longer than this was never queued for analysis: the page
+# stops showing it as being analysed, and stops polling for it.
+PENDING_GRACE = timedelta(minutes=15)
 
 
 def graph_items(user):
@@ -61,13 +67,20 @@ def item_status(item):
     ``empty``: analysed, but it holds no text to compare (a photo).
     ``failed``: the analysis broke; it will be retried on the next save.
     ``skipped``: nothing to analyse (video, archive, file too big).
+    ``idle``: never analysed and not waiting for it either, so the page stops
+    expecting links: a file written before indexing existed, or one whose
+    analysis was never queued.
     """
     if item.indexed:
         return "indexed"
     state = item.index_state
     if state in (ItemIndex.State.EMPTY, ItemIndex.State.FAILED, ItemIndex.State.SKIPPED):
         return state
-    return "pending" if is_extractable(item) else "skipped"
+    if not is_extractable(item):
+        return "skipped"
+    if state == ItemIndex.State.PENDING or item.updated_at > timezone.now() - PENDING_GRACE:
+        return "pending"
+    return "idle"
 
 
 def serialize_item(item, topic_by_item):

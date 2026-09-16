@@ -1,5 +1,9 @@
 """Tests for GET /api/v1.0/graph/."""
 
+from datetime import timedelta
+
+from django.utils import timezone
+
 import pytest
 from rest_framework.test import APIClient
 
@@ -142,6 +146,19 @@ def test_a_file_analysed_without_text_stops_pending():
     client = APIClient()
     client.force_login(user)
     assert [f["status"] for f in client.get(URL).json()["files"]] == ["empty"]
+
+
+def test_a_file_never_queued_stops_pending_after_a_while():
+    """A file nobody ever analysed does not pulse forever."""
+    user = factories.UserFactory()
+    old_file = make_file("oublié.pdf", users=[user])
+    models.Item.objects.filter(id=old_file.id).update(
+        updated_at=timezone.now() - timedelta(hours=2)
+    )
+
+    client = APIClient()
+    client.force_login(user)
+    assert [f["status"] for f in client.get(URL).json()["files"]] == ["idle"]
 
 
 def test_files_of_a_trashed_folder_are_hidden():
