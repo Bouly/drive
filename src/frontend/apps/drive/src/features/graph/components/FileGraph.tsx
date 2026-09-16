@@ -1257,9 +1257,43 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     fitToNodes();
   }, [fitToNodes]);
 
-  const selectNode = useCallback((i: number | null) => {
-    setFilters((f) => ({ ...f, selected: i, activeLink: null, isolated: f.isolated && i !== null }));
-  }, []);
+  /**
+   * The file the card is open on, held by its id as well as by its place.
+   *
+   * The stage works in places ‒ the render loop reads arrays, not maps ‒ but
+   * a place means nothing across a refetch: deleting a duplicate shifts every
+   * file after it by one, and the card went on to describe whatever landed on
+   * that place, right down to offering to delete *its* duplicate.
+   */
+  const selectedIdRef = useRef<string | null>(null);
+
+  const selectNode = useCallback(
+    (i: number | null) => {
+      selectedIdRef.current = i === null ? null : (model.data.files[i]?.id ?? null);
+      setFilters((f) => ({ ...f, selected: i, activeLink: null, isolated: f.isolated && i !== null }));
+    },
+    [model],
+  );
+
+  // The drive changed under the open card: the file it was on keeps the card,
+  // wherever it moved to, and a file that has left closes it.
+  useEffect(() => {
+    const id = selectedIdRef.current;
+    if (id === null) {
+      return;
+    }
+    const at = model.index.get(id) ?? null;
+    // A stale hover points at a place too, and lights whatever sits there
+    // until the pointer moves again.
+    hoverRef.current = null;
+    setHovered(null);
+    setFilters((f) =>
+      f.selected === at ? f : { ...f, selected: at, activeLink: null, isolated: at === null ? false : f.isolated },
+    );
+    if (at === null) {
+      selectedIdRef.current = null;
+    }
+  }, [model]);
 
   /** Adds a facet to the stack, or takes it back out. */
   const toggleFacet = (id: string) => {
@@ -1488,7 +1522,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       return model.topics[Number(chosen[0].slice(TOPIC_FILTER_PREFIX.length))]?.label ?? "";
     }
     const typed = query.trim();
-    if (typed) {
+    // A search that is simply the file's own name is not a theme: somebody
+    // looking for a file by name gets the file, not "what this document says
+    // about note-teletravail".
+    if (typed && !normalize(selectedFile?.title ?? "").includes(normalize(typed))) {
       return typed;
     }
     const own = selectedFile?.topics?.[0];
