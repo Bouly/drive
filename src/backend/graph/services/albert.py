@@ -93,7 +93,9 @@ class AlbertClient:
                 raise AlbertError("Albert returned a vector that is not unit length")
         return vectors
 
-    def chat(self, prompt, max_tokens=40, image=None, model=None, temperature=0.2):
+    def chat(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        self, prompt, max_tokens=40, image=None, model=None, temperature=0.2
+    ):
         """
         The answer of the chat model to a single user prompt, stripped.
 

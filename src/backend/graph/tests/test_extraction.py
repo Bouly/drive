@@ -45,7 +45,7 @@ class FakeTika:
         self.error = error
         self.received = None
 
-    def extract(self, content, mimetype=None, filename=None):
+    def extract(self, content, mimetype=None, filename=None):  # pylint: disable=unused-argument
         """Read the streamed file like requests would."""
         self.received = content.read()
         if self.error:

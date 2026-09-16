@@ -18,9 +18,10 @@ export type GraphFile = {
   /**
    * Where the file stands: "indexed" (content analysed), "pending" (being
    * analysed, drawn pulsing), "empty" (analysed, no text inside), "failed"
-   * (analysis broke) or "skipped" (nothing to analyse).
+   * (analysis broke), "skipped" (nothing to analyse) or "idle" (never
+   * analysed and not queued for it).
    */
-  status?: "indexed" | "pending" | "empty" | "failed" | "skipped";
+  status?: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
 };
 
 export type GraphLink = {

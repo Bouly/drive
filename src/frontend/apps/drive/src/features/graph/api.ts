@@ -11,7 +11,7 @@ type ApiGraph = {
     size: number;
     updated_at: string;
     creator: string;
-    status: "indexed" | "pending" | "empty" | "failed" | "skipped";
+    status: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
   }[];
   links: {
     source: string;

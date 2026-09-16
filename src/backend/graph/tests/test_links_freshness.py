@@ -127,7 +127,7 @@ def test_relinking_drops_the_links_of_a_file_that_left_the_graph():
     relink_all()
 
     assert not ItemLink.objects.filter(target=gone).exists()
-    assert links_of(kept) == []
+    assert not links_of(kept)
 
 
 def test_trashing_a_file_removes_its_links_both_ways(django_capture_on_commit_callbacks):
@@ -176,7 +176,7 @@ def test_trashing_a_folder_forgets_the_files_inside(django_capture_on_commit_cal
         folder.soft_delete()
 
     assert not ItemLink.objects.filter(target=inside).exists()
-    assert links_of(outside) == []
+    assert not links_of(outside)
 
 
 def test_restoring_a_file_puts_it_back_in_the_graph(settings, django_capture_on_commit_callbacks):

@@ -83,7 +83,7 @@ def create_file(user, folder, title, text):
     return item
 
 
-def seed_documents(user, client, collection, documents, report):
+def seed_documents(user, client, collection, documents, report):  # pylint: disable=unused-argument
     """Create one file per Albert document of ``collection`` with its chunks."""
     folder = get_or_create_folder(user)
     existing = set(

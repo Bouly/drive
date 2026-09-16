@@ -233,16 +233,17 @@ def test_index_item_does_not_describe_a_huge_picture(settings):
 
 def test_picture_chunks_hold_the_name_sentence_and_keywords_together():
     """One passage, whether the model answered on one line, two, or a list."""
+    joined = "Ruche On y voit des abeilles. abeilles, insectes, nature"
     two_lines = picture_chunks("Ruche", "On y voit des abeilles.\nabeilles, insectes, nature")
-    assert [c.text for c in two_lines] == ["Ruche On y voit des abeilles. abeilles, insectes, nature"]
+    assert [c.text for c in two_lines] == [joined]
 
     one_line = picture_chunks("Ruche", "On y voit des abeilles. abeilles, insectes, nature.")
-    assert [c.text for c in one_line] == ["Ruche On y voit des abeilles. abeilles, insectes, nature."]
+    assert [c.text for c in one_line] == [f"{joined}."]
 
     listed = picture_chunks("Ruche", "- On y voit des abeilles.\n- abeilles, insectes, nature")
-    assert [c.text for c in listed] == ["Ruche On y voit des abeilles. abeilles, insectes, nature"]
+    assert [c.text for c in listed] == [joined]
 
-    assert picture_chunks("", "  ") == []
+    assert not picture_chunks("", "  ")
 
 
 def test_readable_title_drops_extension_and_dashes():

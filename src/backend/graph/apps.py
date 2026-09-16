@@ -10,4 +10,5 @@ class GraphConfig(AppConfig):
 
     def ready(self):
         """Connect the receivers keeping the links in step with the trash."""
-        from graph import signals  # noqa: PLC0415, F401  pylint: disable=unused-import
+        # pylint: disable-next=import-outside-toplevel,unused-import
+        from graph import signals  # noqa: PLC0415, F401

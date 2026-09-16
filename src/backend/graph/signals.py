@@ -24,6 +24,7 @@ def item_trashed_or_restored(sender, instance, created, update_fields=None, **kw
         return
 
     # Imported here: the tasks import the models this app is still loading.
+    # pylint: disable-next=import-outside-toplevel
     from graph.tasks import forget_from_graph, index_item  # noqa: PLC0415
 
     item_id = instance.id
