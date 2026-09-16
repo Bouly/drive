@@ -15,9 +15,10 @@ LINKS_PER_ITEM = 4
 MIN_SIMILARITY = 0.62
 # ...and a link between two different topics that strong is "unexpected".
 SURPRISE_MIN_SIMILARITY = 0.62
-# The single closest neighbour is kept from this lower similarity, so a file
-# whose content relates to something is not left alone in the graph.
+# A file with no strong neighbour keeps its closest ones from this lower
+# similarity, so it is never alone and its few relatives still show.
 NEAREST_MIN_SIMILARITY = 0.5
+NEAREST_LINKS = 2
 
 
 def live_files():
@@ -53,7 +54,7 @@ def semantic_links(item, candidates, topic_of=None):
     neighbours = [
         neighbour
         for rank, neighbour in enumerate(neighbours)
-        if rank == 0 or neighbour.similarity >= MIN_SIMILARITY
+        if rank < NEAREST_LINKS or neighbour.similarity >= MIN_SIMILARITY
     ]
     if topic_of is None:
         ids = [item.id, *(neighbour.item_id for neighbour in neighbours)]
