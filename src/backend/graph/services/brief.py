@@ -20,6 +20,7 @@ rather than showing an error where a sentence was promised.
 
 import hashlib
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from django.core.cache import cache
@@ -88,16 +89,27 @@ def link_prompt(text, other, subject):
     return (
         f"Premier document :\n{text}\n\n"
         f"Second document :\n{other}\n\n"
-        f"En une seule phrase de vingt-cinq mots au maximum, dis ce que ces deux documents "
-        f"ont en commun{theme}. Commence directement par le point commun, sans « les deux "
-        f"documents », sans introduction et sans reprendre les titres."
+        f"Dis ce que ces deux documents ont en commun{theme}. Ta réponse est une seule "
+        f"phrase courte et rien d'autre : pas d'introduction, pas de titre, pas de "
+        f"commentaire sur ta réponse. Commence directement par le point commun."
     )
+
+
+# What a model adds when it has been told how long to be: "…imposée. (25 mots)".
+# Asking it not to does not always take, and it is the last thing a reader
+# needs on every line of a card.
+COUNTED = re.compile(r"\s*[(\[]\s*\d+\s*(mots?|words?|caract[eè]res?)\s*[)\]]\s*$", re.IGNORECASE)
+
+
+def clean(answer):
+    """The answer without the note the model made about its own length."""
+    return COUNTED.sub("", answer.strip()).strip().strip('"«» ')
 
 
 def ask(prompt, tokens):
     """Albert's answer to one prompt, or "" when it cannot be reached."""
     try:
-        return AlbertClient(timeout=TIMEOUT).chat(prompt, max_tokens=tokens)
+        return clean(AlbertClient(timeout=TIMEOUT).chat(prompt, max_tokens=tokens))
     except AlbertError as exc:
         logger.warning("Albert could not answer a brief: %s", exc)
         return ""
@@ -114,6 +126,11 @@ def cached(key, prompt, tokens):
     return answer
 
 
+# Bumped whenever the prompts change: answers are kept a week, and a card
+# would otherwise keep answering in the old wording until they expire.
+PROMPTS = 2
+
+
 def key_for(kind, subject, *items):
     """
     A cache key for one answer, tied to the files it was read from.
@@ -122,7 +139,7 @@ def key_for(kind, subject, *items):
     and its old summary must not survive it.
     """
     stamp = "|".join(f"{item.id}@{item.updated_at.isoformat()}" for item in items)
-    digest = hashlib.sha256(f"{kind}|{subject}|{stamp}".encode()).hexdigest()[:32]
+    digest = hashlib.sha256(f"{PROMPTS}|{kind}|{subject}|{stamp}".encode()).hexdigest()[:32]
     return f"graph-brief-{digest}"
 
 

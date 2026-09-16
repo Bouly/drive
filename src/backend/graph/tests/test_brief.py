@@ -113,6 +113,19 @@ def test_brief_survives_albert_being_down():
     assert answer["links"] == [{"id": str(close.id), "sentence": ""}]
 
 
+def test_a_model_note_about_its_own_length_is_dropped():
+    """"…imposée. (25 mots)" is not something a card should carry."""
+    user = factories.UserFactory()
+    item = make_file(user, "Fiche", ["Un texte."])
+    close = make_file(user, "Voisine", ["Un autre texte."])
+
+    with mock.patch("graph.services.brief.AlbertClient") as client:
+        client.return_value.chat.return_value = "Les deux portent sur le préavis. (25 mots)"
+        answer = brief(item, [close], subject="préavis")
+
+    assert answer["links"][0]["sentence"] == "Les deux portent sur le préavis."
+
+
 def test_brief_endpoint_only_reads_files_the_user_can_open(client):
     """A neighbour the reader cannot open is dropped, not summarised."""
     user = factories.UserFactory()
