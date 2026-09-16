@@ -136,18 +136,24 @@ def louvain(size, edges, resolution=1.0):
 def communities(items):
     """Groups of related items; an item related to nothing stays alone."""
     position = {str(item.id): i for i, item in enumerate(items)}
-    close, best = {}, {}
+    # How close two files are is one number, the better of the two points of
+    # view: a long document and a short one rarely see each other the same way.
+    close = {}
     for i, item in enumerate(items):
         vector = storage.item_vector(item)
         if vector is None:
             continue
-        neighbours = storage.nearest_items(
+        for neighbour in storage.nearest_items(
             vector, items, k=NEIGHBOURS, min_similarity=WEAK_FLOOR, exclude_item=item
-        )
-        if neighbours:
-            best[i] = position[neighbours[0].item_id]
-        for neighbour in neighbours:
-            close[(i, position[neighbour.item_id])] = neighbour.similarity
+        ):
+            pair = (min(i, position[neighbour.item_id]), max(i, position[neighbour.item_id]))
+            close[pair] = max(close.get(pair, 0), neighbour.similarity)
+
+    best, best_similarity = {}, {}
+    for (i, j), similarity in close.items():
+        for source, target in ((i, j), (j, i)):
+            if similarity > best_similarity.get(source, 0):
+                best[source], best_similarity[source] = target, similarity
 
     edges = {}
     for (i, j), similarity in close.items():
