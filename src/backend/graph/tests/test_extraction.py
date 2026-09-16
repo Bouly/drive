@@ -56,8 +56,9 @@ class FakeTika:
 class FakeTranscriber:
     """Answers a fixed speech and records the file it was given."""
 
-    def __init__(self, text):
+    def __init__(self, text, client=None):
         self.text = text
+        self.client = client
         self.received = None
 
     def transcribe(self, path):
@@ -110,6 +111,40 @@ def test_extract_text_video_transcription_errors_are_raised():
 
     with pytest.raises(ExtractionError):
         extract_text(item, extractor=FakeTika("titre"), transcriber=transcriber)
+
+
+def test_a_silent_video_is_described_from_one_of_its_frames():
+    """A video nobody speaks in is placed by what it shows, like a photo."""
+    item = make_file("video/mp4", b"fake video", filename="abeilles.mp4")
+    client = mock.Mock()
+    client.describe_image.return_value = "Un essaim d'abeilles sur un cadre de ruche."
+
+    def run(command, **kwargs):  # pylint: disable=unused-argument
+        if command[0] == "ffprobe":
+            return completed("12.0\n")
+        Path(command[-1]).write_bytes(b"jpeg bytes")
+        return completed()
+
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=run):
+        text = extract_text(
+            item, extractor=FakeTika("abeilles"), transcriber=FakeTranscriber("", client=client)
+        )
+
+    assert text == "Un essaim d'abeilles sur un cadre de ruche.\n\nabeilles"
+    assert client.describe_image.call_args[0][0] == b"jpeg bytes"
+
+
+def test_a_video_that_speaks_is_not_looked_at():
+    """Speech says what the video is about: no frame travels to the model."""
+    item = make_file("video/mp4", b"fake video", filename="reunion.mp4")
+    client = mock.Mock()
+
+    text = extract_text(
+        item, extractor=FakeTika(""), transcriber=FakeTranscriber("Bonjour à tous.", client=client)
+    )
+
+    assert text == "Bonjour à tous."
+    client.describe_image.assert_not_called()
 
 
 def test_extract_text_document_streams_the_file_to_tika():

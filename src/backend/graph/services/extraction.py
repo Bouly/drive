@@ -25,7 +25,7 @@ import requests
 
 from core import models
 
-from graph.services.albert import AlbertClient
+from graph.services.albert import AlbertClient, AlbertError
 
 logger = logging.getLogger(__name__)
 
@@ -209,12 +209,68 @@ def _media_metadata(path, item, extractor):
         return ""
 
 
+def _seconds_in(path):
+    """Half the length of the file, in seconds, or 1 when it cannot be read."""
+    try:
+        output = _run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path]
+        )
+        return max(1.0, float(output.strip()) / 2)
+    except (ExtractionError, ValueError):
+        return 1.0
+
+
+def describe_frame(path, item, client=None):
+    """
+    What is seen in the middle of a silent video, in one sentence, or "".
+
+    A video that says nothing is nothing to the graph: the bee video of the
+    demo drive carried its filename and "Sous-titrage ST' 501", so it sat
+    among files it had no relation to. One frame, read by the same vision
+    model as a photo, gives it its subject back.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".jpg") as frame:
+        try:
+            _run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(_seconds_in(path)),
+                    "-i",
+                    path,
+                    "-frames:v",
+                    "1",
+                    # Wide enough for the model to read the scene, small
+                    # enough to travel in the request.
+                    "-vf",
+                    "scale=768:-2",
+                    frame.name,
+                ]
+            )
+            raw = Path(frame.name).read_bytes()
+        except (ExtractionError, OSError) as exc:
+            logger.warning("No frame taken from item %s: %s", item.id, exc)
+            return ""
+        if not raw:
+            return ""
+        try:
+            return (client or AlbertClient()).describe_image(raw, "image/jpeg")
+        except AlbertError as exc:
+            logger.warning("Albert could not describe the frame of item %s: %s", item.id, exc)
+            return ""
+
+
 def _extract_media(path, item, extractor, transcriber):
     """Metadata from Tika and speech from Albert, obtained side by side."""
     with ThreadPoolExecutor(max_workers=2) as pool:
         metadata = pool.submit(_media_metadata, path, item, extractor)
         speech = pool.submit(transcriber.transcribe, path)
-        parts = (metadata.result().strip(), speech.result().strip())
+        parts = [metadata.result().strip(), speech.result().strip()]
+    if not parts[1] and (item.mimetype or "").startswith("video/"):
+        # Nobody speaks: what the video shows is all it has to say. The
+        # description comes first, so it survives the cap on long texts.
+        parts.insert(0, describe_frame(path, item, getattr(transcriber, "client", None)))
     return "\n\n".join(part for part in parts if part)
 
 
