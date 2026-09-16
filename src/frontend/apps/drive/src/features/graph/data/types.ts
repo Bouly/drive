@@ -41,9 +41,17 @@ export type GraphLink = {
   reason?: string;
 };
 
+/** The folder a graph is restricted to, when it is not the whole drive. */
+export type GraphScope = {
+  id: string;
+  title: string;
+};
+
 export type GraphData = {
   files: GraphFile[];
   links: GraphLink[];
   /** The subjects of the user reading the graph; empty until they write one. */
   subjects: Subject[];
+  /** The folder being drawn, or null for the whole drive. */
+  scope: GraphScope | null;
 };

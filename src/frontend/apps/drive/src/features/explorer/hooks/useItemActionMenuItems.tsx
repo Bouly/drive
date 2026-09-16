@@ -16,6 +16,7 @@ import {
   Info,
   Trash,
 } from "@gouvfr-lasuite/ui-components/icons";
+import { GraphIcon } from "@/features/ui/components/icon/GraphIcon";
 import { t } from "i18next";
 import {
   itemToTreeItem,
@@ -235,6 +236,19 @@ export const useItemActionMenuItems = ({
         callback: () => {
           setRightPanelForcedItem(item);
           setRightPanelOpen(true);
+        },
+      },
+      {
+        icon: <GraphIcon />,
+        label: t("explorer.item.actions.open_in_graph"),
+        // Only a folder holds files to draw, and only one we can read.
+        isHidden:
+          item.type !== ItemType.FOLDER || !item.abilities?.retrieve || minimal,
+        callback: () => {
+          router.push({
+            pathname: "/explorer/graph",
+            query: { folder: effectiveItemId },
+          });
         },
       },
       { type: "separator" },

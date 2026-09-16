@@ -74,7 +74,7 @@ def test_empty_graph():
     client.force_login(user)
     response = client.get(URL)
     assert response.status_code == 200
-    assert response.json() == {"files": [], "links": [], "topics": []}
+    assert response.json() == {"files": [], "links": [], "topics": [], "scope": None}
 
 
 def test_graph_only_shows_readable_files_and_their_links():
@@ -249,3 +249,135 @@ def test_trashed_files_are_hidden():
     client = APIClient()
     client.force_login(user)
     assert client.get(URL).json()["files"] == []
+
+
+def test_folder_scope_holds_only_what_the_folder_holds():
+    """?folder= draws the files of that folder, at any depth, and nothing else."""
+    user = factories.UserFactory()
+    folder = factories.ItemFactory(
+        title="dossier", type=models.ItemTypeChoices.FOLDER, users=[user]
+    )
+    sub = factories.ItemFactory(parent=folder, type=models.ItemTypeChoices.FOLDER, users=[user])
+    child = with_chunk(
+        factories.ItemFactory(
+            parent=folder,
+            title="enfant",
+            type=models.ItemTypeChoices.FILE,
+            update_upload_state=models.ItemUploadStateChoices.READY,
+            users=[user],
+        )
+    )
+    grandchild = with_chunk(
+        factories.ItemFactory(
+            parent=sub,
+            title="petit-enfant",
+            type=models.ItemTypeChoices.FILE,
+            update_upload_state=models.ItemUploadStateChoices.READY,
+            users=[user],
+        )
+    )
+    with_chunk(make_file("dehors", users=[user]))
+
+    client = APIClient()
+    client.force_login(user)
+    data = client.get(URL, {"folder": str(folder.id)}).json()
+
+    assert {f["id"] for f in data["files"]} == {str(child.id), str(grandchild.id)}
+    # The folder frames the drawing, it is not drawn itself.
+    assert str(folder.id) not in {f["id"] for f in data["files"]}
+    assert data["scope"] == {"id": str(folder.id), "title": "dossier"}
+
+
+def test_folder_scope_drops_the_links_that_leave_it():
+    """A tie to a file outside the folder is left out rather than drawn to nothing."""
+    user = factories.UserFactory()
+    folder = factories.ItemFactory(type=models.ItemTypeChoices.FOLDER, users=[user])
+    inside = with_chunk(
+        factories.ItemFactory(
+            parent=folder,
+            type=models.ItemTypeChoices.FILE,
+            update_upload_state=models.ItemUploadStateChoices.READY,
+            users=[user],
+        )
+    )
+    sibling = with_chunk(
+        factories.ItemFactory(
+            parent=folder,
+            type=models.ItemTypeChoices.FILE,
+            update_upload_state=models.ItemUploadStateChoices.READY,
+            users=[user],
+        )
+    )
+    outside = with_chunk(make_file("dehors", users=[user]))
+    storage.replace_links(
+        inside,
+        [
+            {"target": sibling, "weight": 0.8, "kind": "semantic"},
+            {"target": outside, "weight": 0.9, "kind": "semantic"},
+        ],
+    )
+
+    client = APIClient()
+    client.force_login(user)
+    data = client.get(URL, {"folder": str(folder.id)}).json()
+
+    assert [(link["source"], link["target"]) for link in data["links"]] == [
+        (str(inside.id), str(sibling.id))
+    ]
+
+
+def test_folder_scope_of_an_unreadable_folder_is_a_404():
+    """A folder the user cannot read is answered as a missing one."""
+    user = factories.UserFactory()
+    folder = factories.ItemFactory(type=models.ItemTypeChoices.FOLDER)
+    client = APIClient()
+    client.force_login(user)
+    assert client.get(URL, {"folder": str(folder.id)}).status_code == 404
+
+
+def test_folder_scope_of_a_file_is_a_404():
+    """Only a folder frames a graph; a file has nothing to hold."""
+    user = factories.UserFactory()
+    item = with_chunk(make_file("fichier", users=[user]))
+    client = APIClient()
+    client.force_login(user)
+    assert client.get(URL, {"folder": str(item.id)}).status_code == 404
+
+
+def test_folder_scope_of_a_trashed_folder_is_a_404():
+    """A folder in the trash frames nothing."""
+    user = factories.UserFactory()
+    folder = factories.ItemFactory(type=models.ItemTypeChoices.FOLDER, users=[user])
+    folder.soft_delete()
+    client = APIClient()
+    client.force_login(user)
+    assert client.get(URL, {"folder": str(folder.id)}).status_code == 404
+
+
+def test_folder_scope_of_a_nonsense_id_is_a_404():
+    """An id that is not even a uuid gets the same answer as a missing folder."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    assert client.get(URL, {"folder": "pas-un-uuid"}).status_code == 404
+
+
+def test_no_folder_draws_the_whole_drive():
+    """Without the parameter the graph is the drive, folder or not."""
+    user = factories.UserFactory()
+    folder = factories.ItemFactory(type=models.ItemTypeChoices.FOLDER, users=[user])
+    inside = with_chunk(
+        factories.ItemFactory(
+            parent=folder,
+            type=models.ItemTypeChoices.FILE,
+            update_upload_state=models.ItemUploadStateChoices.READY,
+            users=[user],
+        )
+    )
+    outside = with_chunk(make_file("dehors", users=[user]))
+
+    client = APIClient()
+    client.force_login(user)
+    data = client.get(URL).json()
+    assert {f["id"] for f in data["files"]} == {str(inside.id), str(outside.id)}
+    assert data["scope"] is None

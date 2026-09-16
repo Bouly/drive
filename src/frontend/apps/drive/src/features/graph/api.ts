@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAPI } from "@/features/api/fetchApi";
+import { APIError } from "@/features/api/APIError";
 import { GraphData } from "./data/types";
 
 /** Shape returned by GET /api/v1.0/graph/ (see backend graph/api.py). */
@@ -23,6 +24,7 @@ type ApiGraph = {
     evidence?: string;
   }[];
   topics: { id: string; name: string; description: string }[];
+  scope: { id: string; title: string } | null;
 };
 
 /** Converts the API payload to the dataset shape the graph component draws. */
@@ -46,6 +48,7 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
     reason: link.evidence || undefined,
   })),
   subjects: api.topics,
+  scope: api.scope ?? null,
 });
 
 /**
@@ -64,22 +67,28 @@ const mergeReciprocalLinks = (links: ApiGraph["links"]) => {
   return [...byPair.values()];
 };
 
-export const fetchGraph = async (): Promise<GraphData> => {
-  const response = await fetchAPI("graph/");
+/** ``folderId`` draws that folder alone, at any depth; undefined draws the drive. */
+export const fetchGraph = async (folderId?: string): Promise<GraphData> => {
+  const response = await fetchAPI("graph/", folderId ? { params: { folder: folderId } } : undefined);
   return toGraphData((await response.json()) as ApiGraph);
 };
 
 /** How often the graph is refetched while files are still being analysed. */
 const PENDING_POLL_MS = 4000;
 
-export const useGraph = () =>
+export const useGraph = (folderId?: string, enabled = true) =>
   useQuery({
-    queryKey: ["graph"],
-    queryFn: fetchGraph,
+    enabled,
+    // The folder is part of the key: leaving one must not read the cached
+    // graph of the whole drive, and the other way round.
+    queryKey: ["graph", folderId ?? null],
+    queryFn: () => fetchGraph(folderId),
     // Always refetch when the page opens: a file trashed or uploaded a moment
     // ago must show up right away. The cached graph is drawn meanwhile.
     staleTime: 0,
     refetchOnMount: "always",
+    // A missing folder is an answer, not a hiccup: asking again changes nothing.
+    retry: (count, error) => !(error instanceof APIError && error.code === 404) && count < 3,
     // While files are being analysed, poll so their links appear on their own.
     refetchInterval: ({ state }) =>
       state.data?.files.some((file) => file.status === "pending") ? PENDING_POLL_MS : false,
@@ -91,6 +100,7 @@ export const useGraph = () =>
  */
 export const useSubjects = () => {
   const queryClient = useQueryClient();
+  // Every graph is invalidated, the scoped ones too: they share the subjects.
   const refresh = { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["graph"] }) };
 
   return {

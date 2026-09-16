@@ -8,15 +8,22 @@ are. A file appears as soon as it is uploaded, with a status saying whether
 its content is analysed yet. Links to files the user cannot read are simply
 left out: the graph never reveals the existence of a file to someone who
 cannot open it.
+
+``?folder=<id>`` draws one folder instead of the whole drive: the files it
+holds at any depth, and only the links between those. A tie to a file left
+outside the folder is dropped rather than drawn towards nothing, so the
+answer reads as a drive of its own.
 """
 
 from collections import Counter
 from datetime import timedelta
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from rest_framework import views
+from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
 from core import models
@@ -38,13 +45,43 @@ LINKS_SENT_PER_FILE = 10
 PENDING_GRACE = timedelta(minutes=15)
 
 
-def graph_items(user):
+def scope_folder(user, folder_id):
+    """
+    The folder the graph is restricted to, or None for the whole drive.
+
+    A folder the user cannot read is answered as a missing one: whether it
+    exists is itself something the graph must not reveal.
+    """
+    if not folder_id:
+        return None
+    try:
+        folder = (
+            readable_by(user)
+            .filter(
+                id=folder_id,
+                type=models.ItemTypeChoices.FOLDER,
+                ancestors_deleted_at__isnull=True,
+            )
+            .first()
+        )
+    except (DjangoValidationError, ValueError) as exc:
+        # Not even an id: the same answer as an id pointing at nothing.
+        raise NotFound("No such folder.") from exc
+    if folder is None:
+        raise NotFound("No such folder.")
+    return folder
+
+
+def graph_items(user, root=None):
     """
     The items the user can read that belong in the graph.
 
     Every readable file is there, even one whose text is not analysed yet:
     it shows up as soon as it is uploaded and gains its links afterwards.
     Items of another type only appear once they carry chunks or links.
+
+    ``root`` narrows the graph to what that folder holds, at any depth. The
+    folder itself stays out: it is the frame of the drawing, not a node of it.
     """
     in_graph = (
         Q(type=models.ItemTypeChoices.FILE)
@@ -52,8 +89,14 @@ def graph_items(user):
         | Q(Exists(ItemLink.objects.filter(source=OuterRef("pk"))))
         | Q(Exists(ItemLink.objects.filter(target=OuterRef("pk"))))
     )
+    items = readable_by(user)
+    if root is not None:
+        # The materialised path answers in one index scan, so a folder ten
+        # levels down costs what the whole drive costs. The folder itself is
+        # left out: it frames the drawing rather than sitting in it.
+        items = items.filter(path__descendants=root.path).exclude(id=root.id)
     return (
-        readable_by(user)
+        items
         # Not filter_non_deleted: files inside a trashed folder only carry
         # ancestors_deleted_at, and must leave the graph with their folder.
         .filter(ancestors_deleted_at__isnull=True)
@@ -145,8 +188,9 @@ class GraphView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        """GET /api/v1.0/graph/"""
-        items = list(graph_items(request.user))
+        """GET /api/v1.0/graph/?folder=<id>"""
+        folder = scope_folder(request.user, request.query_params.get("folder"))
+        items = list(graph_items(request.user, root=folder))
         item_ids = {item.id for item in items}
 
         topics = Topic.objects.filter(creator=request.user)
@@ -173,5 +217,9 @@ class GraphView(views.APIView):
                     {"id": str(topic.id), "name": topic.name, "description": topic.description}
                     for topic in topics
                 ],
+                # What the page puts in its title, and what it offers to leave.
+                "scope": (
+                    {"id": str(folder.id), "title": folder.title} if folder is not None else None
+                ),
             }
         )
