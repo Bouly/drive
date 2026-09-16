@@ -637,38 +637,64 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       cloud.count++;
       clouds.set(cluster, cloud);
     });
+    /**
+     * How spread the stage itself is: the mean distance of its files from
+     * their middle. A subject is a place on the stage only if its own files
+     * hold together noticeably tighter than that ‒ and until a subject is
+     * chosen, its files are scattered among everyone else's.
+     */
+    let stageX = 0;
+    let stageY = 0;
+    let drawnCount = 0;
+    screen.forEach((node, i) => {
+      if (node.intro > 0 && onStage(i)) {
+        stageX += node.sx;
+        stageY += node.sy;
+        drawnCount++;
+      }
+    });
+    const stageCx = drawnCount ? stageX / drawnCount : 0;
+    const stageCy = drawnCount ? stageY / drawnCount : 0;
+    let stageSpread = 0;
+    screen.forEach((node, i) => {
+      if (node.intro > 0 && onStage(i)) {
+        stageSpread += Math.hypot(node.sx - stageCx, node.sy - stageCy);
+      }
+    });
+    stageSpread = drawnCount ? stageSpread / drawnCount : 1;
+
     const centres = new Map<number, { x: number; y: number; lit: number }>();
-    const reach = Math.hypot(width, height);
     for (const [cluster, cloud] of clouds) {
       if (cloud.count < 2) {
         continue;
       }
       const cx = cloud.x / cloud.count;
       const cy = cloud.y / cloud.count;
-      let radius = 0;
+      let spread = 0;
+      let held = 0;
       screen.forEach((node, i) => {
-        if (model.clusters[i] === cluster) {
-          radius = Math.max(radius, Math.hypot(node.sx - cx, node.sy - cy) + node.sr * 6);
+        if (model.clusters[i] === cluster && node.intro > 0 && onStage(i)) {
+          spread += Math.hypot(node.sx - cx, node.sy - cy);
+          held++;
         }
       });
+      spread = held ? spread / held : 0;
       /**
-       * A cloud says where a subject sits. A subject whose files are spread
-       * over the whole stage does not sit anywhere, and its cloud then says
-       * nothing while painting everything: four of them at once left the
-       * stage a wash of colour with its files barely visible through it, and
-       * each name floating over empty space in the middle.
-       *
-       * So a subject fades as it spreads, and is named on the stage only
-       * while its cloud still stands for a place. Nothing is lost by it: the
-       * panel lists every subject, whatever shape it is in, and choosing one
-       * lays the stage out over its files alone ‒ which is exactly when the
-       * cloud tightens and comes back.
+       * Four subjects whose files are scattered used to paint four clouds
+       * the size of the stage, one over the other: the drive came out a wash
+       * of magenta with its files barely visible through it, and the four
+       * names floating one under the other in the middle, each over empty
+       * space. A cloud is drawn where a subject *is*, so it is drawn only
+       * while the subject is somewhere: tighter than the drive as a whole,
+       * or alone on stage because the reader chose it ‒ which is exactly
+       * when the stage is laid out over its files and it becomes a place.
        */
-      const tight = Math.max(0, 1 - (radius / reach) * 2.2);
-      if (tight < 0.05) {
+      const tight = staged ? 1 : Math.max(0, 1 - spread / Math.max(1, stageSpread * 0.7));
+      if (tight < 0.08) {
         continue;
       }
       centres.set(cluster, { x: cx, y: cy, lit: cloud.lit / cloud.count });
+      const radius = Math.max(60, spread * 2.2);
       const rgb = hexToRgb(theme.clusterColor(model.topics[cluster].color));
       const peak = (theme.glow ? 0.3 : 0.2) * (cloud.lit / cloud.count) * tight;
       const cloudGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
