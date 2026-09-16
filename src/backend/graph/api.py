@@ -10,6 +10,7 @@ left out: the graph never reveals the existence of a file to someone who
 cannot open it.
 """
 
+from collections import Counter
 from datetime import timedelta
 
 from django.db.models import Exists, OuterRef, Q, Subquery
@@ -27,6 +28,10 @@ from graph.services.extraction import is_extractable
 # The graph draws at most this many files. Measured: 4 000 nodes cost 2.8 MB
 # of JSON (400 KB once nginx compresses it) and 10 ms a frame in the browser.
 MAX_NODES = 4000
+# How many neighbours of a file travel to the page. The storage keeps more
+# (GRAPH_LINKS_PER_FILE); beyond ten the page draws threads nobody reads and
+# the answer doubles in size.
+LINKS_SENT_PER_FILE = 10
 # A file waiting longer than this was never queued for analysis: the page
 # stops showing it as being analysed, and stops polling for it.
 PENDING_GRACE = timedelta(minutes=15)
@@ -103,6 +108,36 @@ def serialize_item(item, topics_by_item):
     }
 
 
+def serialize_links(item_ids):
+    """
+    The links between those files, the closest ones of each.
+
+    Read as plain rows rather than model instances: on a drive of 1 700 files
+    that is 0.3 second instead of 1.4 for the same answer.
+    """
+    rows = (
+        ItemLink.objects.filter(source_id__in=item_ids, target_id__in=item_ids)
+        .order_by("-weight")
+        .values_list("source_id", "target_id", "weight", "kind", "evidence")
+    )
+    sent = Counter()
+    links = []
+    for source, target, weight, kind, evidence in rows.iterator(chunk_size=2000):
+        if sent[source] >= LINKS_SENT_PER_FILE:
+            continue
+        sent[source] += 1
+        link = {
+            "source": str(source),
+            "target": str(target),
+            "weight": weight,
+            "kind": kind,
+        }
+        if evidence:
+            link["evidence"] = evidence
+        links.append(link)
+    return links
+
+
 class GraphView(views.APIView):
     """Nodes and weighted links of the current user's file graph."""
 
@@ -126,25 +161,10 @@ class GraphView(views.APIView):
                 }
             )
 
-        links = ItemLink.objects.filter(source_id__in=item_ids, target_id__in=item_ids).order_by(
-            "-weight"
-        )
-
         return Response(
             {
                 "files": [serialize_item(item, topics_by_item) for item in items],
-                "links": [
-                    {
-                        "source": str(link.source_id),
-                        "target": str(link.target_id),
-                        "weight": link.weight,
-                        "kind": link.kind,
-                        # The generic reason is rebuilt from the weight by the
-                        # page; only a quoted passage is worth its bytes.
-                        "evidence": link.evidence,
-                    }
-                    for link in links
-                ],
+                "links": serialize_links(item_ids),
                 "topics": [
                     {"id": str(topic.id), "name": topic.name, "description": topic.description}
                     for topic in topics

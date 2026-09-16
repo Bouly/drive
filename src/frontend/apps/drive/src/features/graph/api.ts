@@ -19,7 +19,7 @@ type ApiGraph = {
     target: string;
     weight: number;
     kind: "semantic" | "lexical" | "copy" | "folder";
-    evidence: string;
+    evidence?: string;
   }[];
   topics: { id: string; name: string; description: string }[];
 };
