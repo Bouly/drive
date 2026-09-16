@@ -15,13 +15,12 @@ outside the folder is dropped rather than drawn towards nothing, so the
 answer reads as a drive of its own.
 """
 
+import hashlib
 from collections import Counter
 from datetime import timedelta
 
-from django.contrib.postgres.aggregates import StringAgg
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Exists, OuterRef, Q, Subquery
-from django.db.models.functions import MD5
 from django.utils import timezone
 
 from rest_framework import views
@@ -33,6 +32,7 @@ from core.api import permissions
 
 from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services.brief import MAX_NEIGHBOURS, brief
+from graph.services.chunking import hash_text, readable_title
 from graph.services.extraction import is_extractable
 from graph.services.scope import readable_by
 
@@ -165,7 +165,12 @@ def graph_items(user, root=None):
     )
 
 
-def content_keys(item_ids):
+# How much of a file's first passage the fingerprint reads. Passages are cut
+# at GRAPH_CHUNK_WORDS, which is well under this: it is a bound, not a cut.
+CONTENT_CHARS = 8000
+
+
+def content_keys(items):
     """
     A fingerprint of each file's content, as ``{item_id: key}``.
 
@@ -173,19 +178,38 @@ def content_keys(item_ids):
     "the same document twice" means ‒ the weight of a link cannot say it. A
     link's weight is the whole of one file against the nearest passage of the
     other, so two copies of a twelve-passage document sit at 0.96 and never
-    reach 1, while two one-line files that merely agree do. The card offers to
-    drop a copy, which is not something to offer on a resemblance.
+    reach 1. The card offers to drop a copy, which is not something to offer
+    on a resemblance.
 
-    Built by Postgres in one pass, from the hashes the chunks already carry:
-    reading every hash back to fold it here costs ten megabytes on a large
-    drive, for an answer of one line per file.
+    The file's name is taken back out of its first passage before hashing.
+    The pipeline reads a file as "name, then text", so that a photo named
+    after what it shows is placed by that name when it holds nothing else ‒
+    but here the name is exactly what has to go: the same note saved under
+    two names is the duplicate a reader actually has, and with the name left
+    in, the two came out as different documents.
     """
-    rows = (
-        ItemChunk.objects.filter(item_id__in=item_ids)
-        .values("item_id")
-        .annotate(key=MD5(StringAgg("text_hash", delimiter=",", order_by="text_hash")))
+    heads = dict(
+        ItemChunk.objects.filter(item__in=items, index=0).values_list("item_id", "text")
     )
-    return {row["item_id"]: row["key"] for row in rows}
+    tails = {}
+    for item_id, text_hash in (
+        ItemChunk.objects.filter(item__in=items, index__gt=0)
+        .order_by("item_id", "text_hash")
+        .values_list("item_id", "text_hash")
+    ):
+        tails.setdefault(item_id, []).append(text_hash)
+
+    keys = {}
+    for item in items:
+        head = heads.get(item.id)
+        if head is None:
+            continue
+        name = readable_title(item.title)
+        body = head[len(name) :].lstrip() if head.startswith(name) else head
+        parts = [hash_text(body[:CONTENT_CHARS]), *tails.get(item.id, [])]
+        # Not a secret: a short digest that two identical files agree on.
+        keys[item.id] = hashlib.sha256("|".join(parts).encode()).hexdigest()[:32]
+    return keys
 
 
 def item_status(item):
@@ -300,7 +324,7 @@ class GraphView(views.APIView):
                 }
             )
 
-        keys = content_keys(item_ids)
+        keys = content_keys(items)
         return Response(
             {
                 "files": [

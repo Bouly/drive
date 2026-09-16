@@ -158,6 +158,33 @@ def test_a_node_says_when_it_arrived_and_what_the_reader_may_do_with_it():
     assert files["à moi"]["created_at"] != files["à moi"]["updated_at"]
 
 
+def test_two_copies_of_a_document_are_named_as_the_same_content():
+    """
+    A file saved twice under two names is one document, and says so.
+
+    The pipeline reads a file as its name and then its text, so the name sits
+    inside the first passage: with it left in, a note and its copy came out as
+    two different documents, which is the one duplicate anybody actually has.
+    """
+    user = factories.UserFactory()
+    text = "Le télétravail est volontaire et réversible."
+    original = make_file("note-teletravail.odt", users=[user])
+    copy = make_file("note-teletravail-copie-rh.odt", users=[user])
+    other = make_file("autre.odt", users=[user])
+    for item in (original, copy):
+        # What indexing stores: the file's name, then its text.
+        passage = f"{item.title.removesuffix('.odt').replace('-', ' ')}\n\n{text}"
+        storage.save_chunks(item, [Chunk(0, passage, hash_text(passage), unit(0))])
+    with_chunk(other, 1)
+
+    client = APIClient()
+    client.force_login(user)
+    files = {f["title"]: f for f in client.get(URL).json()["files"]}
+
+    assert files["note-teletravail.odt"]["content"] == files["note-teletravail-copie-rh.odt"]["content"]
+    assert files["autre.odt"]["content"] not in ("", files["note-teletravail.odt"]["content"])
+
+
 def test_a_file_uploaded_in_my_drive_stays_in_my_drive():
     """
     The graph of one account is not the graph of another.

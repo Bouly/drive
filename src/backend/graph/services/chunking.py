@@ -40,6 +40,18 @@ def normalize_text(text):
     return "\n".join(line.strip() for line in text.split("\n")).strip()
 
 
+def readable_title(title):
+    """
+    A file name as words: no extension, no dashes or underscores.
+
+    "Poop-emoji-scaled.jpg" becomes "Poop emoji scaled", so files are not
+    drawn together by a shared extension. It is prepended to a file's text
+    before chunking: a photo named after what it shows is placed by its name
+    when it holds nothing else.
+    """
+    return re.sub(r"\.[A-Za-z0-9]{1,8}$", "", title).replace("-", " ").replace("_", " ").strip()
+
+
 def hash_text(text):
     """Stable identifier of a passage, used to spot duplicated content."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()

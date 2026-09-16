@@ -6,7 +6,6 @@ semantic links (5). Albert errors are retried with a backoff.
 """
 
 import logging
-import re
 from datetime import timedelta
 
 from django.conf import settings
@@ -22,7 +21,7 @@ from drive.celery_app import app as celery_app
 from graph.models import ItemIndex, Topic
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
-from graph.services.chunking import Chunk, chunk_text, hash_text
+from graph.services.chunking import Chunk, chunk_text, hash_text, readable_title
 from graph.services.extraction import (
     ExtractionError,
     ExtractionSkipped,
@@ -49,16 +48,6 @@ MEND_DELAY = 20
 MEND_TIMEOUT = 3600
 # Past this many newcomers, rebuilding the whole web is the cheaper way.
 MEND_ONE_BY_ONE = 40
-
-
-def readable_title(title):
-    """
-    A file name as words: no extension, no dashes or underscores.
-
-    "Poop-emoji-scaled.jpg" becomes "Poop emoji scaled", so files are not
-    drawn together by a shared extension.
-    """
-    return re.sub(r"\.[A-Za-z0-9]{1,8}$", "", title).replace("-", " ").replace("_", " ").strip()
 
 
 def describe_picture(item):
