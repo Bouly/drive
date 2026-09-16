@@ -14,7 +14,7 @@ from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services import storage
 from graph.services.albert import AlbertError
 from graph.services.chunking import Chunk, hash_text
-from graph.tasks import index_item, readable_title
+from graph.tasks import index_item, picture_chunks, readable_title
 
 pytestmark = pytest.mark.django_db
 
@@ -201,14 +201,21 @@ def test_index_item_describes_a_picture_with_albert(settings):
     item = make_image("IMG_4032.jpg")
 
     with mock.patch("graph.tasks.AlbertClient") as client, no_text():
-        client.return_value.describe_image.return_value = "Un chat roux dort sur un canapé."
+        client.return_value.describe_image.return_value = (
+            "Un chat roux dort sur un canapé.\nchat, animal, canapé"
+        )
         client.return_value.embed.side_effect = lambda texts: [unit(0) for _ in texts]
         index_item.apply(args=[item.id], throw=True)
 
     raw, mimetype = client.return_value.describe_image.call_args.args
     assert mimetype == "image/jpeg"
     assert raw.startswith(b"\xff\xd8\xff")
-    assert "chat roux" in ItemChunk.objects.get(item=item).text
+    # The sentence and the keywords are two passages: the first one reads
+    # well as the reason of a link, the second one carries the subject.
+    passages = list(
+        ItemChunk.objects.filter(item=item).order_by("index").values_list("text", flat=True)
+    )
+    assert passages == ["IMG 4032 Un chat roux dort sur un canapé.", "chat, animal, canapé"]
     assert ItemIndex.objects.get(item=item).detail == "described by Albert"
 
 
@@ -238,6 +245,24 @@ def test_index_item_does_not_describe_a_huge_picture(settings):
 
     client.return_value.describe_image.assert_not_called()
     assert ItemIndex.objects.get(item=item).detail == "title only"
+
+
+def test_picture_chunks_split_the_keywords_from_the_sentence():
+    """Keywords are their own passage, whether the model wrote one line or two."""
+    two_lines = picture_chunks("Ruche", "On y voit des abeilles.\nabeilles, insectes, nature")
+    assert [c.text for c in two_lines] == [
+        "Ruche On y voit des abeilles.",
+        "abeilles, insectes, nature",
+    ]
+
+    one_line = picture_chunks("Ruche", "On y voit des abeilles. abeilles, insectes, nature.")
+    assert [c.text for c in one_line] == [
+        "Ruche On y voit des abeilles.",
+        "abeilles, insectes, nature",
+    ]
+
+    plain = picture_chunks("Ruche", "Une photo floue")
+    assert [c.text for c in plain] == ["Ruche Une photo floue"]
 
 
 def test_readable_title_drops_extension_and_dashes():

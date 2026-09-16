@@ -20,7 +20,7 @@ from core.models import Item
 from graph.models import ItemIndex
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
-from graph.services.chunking import chunk_text
+from graph.services.chunking import Chunk, chunk_text, hash_text
 from graph.services.extraction import (
     ExtractionError,
     ExtractionSkipped,
@@ -68,6 +68,29 @@ def describe_picture(item):
     return description
 
 
+def picture_chunks(title, description):
+    """
+    The passages of a described picture: the sentence, then the keywords.
+
+    They are kept apart on purpose. The sentence reads well and is quoted as
+    the reason of a link, but its wording ("on y voit…") is shared by every
+    description and drags pictures towards each other. The keywords carry the
+    subject: on a poop emoji, they are three times closer to a file about
+    "caca" than the sentence is.
+    """
+    parts = [line.strip(" -•\t") for line in description.splitlines() if line.strip()]
+    if len(parts) == 1:
+        # The model sometimes answers on a single line: the keyword list is
+        # the comma-separated tail, "… une ruche. abeilles, insectes, nature."
+        tail = re.search(r"([^.\n]+,[^.\n]+,[^.\n]+?)\.?\s*$", parts[0])
+        if tail:
+            parts = [parts[0][: tail.start(1)].strip(), tail.group(1).strip()]
+    sentence = parts[0] if parts else ""
+    keywords = " ".join(parts[1:])
+    texts = [text for text in (f"{title} {sentence}".strip(), keywords) if text]
+    return [Chunk(index=i, text=text, text_hash=hash_text(text)) for i, text in enumerate(texts)]
+
+
 def _remember(item, state, detail=""):
     """Record where the item stands, so the page never waits on it forever."""
     ItemIndex.objects.update_or_create(item=item, defaults={"state": state, "detail": detail})
@@ -99,8 +122,10 @@ def index_item(item_id):
     described = ""
     if not text.strip():
         described = describe_picture(item)
-        text = described
-    chunks = chunk_text(f"{title}\n\n{text}" if text.strip() else title)
+    if described:
+        chunks = picture_chunks(title, described)
+    else:
+        chunks = chunk_text(f"{title}\n\n{text}" if text.strip() else title)
     if not chunks:
         # No text, no title: nothing to compare this file with.
         _remember(item, ItemIndex.State.EMPTY, f"{len(text)} characters extracted")
