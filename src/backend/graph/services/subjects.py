@@ -40,6 +40,13 @@ RERANK_PASSAGES = 4
 # How many questions a subject may ask. Each one is a call to the reranker,
 # and past a handful a description is prose, not a list of subjects.
 MAX_QUESTIONS = 8
+# How far behind the strongest question of a subject a question may be and
+# still count. Answers to two different questions are not on the same
+# scale, but their best answers are a fair measure of the questions
+# themselves: "abeille" was answered 0.77 by a film about bees while
+# "frelon" was answered 0.02 by a role-playing sheet ‒ and the second
+# question, normalized on its own, crowned that sheet.
+QUESTION_SHARE = 0.25
 # How long a subject that has no bar yet waits before sorting itself whole
 # again. Without it, dropping four thousand files in at once would sort
 # such a subject four thousand times.
@@ -179,16 +186,24 @@ def read_and_lead(topic, items):
     if not texts:
         return {}, "", 0.0
 
-    belonging, lead, lead_best = {}, "", 0.0
+    answered = []
     for question in questions(topic):
-        answered = answers_to(question, texts)
-        if answered is None:
+        answer = answers_to(question, texts)
+        if answer is not None:
+            answered.append((question, *answer))
+    if not answered:
+        return {}, "", 0.0
+
+    # A question left far behind the strongest one is not a facet of the
+    # subject, it is a word nothing here is about: heard on its own it would
+    # crown whatever came closest to it.
+    lead, _, lead_best = max(answered, key=lambda answer: answer[2])
+    belonging = {}
+    for _, shares, best in answered:
+        if best < lead_best * QUESTION_SHARE:
             continue
-        shares, best = answered
         for item_id, share in zip(ids, shares, strict=True):
             belonging[item_id] = max(belonging.get(item_id, 0.0), share)
-        if best > lead_best:
-            lead, lead_best = question, best
     return belonging, lead, lead_best * settings.GRAPH_TOPIC_RERANK_RATIO
 
 

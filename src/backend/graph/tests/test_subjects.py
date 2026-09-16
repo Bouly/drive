@@ -258,8 +258,9 @@ def test_a_subject_described_in_keywords_still_finds_its_files():
 
     def answer(query, documents):
         if query != "abeille":
-            # Nothing here is about hornets: the reader is guessing.
-            return [0.01] * len(documents)
+            # Nothing here is about hornets: whatever comes closest to the
+            # word must not be crowned for it.
+            return [0.02 if text.startswith("Facture") else 0.001 for text in documents]
         return [0.77 if text.startswith("video.mp4") else 0.001 for text in documents]
 
     with mock.patch("graph.services.subjects.AlbertClient") as client:
