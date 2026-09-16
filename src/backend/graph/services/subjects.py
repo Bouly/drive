@@ -37,6 +37,9 @@ RERANK_CHARS = 900
 # passage was its name scored 0.0002 against the subject it belonged to,
 # and 0.77 once the passages after it were read too.
 RERANK_PASSAGES = 4
+# How many questions a subject may ask. Each one is a call to the reranker,
+# and past a handful a description is prose, not a list of subjects.
+MAX_QUESTIONS = 8
 # How long a subject that has no bar yet waits before sorting itself whole
 # again. Without it, dropping four thousand files in at once would sort
 # such a subject four thousand times.
@@ -48,6 +51,23 @@ logger = logging.getLogger(__name__)
 def describe(topic):
     """The words defining the subject: its name, and its description if any."""
     return f"{topic.name}\n\n{topic.description}".strip()
+
+
+def questions(topic):
+    """
+    The questions the subject asks of a file: its name, then each line of its
+    description, each on its own.
+
+    One idea per question. A reranker answers "does this file answer that?",
+    and everything glued into one query drowns the answer: a drive whose
+    subject "abeille" was described as "frelon / ruche / guêpe / nid /
+    apiculture" scored its bee documentary 0.013 with the whole block as the
+    query, 0.12 with the words strung on one line, and 0.77 with "abeille"
+    alone ‒ while unrelated files stayed at 0.0006 either way.
+    """
+    lines = [line.strip(" -•\t") for line in topic.description.splitlines()]
+    asked = [topic.name.strip(), *[line for line in lines if line]]
+    return list(dict.fromkeys(question for question in asked if question))[:MAX_QUESTIONS]
 
 
 def topic_vector(topic):
@@ -89,65 +109,105 @@ def normalize(vector):
     return [x / norm for x in vector] if norm else vector
 
 
-def read_files(topic, items):
+def beginnings_of(items):
     """
-    How relevant each file is to the subject's words, as ``{item_id: score}``.
+    What is given to the reader for each file: its name and its first passages.
 
-    A reranker reads the query and the file together, where a vector pair was
-    computed apart. It is the only thing that answers "is this file a CV?"
-    from the word "cv" alone, and the only thing that tells a deer from a bee
-    once both are "faune, nature, animal" in a drive of photographs.
+    Several passages, because the first one can say nothing: a video whose
+    first passage was its own name scored 0.0002 against the subject it
+    belonged to, and 0.77 once what followed was read too.
     """
-    beginnings = {}
+    starts = {}
     rows = ItemChunk.objects.filter(item__in=items, index__lt=RERANK_PASSAGES).order_by(
         "item_id", "index"
     )
     for item_id, text in rows.values_list("item_id", "text"):
-        beginning = beginnings.get(item_id, "")
-        if len(beginning) < RERANK_CHARS:
-            beginnings[item_id] = f"{beginning} {text}".strip()
+        start = starts.get(item_id, "")
+        if len(start) < RERANK_CHARS:
+            starts[item_id] = f"{start} {text}".strip()
+    return {
+        item.id: f"{item.title}\n{starts[item.id][:RERANK_CHARS]}"
+        for item in items
+        if starts.get(item.id)
+    }
 
-    texts, ids = [], []
-    for item in items:
-        beginning = beginnings.get(item.id)
-        if beginning:
-            ids.append(item.id)
-            texts.append(f"{item.title}\n{beginning[:RERANK_CHARS]}")
-    if not texts:
-        return {}
+
+def answers_to(question, texts):
+    """
+    How each text answers one question, or None when the reader is guessing.
+
+    Its scores mean nothing on their own ‒ the same reader answers 0.53 to
+    "cv" and 0.07 to "curriculum vitae" on the very same two files ‒ so they
+    are brought back to the best answer of the batch, and a question whose
+    best answer sits near the middle of the batch is dropped: nothing in
+    there answers it.
+    """
     try:
-        scores = AlbertClient().rerank(describe(topic), texts)
+        scores = AlbertClient().rerank(question, texts)
     except AlbertError as exc:
-        logger.warning("Albert could not judge topic %s: %s", topic.id, exc)
-        return {}
-    return dict(zip(ids, scores, strict=True))
+        logger.warning("Albert could not answer %r: %s", question, exc)
+        return None
+    ranked = sorted(scores, reverse=True)
+    best = ranked[0]
+    # Under three answers there is no batch to stand out from.
+    middle = ranked[len(ranked) // 2] if len(ranked) >= 3 else 0.0
+    if best <= 0 or best < middle * settings.GRAPH_TOPIC_RERANK_STANDOUT:
+        return None
+    return [score / best for score in scores], best
+
+
+def read_files(topic, items):
+    """
+    How much each file belongs to the subject, from 0 to 1, as ``{item_id: …}``.
+
+    Every question of the subject is asked in turn and a file keeps its best
+    answer: it belongs here if it is about any one of the things the subject
+    names.
+    """
+    return read_and_lead(topic, items)[0]
+
+
+def read_and_lead(topic, items):
+    """
+    The same, with the question that discriminated best and the raw score it
+    takes to pass it: what an uploaded file is judged against later, on the
+    scale of that one question.
+    """
+    beginnings = beginnings_of(items)
+    ids = list(beginnings)
+    texts = [beginnings[item_id] for item_id in ids]
+    if not texts:
+        return {}, "", 0.0
+
+    belonging, lead, lead_best = {}, "", 0.0
+    for question in questions(topic):
+        answered = answers_to(question, texts)
+        if answered is None:
+            continue
+        shares, best = answered
+        for item_id, share in zip(ids, shares, strict=True):
+            belonging[item_id] = max(belonging.get(item_id, 0.0), share)
+        if best > lead_best:
+            lead, lead_best = question, best
+    return belonging, lead, lead_best * settings.GRAPH_TOPIC_RERANK_RATIO
 
 
 def relevant_by_reading(topic, items):
     """
-    The files worth keeping, as ``({item_id: score}, cut)``.
+    The files worth keeping, as ``({item_id: share}, question, cut)``.
 
-    The bar is a share of the best score of the batch, never a fixed value:
-    the same reranker answers 0.53 to "cv" and 0.07 to "curriculum vitae" on
-    the very same two files, so only the gap between the answers can be read.
-    On a real drive the gap is plain ‒ "Abeilles" scored its six bee files
-    from 0.62 down to 0.40, and everything else at 0.03 and below.
-
-    A subject the reader does not recognise has no gap: its best answer sits
-    near the middle of the batch, and it keeps nobody rather than crowning
-    whatever came first.
+    A file stays when it reaches a quarter of the best answer to at least one
+    of the subject's questions. On a real drive the gap is plain ‒ "Abeilles"
+    scored its six bee files from 0.62 down to 0.40, and everything else at
+    0.03 and below.
     """
-    scores = read_files(topic, items)
-    if not scores:
-        return {}, 0.0
-    ranked = sorted(scores.values(), reverse=True)
-    # Under three answers there is no batch to stand out from.
-    best = ranked[0]
-    middle = ranked[len(ranked) // 2] if len(ranked) >= 3 else 0.0
-    if best <= 0 or best < middle * settings.GRAPH_TOPIC_RERANK_STANDOUT:
-        return {}, 0.0
-    cut = best * settings.GRAPH_TOPIC_RERANK_RATIO
-    return {item_id: score for item_id, score in scores.items() if score >= cut}, cut
+    belonging, lead, cut = read_and_lead(topic, items)
+    keep = settings.GRAPH_TOPIC_RERANK_RATIO
+    return (
+        {item_id: share for item_id, share in belonging.items() if share >= keep},
+        lead,
+        cut,
+    )
 
 
 def sort_files_into(topic, candidates=None):
@@ -177,10 +237,10 @@ def sort_files_into(topic, candidates=None):
         n.item_id: n.similarity for n in storage.item_similarities(vector, files, exclude_item=None)
     }
     shortlist = sorted(files, key=lambda i: -similarities.get(str(i.id), 0))[:RERANK_CANDIDATES]
-    matched, cut = relevant_by_reading(topic, shortlist)
-    matched = {str(item_id): round(score, 4) for item_id, score in matched.items()}
+    matched, lead, cut = relevant_by_reading(topic, shortlist)
+    matched = {str(item_id): round(share, 4) for item_id, share in matched.items()}
 
-    type(topic).objects.filter(id=topic.id).update(vector=vector, cut=cut)
+    type(topic).objects.filter(id=topic.id).update(vector=vector, cut=cut, question=lead[:255])
     with transaction.atomic():
         topic.memberships.filter(pinned=False).exclude(item_id__in=matched).delete()
         for item_id, score in matched.items():
@@ -197,9 +257,9 @@ def sort_into_subjects(item, topics):
     Place one file in the subjects it belongs to, when it has just changed.
 
     Cheaper than recomputing every subject: only this file moves. The subject
-    vector says which subjects are worth asking about, and each of those has
-    the reranker read the file against its words, against the bar it kept
-    from its last full sort.
+    vector says which subjects are worth asking about, and each of those puts
+    to the file the one question that told its files apart best, against the
+    score it took to pass, both kept from its last full sort.
     """
     vector = storage.item_vector(item)
     if vector is None:
@@ -213,17 +273,26 @@ def sort_into_subjects(item, topics):
         if similarity < settings.GRAPH_TOPIC_MIN_SIMILARITY:
             ItemTopic.objects.filter(item=item, topic=topic, pinned=False).delete()
             continue
-        if topic.cut <= 0:
+        if topic.cut <= 0 or not topic.question:
             # A subject nothing has ever answered to has no bar to judge this
             # file against. Sorting it whole gives it one, and places the file
             # on the way ‒ once in a while, not once per arrival.
             if cache.add(f"graph-topic-sorted-{topic.id}", "1", timeout=RESORT_DELAY):
                 sort_files_into(topic)
             continue
-        score = read_files(topic, [item]).get(item.id)
+        text = beginnings_of([item]).get(item.id)
+        score = None
+        if text:
+            try:
+                score = AlbertClient().rerank(topic.question, [text])[0]
+            except AlbertError as exc:
+                logger.warning("Albert could not judge item %s: %s", item.id, exc)
+                continue
         if score is not None and score >= topic.cut:
+            peak = topic.cut / settings.GRAPH_TOPIC_RERANK_RATIO
+            share = min(1.0, score / peak) if peak else 1.0
             ItemTopic.objects.update_or_create(
-                item=item, topic=topic, defaults={"score": round(score, 4)}
+                item=item, topic=topic, defaults={"score": round(share, 4)}
             )
             placed += 1
         else:

@@ -62,11 +62,14 @@ def test_the_files_that_read_like_the_subject_fall_into_it():
         sort_files_into(topic)
 
     assert set(topic.memberships.values_list("item_id", flat=True)) == {close.id}
-    assert ItemTopic.objects.get(item=close).score == pytest.approx(0.62)
+    # The score is a share of the best answer, which compares across subjects.
+    assert ItemTopic.objects.get(item=close).score == pytest.approx(1.0)
     assert not ItemTopic.objects.filter(item=far).exists()
     topic.refresh_from_db()
     assert topic.vector is not None
-    # The bar is kept, so the next uploaded file is judged on the same scale.
+    # The question and the bar are kept, so the next uploaded file is judged
+    # on the same scale.
+    assert topic.question == "Marchés publics"
     assert topic.cut == pytest.approx(0.62 * 0.25)
 
 
@@ -238,6 +241,35 @@ def test_a_file_is_read_past_its_first_passage():
         sort_files_into(topic)
 
     assert set(topic.memberships.values_list("item_id", flat=True)) == {item.id}
+
+
+def test_a_subject_described_in_keywords_still_finds_its_files():
+    """Each line of a description is its own question, the best answer counts.
+
+    Measured on a real drive: a subject "abeille" described as "frelon /
+    ruche / guêpe / nid / apiculture" scored its bee documentary 0.013 when
+    the whole block was the query, and 0.77 when asked "abeille" alone.
+    """
+    user = factories.UserFactory()
+    video = indexed_file("video.mp4", mix({0: 1.0}), user)
+    for title in ("Facture EDF", "Quittance"):
+        indexed_file(title, mix({0: 1.0}), user)
+    topic = Topic.objects.create(name="abeille", description="frelon\nruche\nguêpe", creator=user)
+
+    def answer(query, documents):
+        if query != "abeille":
+            # Nothing here is about hornets: the reader is guessing.
+            return [0.01] * len(documents)
+        return [0.77 if text.startswith("video.mp4") else 0.001 for text in documents]
+
+    with mock.patch("graph.services.subjects.AlbertClient") as client:
+        client.return_value.embed.return_value = [mix({0: 1.0})]
+        client.return_value.rerank.side_effect = answer
+        sort_files_into(topic)
+
+    assert set(topic.memberships.values_list("item_id", flat=True)) == {video.id}
+    topic.refresh_from_db()
+    assert topic.question == "abeille"
 
 
 def test_a_subject_the_reranker_only_guesses_at_stays_empty():

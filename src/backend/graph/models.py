@@ -157,6 +157,10 @@ class Topic(BaseModel):
     # sort. The reranker answers on its own scale for every subject, so the
     # bar of one subject means nothing to another and has to be remembered.
     cut = models.FloatField(_("cut"), default=0.0)
+    # ...and the question it answered, the one of the subject that told its
+    # files apart best. A file uploaded later is judged against that one,
+    # since the bar is on its scale.
+    question = models.CharField(_("question"), max_length=255, blank=True, default="")
 
     class Meta:
         db_table = "drive_graph_topic"
