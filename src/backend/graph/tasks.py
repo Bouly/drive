@@ -7,15 +7,18 @@ semantic links (5). Albert errors are retried with a backoff.
 
 import logging
 import re
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.storage import default_storage
+from django.utils import timezone
 
-from celery import shared_task
+from celery import Celery, shared_task
 
 from core.models import Item, ItemTypeChoices
 
+from drive.celery_app import app as celery_app
 from graph.models import ItemIndex, Topic
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
@@ -226,3 +229,41 @@ def forget_from_graph(item_id, restore=False):
             index_item.delay(file.id)
         else:
             forget_item(file)
+
+
+# How the drive catches up on the files nobody ever indexed: every so often,
+# by batches, and only once a file has had time to be indexed the normal way.
+CATCH_UP_EVERY = 300
+CATCH_UP_AFTER = timedelta(minutes=10)
+CATCH_UP_BATCH = 200
+
+
+@celery_app.on_after_finalize.connect
+def setup_periodic_tasks(sender: Celery, **kwargs):  # pylint: disable=unused-argument
+    """Ask for the forgotten files to be looked for regularly."""
+    sender.add_periodic_task(
+        CATCH_UP_EVERY, index_forgotten_files.s(), name="index_forgotten_files"
+    )
+
+
+@shared_task
+def index_forgotten_files():
+    """
+    Index the files the graph has no record of ever having seen.
+
+    A worker restarted in the middle of a burst loses the queue it held, and
+    those files stay out of the graph for good: fifty C headers uploaded in
+    one go during a deploy were still missing hours later. This sweep is what
+    makes an upload eventually indexed rather than indexed if all goes well.
+    """
+    forgotten = list(
+        live_files()
+        .exclude(id__in=ItemIndex.objects.values("item_id"))
+        .filter(updated_at__lt=timezone.now() - CATCH_UP_AFTER)
+        .values_list("id", flat=True)[:CATCH_UP_BATCH]
+    )
+    for item_id in forgotten:
+        index_item.delay(item_id)
+    if forgotten:
+        logger.info("Queued %d forgotten files for indexing", len(forgotten))
+    return len(forgotten)

@@ -1,10 +1,12 @@
 """Tests for the indexing task: extraction, embedding (mocked) and linking through storage."""
 
+from datetime import timedelta
 from io import BytesIO, StringIO
 from unittest import mock
 
 from django.core.files.storage import default_storage
 from django.core.management import call_command
+from django.utils import timezone
 
 import pytest
 
@@ -14,7 +16,7 @@ from graph.models import ItemChunk, ItemIndex, ItemLink
 from graph.services import storage
 from graph.services.albert import AlbertError
 from graph.services.chunking import Chunk, chunk_text, hash_text
-from graph.tasks import index_item, picture_chunks, readable_title
+from graph.tasks import index_forgotten_files, index_item, picture_chunks, readable_title
 
 pytestmark = pytest.mark.django_db
 
@@ -318,3 +320,19 @@ def test_index_item_embeds_a_repeated_passage_once(settings):
     client.return_value.embed.assert_called_once_with(["refrain", "un deux trois", "quatre"])
     vectors = [list(chunk.embedding) for chunk in ItemChunk.objects.filter(item=item)]
     assert vectors == [unit(0), unit(1), unit(1), unit(2)]
+
+
+def test_forgotten_files_are_indexed_eventually():
+    """A file the graph never heard of is queued by the sweep, once it is old."""
+    fresh = make_text_file("à peine déposé", "texte")
+    forgotten = make_text_file("oublié pendant un déploiement", "texte")
+    indexed = make_text_file("déjà vu", "texte")
+    ItemIndex.objects.create(item=indexed, state=ItemIndex.State.DONE)
+    old = timezone.now() - timedelta(hours=1)
+    models.Item.objects.filter(id__in=[forgotten.id, indexed.id]).update(updated_at=old)
+
+    with mock.patch("graph.tasks.index_item.delay") as queued:
+        assert index_forgotten_files() == 1
+
+    queued.assert_called_once_with(forgotten.id)
+    assert fresh.id not in [call.args[0] for call in queued.call_args_list]
