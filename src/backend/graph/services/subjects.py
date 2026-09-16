@@ -70,27 +70,36 @@ def questions(topic):
     return list(dict.fromkeys(question for question in asked if question))[:MAX_QUESTIONS]
 
 
-def topic_vector(topic):
+def words_vector(topic):
+    """One unit vector for what the subject says of itself, or None."""
+    try:
+        return AlbertClient().embed([describe(topic)])[0]
+    except AlbertError as exc:
+        logger.warning("Albert could not embed topic %s: %s", topic.id, exc)
+        return None
+
+
+def pinned_vector(topic):
+    """One unit vector for the files pinned to the subject, or None."""
+    vectors = []
+    for membership in topic.memberships.filter(pinned=True).select_related("item"):
+        vector = storage.item_vector(membership.item)
+        if vector is not None:
+            vectors.append(vector)
+    return normalize(average(vectors))
+
+
+def topic_vector(topic, words=None):
     """
     One unit vector standing for the subject, or None when it has nothing yet.
 
     The words weigh as much as all the pinned files together, so pinning one
-    file by mistake tilts the shortlist instead of taking it over: a deer
-    pinned to "Abeilles" pulled the subject far enough for a second deer to
-    come out closer to it than the bees were.
+    file by mistake tilts the subject instead of taking it over: a deer
+    pinned to "Abeilles" pulled it far enough for a second deer to come out
+    closer to it than the bees were.
     """
-    words, pinned = None, []
-    try:
-        words = AlbertClient().embed([describe(topic)])[0]
-    except AlbertError as exc:
-        logger.warning("Albert could not embed topic %s: %s", topic.id, exc)
-
-    for membership in topic.memberships.filter(pinned=True).select_related("item"):
-        vector = storage.item_vector(membership.item)
-        if vector is not None:
-            pinned.append(vector)
-
-    sides = [side for side in (words, average(pinned)) if side is not None]
+    words = words_vector(topic) if words is None else words
+    sides = [side for side in (words, pinned_vector(topic)) if side is not None]
     return normalize(average(sides))
 
 
@@ -216,6 +225,31 @@ def relevant_by_reading(topic, items):
     )
 
 
+def worth_reading(files, vector, words):
+    """
+    The files the reader is shown: those closest to the subject, and those
+    closest to its words alone.
+
+    The words always have their say. A file pinned by mistake moves the
+    subject's vector, and on a real drive one pinned header was enough to
+    fill the shortlist of a subject called "abeille" with network headers ‒
+    the only video about bees never even reached the reader.
+    """
+    closeness = {}
+    for side, how_many in ((vector, RERANK_CANDIDATES), (words, RERANK_CANDIDATES // 2)):
+        if side is None:
+            continue
+        for neighbour in storage.item_similarities(side, files, exclude_item=None, k=how_many):
+            closeness[neighbour.item_id] = max(
+                closeness.get(neighbour.item_id, 0.0), neighbour.similarity
+            )
+    ranked = sorted(
+        (item for item in files if str(item.id) in closeness),
+        key=lambda item: -closeness[str(item.id)],
+    )
+    return ranked[:RERANK_CANDIDATES]
+
+
 def sort_files_into(topic, candidates=None):
     """
     Put every file that reads like the subject in it, and take the others out.
@@ -223,7 +257,8 @@ def sort_files_into(topic, candidates=None):
     Returns the number of files in the subject. Pinned files are left alone:
     they are the subject's definition, not its result.
     """
-    vector = topic_vector(topic)
+    words = words_vector(topic)
+    vector = topic_vector(topic, words=words)
     pinned = {
         str(item_id)
         for item_id in topic.memberships.filter(pinned=True).values_list("item_id", flat=True)
@@ -239,10 +274,7 @@ def sort_files_into(topic, candidates=None):
         candidates = live_files_of(topic.creator)
     # The vectors only say which files are worth reading; the reading decides.
     files = list(indexed_files(candidates))
-    similarities = {
-        n.item_id: n.similarity for n in storage.item_similarities(vector, files, exclude_item=None)
-    }
-    shortlist = sorted(files, key=lambda i: -similarities.get(str(i.id), 0))[:RERANK_CANDIDATES]
+    shortlist = worth_reading(files, vector, words)
     matched, lead, cut = relevant_by_reading(topic, shortlist)
     matched = {str(item_id): round(share, 4) for item_id, share in matched.items()}
 

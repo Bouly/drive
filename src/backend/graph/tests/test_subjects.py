@@ -273,6 +273,30 @@ def test_a_subject_described_in_keywords_still_finds_its_files():
     assert topic.question == "abeille"
 
 
+def test_a_pinned_file_cannot_silence_the_subject_s_own_words():
+    """What the subject says of itself always reaches the reader.
+
+    On a real drive, one header pinned to a subject called "abeille" pulled
+    it among the network headers: the only video about bees was no longer
+    close enough to be read at all, and the subject filled up with strangers.
+    """
+    user = factories.UserFactory()
+    bees = indexed_file("video.mp4", mix({0: 1.0}), user)
+    pinned = indexed_file("errno.txt", mix({60: 1.0}), user)
+    topic = Topic.objects.create(name="abeille", creator=user)
+    ItemTopic.objects.create(item=pinned, topic=topic, pinned=True, score=1.0)
+    # Enough headers sitting right between the words and the pinned file to
+    # fill a shortlist on their own, closer to the blend than the video is.
+    for i in range(70):
+        indexed_file(f"if_{i}.txt", mix({0: 1.0, 60: 1.0, 61: i / 1000}), user)
+
+    scores = {"video.mp4": 0.77}
+    with albert(mix({0: 1.0}), rerank=scores):
+        sort_files_into(topic)
+
+    assert bees.id in set(topic.memberships.values_list("item_id", flat=True))
+
+
 def test_a_subject_the_reranker_only_guesses_at_stays_empty():
     """No gap between the best answer and the middle of the batch: nobody in."""
     user = factories.UserFactory()
