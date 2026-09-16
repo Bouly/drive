@@ -26,12 +26,17 @@ from graph.models import ItemChunk, ItemTopic
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.linking import indexed_files
+from graph.services.scope import live_files_of
 
 # How many files the reranker judges at once: the closest ones by content,
 # so a large drive does not travel through the API on every write.
 RERANK_CANDIDATES = 60
 # How much of a file the reranker reads: its name and the start of its text.
 RERANK_CHARS = 900
+# Read over several passages, not just the first one: a video whose first
+# passage was its name scored 0.0002 against the subject it belonged to,
+# and 0.77 once the passages after it were read too.
+RERANK_PASSAGES = 4
 # How long a subject that has no bar yet waits before sorting itself whole
 # again. Without it, dropping four thousand files in at once would sort
 # such a subject four thousand times.
@@ -93,12 +98,21 @@ def read_files(topic, items):
     from the word "cv" alone, and the only thing that tells a deer from a bee
     once both are "faune, nature, animal" in a drive of photographs.
     """
+    beginnings = {}
+    rows = ItemChunk.objects.filter(item__in=items, index__lt=RERANK_PASSAGES).order_by(
+        "item_id", "index"
+    )
+    for item_id, text in rows.values_list("item_id", "text"):
+        beginning = beginnings.get(item_id, "")
+        if len(beginning) < RERANK_CHARS:
+            beginnings[item_id] = f"{beginning} {text}".strip()
+
     texts, ids = [], []
     for item in items:
-        chunk = ItemChunk.objects.filter(item=item).order_by("index").first()
-        if chunk:
+        beginning = beginnings.get(item.id)
+        if beginning:
             ids.append(item.id)
-            texts.append(f"{item.title}\n{chunk.text[:RERANK_CHARS]}")
+            texts.append(f"{item.title}\n{beginning[:RERANK_CHARS]}")
     if not texts:
         return {}
     try:
@@ -152,6 +166,11 @@ def sort_files_into(topic, candidates=None):
         type(topic).objects.filter(id=topic.id).update(vector=None)
         return len(pinned)
 
+    # A subject sorts its owner's drive, never the whole instance: another
+    # user's files have nothing to do in it, and the reranker has no business
+    # reading them.
+    if candidates is None:
+        candidates = live_files_of(topic.creator)
     # The vectors only say which files are worth reading; the reading decides.
     files = list(indexed_files(candidates))
     similarities = {

@@ -36,6 +36,7 @@ from graph.services.linking import (
     relink_all,
     relink_around,
 )
+from graph.services.scope import topics_reading
 from graph.services.subjects import sort_into_subjects
 
 logger = logging.getLogger(__name__)
@@ -184,7 +185,10 @@ def index_item(item_id):
     if cache.add(MEND_SCHEDULED, "1", timeout=MEND_DELAY * 3):
         mend_links.apply_async(countdown=MEND_DELAY)
     # The file also falls into the subjects it fits, without touching theirs.
-    sort_into_subjects(item, Topic.objects.exclude(vector=None))
+    # Only the subjects of people who can read it: a drive sorts its own files.
+    sort_into_subjects(
+        item, topics_reading(item, Topic.objects.exclude(vector=None).select_related("creator"))
+    )
 
 
 @shared_task

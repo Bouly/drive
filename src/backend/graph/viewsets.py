@@ -12,11 +12,11 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from core import models
 from core.api import permissions
 
 from graph.models import ItemTopic, Topic
 from graph.serializers import TopicSerializer
+from graph.services.scope import readable_by
 from graph.services.subjects import sort_files_into
 
 
@@ -51,9 +51,7 @@ class TopicViewSet(
     def pin(self, request, pk=None):  # pylint: disable=unused-argument
         """Pin a file to the subject: it stays, and it defines the subject."""
         topic = self.get_object()
-        item = get_object_or_404(
-            models.Item.objects.readable_per_se(request.user), pk=request.data.get("item")
-        )
+        item = get_object_or_404(readable_by(request.user), pk=request.data.get("item"))
         ItemTopic.objects.update_or_create(
             item=item, topic=topic, defaults={"pinned": True, "score": 1.0}
         )

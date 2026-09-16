@@ -24,6 +24,7 @@ from core.api import permissions
 
 from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
 from graph.services.extraction import is_extractable
+from graph.services.scope import readable_by
 
 # The graph draws at most this many files. Measured: 4 000 nodes cost 2.8 MB
 # of JSON (400 KB once nginx compresses it) and 10 ms a frame in the browser.
@@ -52,7 +53,7 @@ def graph_items(user):
         | Q(Exists(ItemLink.objects.filter(target=OuterRef("pk"))))
     )
     return (
-        models.Item.objects.readable_per_se(user)
+        readable_by(user)
         # Not filter_non_deleted: files inside a trashed folder only carry
         # ancestors_deleted_at, and must leave the graph with their folder.
         .filter(ancestors_deleted_at__isnull=True)

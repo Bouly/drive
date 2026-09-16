@@ -213,6 +213,33 @@ def test_a_file_the_reranker_judges_relevant_joins_the_subject():
     assert not ItemTopic.objects.filter(item__in=[other, third]).exists()
 
 
+def test_a_file_is_read_past_its_first_passage():
+    """What a file is about may start on its second passage, or its third."""
+    user = factories.UserFactory()
+    item = indexed_file("video.mp4", mix({0: 1.0}), user)
+    storage.save_chunks(
+        item,
+        [
+            Chunk(0, "video", hash_text("video"), mix({0: 1.0})),
+            Chunk(1, "Comment les abeilles font le miel", hash_text("miel"), mix({0: 1.0})),
+        ],
+    )
+    for title in ("Facture EDF", "Quittance"):
+        indexed_file(title, mix({0: 1.0}), user)
+    topic = Topic.objects.create(name="Abeilles", creator=user)
+
+    # The reranker only answers to the passage about honey.
+    def scores(query, documents):  # pylint: disable=unused-argument
+        return [0.77 if "abeilles" in text else 0.001 for text in documents]
+
+    with mock.patch("graph.services.subjects.AlbertClient") as client:
+        client.return_value.embed.return_value = [mix({0: 1.0})]
+        client.return_value.rerank.side_effect = scores
+        sort_files_into(topic)
+
+    assert set(topic.memberships.values_list("item_id", flat=True)) == {item.id}
+
+
 def test_a_subject_the_reranker_only_guesses_at_stays_empty():
     """No gap between the best answer and the middle of the batch: nobody in."""
     user = factories.UserFactory()
@@ -225,3 +252,32 @@ def test_a_subject_the_reranker_only_guesses_at_stays_empty():
         sort_files_into(topic)
 
     assert not topic.memberships.exists()
+
+
+def test_a_subject_never_sorts_someone_elses_files():
+    """
+    A subject sorts the drive of its owner, not the instance.
+
+    The colleague's file is a perfect match by content, and it still stays
+    out: it is not in my drive. The reader is never even shown it, so no
+    passage of another drive travels to Albert for my subject.
+    """
+    me = factories.UserFactory()
+    colleague = factories.UserFactory()
+    mine = indexed_file("Marché hébergement", mix({0: 1.0, 1: 0.2}), me)
+    theirs = indexed_file("Marché hébergement (leur copie)", mix({0: 1.0}), colleague)
+    topic = Topic.objects.create(name="Marchés publics", creator=me)
+
+    scores = {
+        "Marché hébergement": 0.62,
+        "Marché hébergement (leur copie)": 0.99,
+    }
+    with albert(mix({0: 1.0}), rerank=scores) as client:
+        sort_files_into(topic)
+
+    assert set(topic.memberships.values_list("item_id", flat=True)) == {mine.id}
+    assert not ItemTopic.objects.filter(item=theirs).exists()
+    read = "\n".join(
+        text for call in client.return_value.rerank.call_args_list for text in call.args[1]
+    )
+    assert "leur copie" not in read

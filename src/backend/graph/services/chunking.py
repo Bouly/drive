@@ -84,7 +84,12 @@ def chunk_text(text, size=None, overlap=None):
     for paragraph in text.split("\n\n"):
         words = paragraph.split()
         if len(words) > size:
-            flush()
+            # What was waiting is a lead-in to this paragraph, not a passage:
+            # a title followed by a long text used to be stored on its own,
+            # and a passage holding only "video" resembles nothing and hides
+            # what the file really says from anything that reads one passage.
+            words = group + words
+            group.clear()
             passages.extend(" ".join(window) for window in _sliding_windows(words, size, overlap))
         elif len(group) + len(words) > size:
             flush()

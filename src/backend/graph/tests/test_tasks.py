@@ -310,16 +310,16 @@ def test_index_item_embeds_a_repeated_passage_once(settings):
     """Identical passages of a file are sent once and share their vector."""
     settings.GRAPH_CHUNK_WORDS = 3
     settings.GRAPH_CHUNK_OVERLAP = 0
-    item = make_text_file("refrain", "un deux trois un deux trois quatre")
+    item = make_text_file("refrain", "un deux trois\n\nun deux trois")
 
     with mock.patch("graph.tasks.AlbertClient") as client:
         client.return_value.embed.side_effect = lambda texts: [unit(i) for i in range(len(texts))]
         index_item.apply(args=[item.id], throw=True)
 
-    # The title is a passage of its own; "un deux trois" is sent once for two chunks.
-    client.return_value.embed.assert_called_once_with(["refrain", "un deux trois", "quatre"])
+    # "un deux trois" is sent once and stored twice.
+    client.return_value.embed.assert_called_once_with(["refrain", "un deux trois"])
     vectors = [list(chunk.embedding) for chunk in ItemChunk.objects.filter(item=item)]
-    assert vectors == [unit(0), unit(1), unit(1), unit(2)]
+    assert vectors == [unit(0), unit(1), unit(1)]
 
 
 def test_forgotten_files_are_indexed_eventually():
@@ -336,3 +336,14 @@ def test_forgotten_files_are_indexed_eventually():
 
     queued.assert_called_once_with(forgotten.id)
     assert fresh.id not in [call.args[0] for call in queued.call_args_list]
+
+
+def test_a_title_is_never_a_passage_of_its_own(settings):
+    """A short lead-in belongs with the text it introduces, not beside it."""
+    settings.GRAPH_CHUNK_WORDS = 20
+    settings.GRAPH_CHUNK_OVERLAP = 5
+
+    chunks = chunk_text("video\n\n" + " ".join(f"mot{i}" for i in range(60)))
+
+    assert chunks[0].text.startswith("video mot0")
+    assert all(chunk.word_count > 1 for chunk in chunks)

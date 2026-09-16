@@ -25,16 +25,34 @@ def unit(axis, dim=1024):
     return vector
 
 
-def make_file(title, users=None, link_reach=models.LinkReachChoices.RESTRICTED):
-    """A ready file, optionally shared with users."""
+def make_file(
+    title,
+    users=None,
+    link_reach=models.LinkReachChoices.RESTRICTED,
+    parent=None,
+    link_traces=None,
+):
+    """A ready file, optionally in a folder, shared with users or opened by link."""
     return factories.ItemFactory(
         title=title,
         type=models.ItemTypeChoices.FILE,
         update_upload_state=models.ItemUploadStateChoices.READY,
         users=users or [],
+        link_traces=link_traces or [],
         link_reach=link_reach,
+        parent=parent,
         mimetype="application/pdf",
         size=1234,
+    )
+
+
+def make_drive(user, title="Mon espace"):
+    """A workspace at the root, as Drive creates one: restricted, owned."""
+    return factories.ItemFactory(
+        title=title,
+        type=models.ItemTypeChoices.FOLDER,
+        link_reach=models.LinkReachChoices.RESTRICTED,
+        users=[(user, models.RoleChoices.OWNER)],
     )
 
 
@@ -97,12 +115,61 @@ def test_graph_only_shows_readable_files_and_their_links():
     assert "reason" not in semantic
 
 
-def test_public_files_are_part_of_the_graph():
-    """A file reachable by link is readable, hence visible in the graph."""
+def test_a_file_uploaded_in_my_drive_stays_in_my_drive():
+    """
+    The graph of one account is not the graph of another.
+
+    A file uploaded in a folder carries no reach of its own: it inherits the
+    one of the folder. Reading that empty reach as "not restricted" used to
+    show every file of the instance to every logged-in user.
+    """
+    me = factories.UserFactory()
+    colleague = factories.UserFactory()
+    drive = make_drive(me)
+    with_chunk(make_file("salaires.xlsx", parent=drive, link_reach=None))
+
+    client = APIClient()
+    client.force_login(me)
+    assert [f["title"] for f in client.get(URL).json()["files"]] == ["salaires.xlsx"]
+
+    client.force_login(colleague)
+    assert client.get(URL).json()["files"] == []
+
+
+def test_a_folder_shared_with_me_brings_its_files():
+    """Accesses are inherited: a file shared through its folder is in my graph."""
+    me = factories.UserFactory()
+    owner = factories.UserFactory()
+    drive = make_drive(owner)
+    shared = factories.ItemFactory(
+        title="Dossier partagé",
+        type=models.ItemTypeChoices.FOLDER,
+        parent=drive,
+        link_reach=None,
+        users=[(me, models.RoleChoices.READER)],
+    )
+    with_chunk(make_file("note.pdf", parent=shared, link_reach=None))
+    with_chunk(make_file("privé.pdf", parent=drive, link_reach=None))
+
+    client = APIClient()
+    client.force_login(me)
+    assert [f["title"] for f in client.get(URL).json()["files"]] == ["note.pdf"]
+
+
+def test_a_public_file_joins_the_graph_once_opened():
+    """
+    A link puts a file in someone's drive only once they have followed it.
+
+    That is what Drive lists, and the graph draws the drive: a public file
+    nobody opened is not everybody's file.
+    """
     user = factories.UserFactory()
     with_chunk(make_file("public", link_reach=models.LinkReachChoices.PUBLIC))
     client = APIClient()
     client.force_login(user)
+    assert client.get(URL).json()["files"] == []
+
+    models.LinkTrace.objects.create(item=models.Item.objects.get(title="public"), user=user)
     assert [f["title"] for f in client.get(URL).json()["files"]] == ["public"]
 
 
