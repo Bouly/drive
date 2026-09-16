@@ -36,6 +36,29 @@ TOPICS_LOCK = "graph-refresh-topics"
 # Seconds to wait before regrouping, so several uploads are grouped in one run.
 TOPICS_DELAY = 10
 
+# Every description starts the same way and ends on the same generic words;
+# both say what the file is (a picture) instead of what it is about, and drag
+# every picture towards every other one.
+OPENING = re.compile(
+    r"^\s*(on y voit|on voit|l'image (montre|représente|présente)|cette image "
+    r"(montre|représente|présente)|la (photo|photographie) (montre|représente)|"
+    r"il s'agit d')\s*",
+    re.IGNORECASE,
+)
+MEDIUM_WORDS = {
+    "image",
+    "images",
+    "photo",
+    "photos",
+    "photographie",
+    "illustration",
+    "illustrations",
+    "dessin",
+    "dessins",
+    "représentation",
+    "capture",
+}
+
 
 def readable_title(title):
     """
@@ -85,8 +108,10 @@ def picture_chunks(title, description):
         tail = re.search(r"([^.\n]+,[^.\n]+,[^.\n]+?)\.?\s*$", parts[0])
         if tail:
             parts = [parts[0][: tail.start(1)].strip(), tail.group(1).strip()]
-    sentence = parts[0] if parts else ""
-    keywords = " ".join(parts[1:])
+    sentence = OPENING.sub("", parts[0]).strip() if parts else ""
+    sentence = sentence[:1].upper() + sentence[1:]
+    words = (word.strip().strip(".") for word in " ".join(parts[1:]).split(","))
+    keywords = ", ".join(word for word in words if word and word.lower() not in MEDIUM_WORDS)
     texts = [text for text in (f"{title} {sentence}".strip(), keywords) if text]
     return [Chunk(index=i, text=text, text_hash=hash_text(text)) for i, text in enumerate(texts)]
 

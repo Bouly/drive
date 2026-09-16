@@ -28,8 +28,10 @@ logger = logging.getLogger(__name__)
 # under which two files are not considered related at all.
 NEIGHBOURS = 4
 FLOOR = 0.5
-# A group keeps the name of the topic it shares at least this share of files with.
-REUSE_OVERLAP = 0.5
+# A group keeps the name of the topic it shares at least this share of files
+# with. Kept high: a name inherited by a group that drifted is worse than a
+# new one, and Albert is only asked about groups that really changed.
+REUSE_OVERLAP = 0.7
 MAX_LABEL_LENGTH = 60
 STOPWORDS = set(
     "le la les de des du un une et en à au aux pour par sur dans avec sans ou d l "

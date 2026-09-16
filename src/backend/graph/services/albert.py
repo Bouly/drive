@@ -136,8 +136,12 @@ class AlbertClient:
         # the picture, which is what brings it next to documents about it.
         prompt = (
             "Regarde cette image. Réponds en français, en deux lignes :\n"
-            "1. une phrase décrivant ce qu'on y voit ;\n"
-            "2. six mots-clés du sujet, séparés par des virgules, du plus précis au plus général.\n"
+            "1. une phrase nommant le sujet, sans commencer par « on y voit » "
+            "ni « l'image montre » ;\n"
+            "2. six mots-clés du sujet, séparés par des virgules, du plus précis "
+            "au plus général.\n"
+            "N'emploie jamais les mots image, photo, illustration, dessin, "
+            "représentation : décris le sujet, pas le support. "
             "Pas d'introduction, pas de numérotation."
         )
         return self.chat(

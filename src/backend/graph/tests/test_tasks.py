@@ -250,16 +250,17 @@ def test_index_item_does_not_describe_a_huge_picture(settings):
 def test_picture_chunks_split_the_keywords_from_the_sentence():
     """Keywords are their own passage, whether the model wrote one line or two."""
     two_lines = picture_chunks("Ruche", "On y voit des abeilles.\nabeilles, insectes, nature")
-    assert [c.text for c in two_lines] == [
-        "Ruche On y voit des abeilles.",
-        "abeilles, insectes, nature",
-    ]
+    assert [c.text for c in two_lines] == ["Ruche Des abeilles.", "abeilles, insectes, nature"]
+
+    # The opening formula and the words naming the medium are dropped: they
+    # are shared by every description and drag pictures towards each other.
+    stripped = picture_chunks(
+        "Ruche", "L'image montre des abeilles.\nabeilles, illustration, nature"
+    )
+    assert [c.text for c in stripped] == ["Ruche Des abeilles.", "abeilles, nature"]
 
     one_line = picture_chunks("Ruche", "On y voit des abeilles. abeilles, insectes, nature.")
-    assert [c.text for c in one_line] == [
-        "Ruche On y voit des abeilles.",
-        "abeilles, insectes, nature",
-    ]
+    assert [c.text for c in one_line] == ["Ruche Des abeilles.", "abeilles, insectes, nature"]
 
     plain = picture_chunks("Ruche", "Une photo floue")
     assert [c.text for c in plain] == ["Ruche Une photo floue"]
