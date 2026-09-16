@@ -66,6 +66,8 @@ from wopi.services import access as access_service
 from wopi.tasks.conversion import convert_file
 from wopi.utils import compute_wopi_launch_url, get_wopi_client_config
 
+from graph.tasks import index_item
+
 from . import permissions, serializers, utils
 from .filters import (
     ItemFilter,
@@ -703,6 +705,8 @@ class ItemViewSet(
             title = serializer.validated_data.get("title")
             if title and old_title != title:
                 rename_file.delay(instance.id, title)
+                # The name is part of what the graph compares: index it again.
+                index_item.delay(instance.id)
 
     @drf.decorators.action(detail=True, methods=["delete"], url_path="hard-delete")
     def hard_delete(self, request, *args, **kwargs):

@@ -9,6 +9,7 @@ our storage (bge-m3, 1024 dimensions, unit vectors).
 
 import base64
 import math
+import mimetypes
 
 from django.conf import settings
 
@@ -30,13 +31,13 @@ class AlbertClient:
         self.model = model or settings.GRAPH_ALBERT_MODEL
         self.timeout = timeout
 
-    def _request(self, method, path, **kwargs):
+    def _request(self, method, path, timeout=None, **kwargs):
         try:
             response = requests.request(
                 method,
                 f"{self.base_url}{path}",
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                timeout=self.timeout,
+                timeout=timeout or self.timeout,
                 **kwargs,
             )
         except requests.RequestException as exc:
@@ -146,3 +147,20 @@ class AlbertClient:
             image=(raw, mimetype),
             model=settings.GRAPH_ALBERT_VISION_MODEL,
         )
+
+    def transcribe(self, audio, filename, language=None):
+        """The speech of an audio file (an open binary file), as text."""
+        fields = {"model": settings.GRAPH_ALBERT_AUDIO_MODEL, "response_format": "json"}
+        language = language if language is not None else settings.GRAPH_TRANSCRIPTION_LANGUAGE
+        if language:
+            fields["language"] = language
+        # Albert answers 500 to a file part without a content type.
+        content_type = mimetypes.guess_type(filename)[0] or "audio/mpeg"
+        data = self._request(
+            "POST",
+            "/audio/transcriptions",
+            files={"file": (filename, audio, content_type)},
+            data=fields,
+            timeout=settings.GRAPH_TRANSCRIPTION_TIMEOUT,
+        )
+        return (data.get("text") or "").strip()

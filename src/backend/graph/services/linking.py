@@ -5,6 +5,8 @@ An item is linked to its closest neighbours; a strong link to a file of
 another topic is flagged as "surprising" (an unexpected connection).
 """
 
+from django.db.models import Q
+
 from core import models
 
 from graph.models import ItemLink, ItemTopic
@@ -94,24 +96,56 @@ def link_item(item, candidates, topic_of=None):
     return storage.replace_links(item, semantic_links(item, candidates, topic_of))
 
 
+def _touched_by(item, candidates):
+    """
+    Ids of the files whose links may change when ``item`` changes.
+
+    Two families: the files close to it now, which may want it as a new
+    neighbour, and the files already pointing at it, whose link is stale once
+    its content moved away.
+    """
+    touched = set(ItemLink.objects.filter(target=item).values_list("source_id", flat=True))
+    vector = storage.item_vector(item)
+    if vector is not None:
+        neighbours = storage.nearest_items(
+            vector,
+            candidates,
+            k=2 * LINKS_PER_ITEM,
+            min_similarity=NEAREST_MIN_SIMILARITY,
+            exclude_item=item,
+        )
+        touched.update(neighbour.item_id for neighbour in neighbours)
+    touched.discard(str(item.id))
+    touched.discard(item.id)
+    return touched
+
+
 def relink_neighbours(item, candidates):
     """
-    Rewrite the links of the items close to ``item``.
+    Rewrite the links of the files around ``item``, after it was indexed.
 
-    Links are computed when a file is indexed: without this, a file indexed
-    earlier would never point to a closer file that arrived after it.
+    Links are computed per file: without this, a file indexed earlier would
+    never point to a closer file that arrived after it, and one that used to
+    point at ``item`` would keep that link although its content changed.
     Returns the number of items relinked.
     """
-    vector = storage.item_vector(item)
-    if vector is None:
-        return 0
-    neighbours = storage.nearest_items(
-        vector,
-        candidates,
-        k=2 * LINKS_PER_ITEM,
-        min_similarity=NEAREST_MIN_SIMILARITY,
-        exclude_item=item,
-    )
-    for neighbour in models.Item.objects.filter(id__in=[n.item_id for n in neighbours]):
+    touched = _touched_by(item, candidates)
+    for neighbour in models.Item.objects.filter(id__in=touched):
         link_item(neighbour, candidates)
-    return len(neighbours)
+    return len(touched)
+
+
+def forget_item(item):
+    """
+    Take a file out of the graph: drop its links, then relink what pointed at it.
+
+    Used when a file goes to the trash. The files that had it as a neighbour
+    are rewritten, so they take their next closest file instead of silently
+    losing a link.
+    """
+    sources = set(ItemLink.objects.filter(target=item).values_list("source_id", flat=True))
+    ItemLink.objects.filter(Q(source=item) | Q(target=item)).delete()
+    candidates = live_files().exclude(id=item.id)
+    for source in models.Item.objects.filter(id__in=sources).exclude(id=item.id):
+        link_item(source, candidates)
+    return len(sources)

@@ -151,18 +151,57 @@ class Base(Configuration):
             "application/rtf",
             "application/json",
             "image/",
+            # Tika reads the metadata, Albert transcribes the speech.
+            "video/",
+            "audio/",
         ],
         environ_name="GRAPH_ALLOWED_MIMETYPES",
         environ_prefix=None,
     )
-    GRAPH_TIKA_URL = values.Value("http://tika:9998", environ_name="GRAPH_TIKA_URL", environ_prefix=None)
-    GRAPH_TIKA_TIMEOUT = values.IntegerValue(120, environ_name="GRAPH_TIKA_TIMEOUT", environ_prefix=None)
-    GRAPH_OCR_LANGUAGES = values.Value("fra+eng", environ_name="GRAPH_OCR_LANGUAGES", environ_prefix=None)
-    GRAPH_MAX_FILE_SIZE = values.PositiveIntegerValue(52428800, environ_name="GRAPH_MAX_FILE_SIZE", environ_prefix=None)
-    GRAPH_CHUNK_WORDS = values.IntegerValue(350, environ_name="GRAPH_CHUNK_WORDS", environ_prefix=None)
-    GRAPH_CHUNK_OVERLAP = values.IntegerValue(50, environ_name="GRAPH_CHUNK_OVERLAP", environ_prefix=None)
+    GRAPH_TIKA_URL = values.Value(
+        "http://tika:9998", environ_name="GRAPH_TIKA_URL", environ_prefix=None
+    )
+    GRAPH_TIKA_TIMEOUT = values.IntegerValue(
+        120, environ_name="GRAPH_TIKA_TIMEOUT", environ_prefix=None
+    )
+    GRAPH_OCR_LANGUAGES = values.Value(
+        "fra+eng", environ_name="GRAPH_OCR_LANGUAGES", environ_prefix=None
+    )
+    # Same as the upload limit (DATA_UPLOAD_MAX_MEMORY_SIZE, 2 GB): videos are big.
+    GRAPH_MAX_FILE_SIZE = values.PositiveIntegerValue(
+        2147483648, environ_name="GRAPH_MAX_FILE_SIZE", environ_prefix=None
+    )
+    # Extracted text kept per file (~1000 chunks): bounds the embedding calls.
+    GRAPH_MAX_TEXT_CHARS = values.PositiveIntegerValue(
+        2000000, environ_name="GRAPH_MAX_TEXT_CHARS", environ_prefix=None
+    )
+    # Speech of videos and audio: the audio track is cut by ffmpeg into
+    # segments of this many seconds, transcribed by Albert side by side.
+    GRAPH_TRANSCRIPTION_LANGUAGE = values.Value(
+        "fr", environ_name="GRAPH_TRANSCRIPTION_LANGUAGE", environ_prefix=None
+    )
+    GRAPH_TRANSCRIPTION_SEGMENT_SECONDS = values.PositiveIntegerValue(
+        600, environ_name="GRAPH_TRANSCRIPTION_SEGMENT_SECONDS", environ_prefix=None
+    )
+    GRAPH_TRANSCRIPTION_WORKERS = values.PositiveIntegerValue(
+        4, environ_name="GRAPH_TRANSCRIPTION_WORKERS", environ_prefix=None
+    )
+    GRAPH_TRANSCRIPTION_TIMEOUT = values.PositiveIntegerValue(
+        300, environ_name="GRAPH_TRANSCRIPTION_TIMEOUT", environ_prefix=None
+    )
+    GRAPH_FFMPEG_TIMEOUT = values.PositiveIntegerValue(
+        1800, environ_name="GRAPH_FFMPEG_TIMEOUT", environ_prefix=None
+    )
+    GRAPH_CHUNK_WORDS = values.IntegerValue(
+        350, environ_name="GRAPH_CHUNK_WORDS", environ_prefix=None
+    )
+    GRAPH_CHUNK_OVERLAP = values.IntegerValue(
+        50, environ_name="GRAPH_CHUNK_OVERLAP", environ_prefix=None
+    )
     # Index a file into the graph once its upload is analyzed as safe.
-    GRAPH_INDEX_ON_UPLOAD = values.BooleanValue(True, environ_name="GRAPH_INDEX_ON_UPLOAD", environ_prefix=None)
+    GRAPH_INDEX_ON_UPLOAD = values.BooleanValue(
+        True, environ_name="GRAPH_INDEX_ON_UPLOAD", environ_prefix=None
+    )
 
     # File graph storage: size of the vectors stored for each passage.
     # Must match the embedding model (bge-m3 -> 1024, multilingual-e5-base -> 768).
@@ -190,6 +229,10 @@ class Base(Configuration):
     # Images heavier than this are not described: the picture travels in the request.
     GRAPH_VISION_MAX_FILE_SIZE = values.PositiveIntegerValue(
         6 * 1024 * 1024, environ_name="GRAPH_VISION_MAX_FILE_SIZE", environ_prefix=None
+    )
+    # Speech-to-text model transcribing videos and audio (Whisper large v3 on Albert).
+    GRAPH_ALBERT_AUDIO_MODEL = values.Value(
+        "openweight-audio", environ_name="GRAPH_ALBERT_AUDIO_MODEL", environ_prefix=None
     )
 
     # Item permissions

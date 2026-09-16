@@ -74,9 +74,10 @@ FROM base AS core
 
 ENV PYTHONUNBUFFERED=1
 
-# Install required system libs
+# Install required system libs (ffmpeg: audio track of videos for the file graph)
 RUN apk add --no-cache \
   cairo \
+  ffmpeg \
   file \
   font-noto \
   font-noto-emoji \
