@@ -181,8 +181,9 @@ def test_two_copies_of_a_document_are_named_as_the_same_content():
     client.force_login(user)
     files = {f["title"]: f for f in client.get(URL).json()["files"]}
 
-    assert files["note-teletravail.odt"]["content"] == files["note-teletravail-copie-rh.odt"]["content"]
-    assert files["autre.odt"]["content"] not in ("", files["note-teletravail.odt"]["content"])
+    same = files["note-teletravail.odt"]["content"]
+    assert same and files["note-teletravail-copie-rh.odt"]["content"] == same
+    assert files["autre.odt"]["content"] not in ("", same)
 
 
 def test_a_file_uploaded_in_my_drive_stays_in_my_drive():
