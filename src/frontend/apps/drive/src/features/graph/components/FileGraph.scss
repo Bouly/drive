@@ -21,6 +21,7 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   --fg-accent: var(--c--globals--colors--warning-500, #cb5000);
   --fg-link: var(--c--globals--colors--brand-550, #5e5cd0);
   --fg-dot-ring: #fff;
+  --fg-danger: var(--c--globals--colors--danger-600, #b8324f);
   --fg-stage: var(--c--globals--colors--gray-050, #f0f0f3);
 
   display: flex;
@@ -42,6 +43,7 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     --fg-accent: var(--c--globals--colors--warning-300, #eb9970);
     --fg-link: var(--c--globals--colors--brand-300, #a0a5f6);
     --fg-dot-ring: var(--c--globals--colors--gray-900, #1b1b23);
+    --fg-danger: var(--c--globals--colors--danger-300, #f7a3ae);
     --fg-stage: var(--c--globals--colors--gray-900, #1b1b23);
   }
 
@@ -566,6 +568,43 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     }
   }
 
+  // The filters sit in a panel of their own, beside the display one. Authors
+  // can be many: the panel scrolls rather than growing past the stage.
+  &__filters-pop {
+    max-height: min(60vh, 420px);
+    overflow-y: auto;
+  }
+
+  &__filters-clear {
+    align-self: flex-start;
+    margin-top: 2px;
+  }
+
+  &__filters-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--fg-link);
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    line-height: 1;
+    color: var(--fg-stage);
+  }
+
+  // A facet's own name takes the room left by its count.
+  &__facet-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   &__section-title {
     margin: 4px 6px;
     font-size: var(--c--globals--font--sizes--t, 11px);
@@ -709,6 +748,31 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     animation: file-graph-card-in 220ms ease-out;
   }
 
+  &__callout-pair {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-weight: var(--c--globals--font--weights--bold, 600);
+  }
+
+  &__callout-name {
+    min-width: 0;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__callout-reason {
+    min-width: 0;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   &__card-head {
     display: flex;
     align-items: flex-start;
@@ -727,11 +791,36 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     }
   }
 
-  // Type, weight and age on one line: three facts nobody reads as a table.
-  &__card-line {
+  // The four facts the stage draws a file by, written out: what it is, when
+  // it arrived, who signed it, and what the reader may do with it. A table
+  // rather than a line, because the last two are answers to a question and
+  // read as such only next to the question.
+  &__meta {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 3px var(--c--globals--spacings--xs, 8px);
     margin: 0 0 var(--c--globals--spacings--sm, 12px);
     font-size: var(--c--globals--font--sizes--xs, 12px);
-    color: var(--fg-faint);
+
+    > div {
+      display: contents;
+    }
+
+    dt {
+      color: var(--fg-faint);
+      white-space: nowrap;
+    }
+
+    dd {
+      margin: 0;
+      min-width: 0;
+      color: var(--fg-text);
+      overflow-wrap: anywhere;
+
+      .file-graph__dot {
+        margin-right: 5px;
+      }
+    }
   }
 
   // Putting a file in a subject is a rare act: it waits under a word.
@@ -961,6 +1050,144 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     }
   }
 
+  // What the file says about the subject being read: the one paragraph of
+  // the card, so it is set as prose and not as a caption.
+  &__summary {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    line-height: 1.5;
+    color: var(--fg-text);
+  }
+
+  // The subject that summary answers on, worn by its heading.
+  &__card-subject {
+    display: inline-block;
+    max-width: 150px;
+    margin-left: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--fg-hover);
+    font-weight: var(--c--globals--font--weights--regular, 400);
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--fg-muted);
+    // A typed search can be a sentence: it never pushes the heading out.
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+
+  // What two files have in common, in a sentence, under their row.
+  &__sentence {
+    margin: 0 8px 8px 26px;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    line-height: 1.45;
+    color: var(--fg-text);
+  }
+
+  // Waiting on those sentences: lines of the shape they will have, so the
+  // card fills rather than jumps when they land.
+  &__loading-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 4px 8px 8px 0;
+
+    span {
+      height: 9px;
+      border-radius: 4px;
+      background: var(--fg-hover);
+      animation: file-graph-skeleton 1.5s ease-in-out infinite;
+
+      &:nth-child(2) {
+        width: 92%;
+        animation-delay: 150ms;
+      }
+
+      &:nth-child(3) {
+        width: 62%;
+        animation-delay: 300ms;
+      }
+    }
+
+    &--one {
+      margin: 2px 8px 8px 26px;
+
+      span {
+        width: 76%;
+        height: 8px;
+      }
+    }
+  }
+
+  // Two files holding the same content, and the way out of it.
+  &__twin {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 8px 8px 26px;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-muted);
+  }
+
+  &__twin-drop {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 9px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 999px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-danger);
+    cursor: pointer;
+
+    svg {
+      width: 12px;
+      height: 12px;
+    }
+
+    &:hover {
+      background: var(--fg-hover);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--fg-link);
+      outline-offset: 1px;
+    }
+  }
+
+  // The modal that confirms it: two names, and which one stays.
+  &__duplicate-body {
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    line-height: 1.5;
+
+    p {
+      margin: 0 0 var(--c--globals--spacings--xs, 8px);
+    }
+  }
+
+  &__duplicate-file {
+    padding: 6px 10px;
+    border-radius: 4px;
+    background: var(--c--globals--colors--gray-050, #f0f0f3);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    overflow-wrap: anywhere;
+
+    &--dropped {
+      border-left: 3px solid var(--fg-danger);
+    }
+  }
+
+  &__duplicate-keeps,
+  &__duplicate-trash {
+    color: var(--c--globals--colors--gray-600, #5d5d70);
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+  }
+
   &__reason {
     margin: 0 8px 6px 26px;
     font-size: var(--c--globals--font--sizes--xs, 12px);
@@ -1037,6 +1264,15 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
       top: 8px;
       right: 8px;
       bottom: auto;
+    }
+
+    // ...and their panels then open downward. Opening upward, which is right
+    // when the controls sit in the bottom corner, puts a panel off the top of
+    // a phone screen: the filters were unreachable there.
+    &__display-pop {
+      top: calc(100% + 6px);
+      bottom: auto;
+      max-height: calc(100vh - 220px);
     }
   }
 }
@@ -1212,5 +1448,16 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     &__subject-edit-open {
       opacity: 1;
     }
+  }
+}
+
+@keyframes file-graph-skeleton {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
   }
 }

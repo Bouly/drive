@@ -131,14 +131,23 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     return seed / 4294967296;
   };
   const categories = data.files.map(categoryOf);
+  // What the reader may do with each file, which is the colour of its dot.
+  // An empty right ‒ a file reached through a link alone ‒ is a value of its
+  // own and not a missing one, so it is named rather than left blank.
+  const ownerships = data.files.map((file) => file.role || "none");
   /**
-   * The size of a dot says how recently the file was touched: the newest file
+   * The size of a dot says when the file was added to the drive: the newest
    * on the stage is the largest, the oldest the smallest.
+   *
+   * The date it arrived, not the date it was last saved: those are two
+   * different questions, and the one a reader asks of a graph is which of
+   * these documents are new to the drive. A file renamed this morning is not
+   * a new file, and used to be drawn as one.
    *
    * The scale is the drive's own span rather than a fixed number of days, so
    * the whole range is always in use ‒ on a drive filled in one afternoon the
    * dots still separate the morning from the evening, and on one built over
-   * three years the last month still stands out. A drive touched all at once
+   * three years the last month still stands out. A drive filled all at once
    * draws every dot the same size, which is the truth about it.
    *
    * It replaces the degree, which said how many ties a file had: that number
@@ -146,7 +155,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
    * somebody is working on indistinguishable from the rest. The degree is
    * still carried on the node, for the card and the naming.
    */
-  const times = data.files.map((file) => Date.parse(file.updated_at) || 0);
+  const times = data.files.map((file) => Date.parse(file.created_at ?? file.updated_at) || 0);
   let newest = -Infinity;
   let oldest = Infinity;
   for (const time of times) {
@@ -259,6 +268,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     linkTies,
     neighbors,
     categories,
+    ownerships,
     clusters,
     topics,
     subjects,

@@ -213,6 +213,9 @@ def test_albert_client_embeds_and_checks_vectors(settings):
     """The client sends the model, keeps the order and validates the vectors."""
     settings.GRAPH_ALBERT_URL = ALBERT
     settings.GRAPH_ALBERT_API_KEY = "sk-test"
+    # Set here rather than read from the environment: a developer pointing
+    # their own stack at another model must not fail this.
+    settings.GRAPH_ALBERT_MODEL = "openweight-embeddings"
     settings.GRAPH_EMBEDDING_DIM = 2
     responses.post(
         f"{ALBERT}/embeddings",

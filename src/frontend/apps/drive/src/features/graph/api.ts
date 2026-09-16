@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAPI } from "@/features/api/fetchApi";
 import { APIError } from "@/features/api/APIError";
-import { GraphData } from "./data/types";
+import { GraphData, Ownership } from "./data/types";
 
 /** Shape returned by GET /api/v1.0/graph/ (see backend graph/api.py). */
 type ApiGraph = {
@@ -10,8 +10,12 @@ type ApiGraph = {
     title: string;
     mimetype: string;
     size: number;
+    created_at: string;
     updated_at: string;
     creator: string;
+    creator_id: string;
+    role: Ownership;
+    content: string;
     status: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
     // The subjects this file is in, the one it fits best first.
     topics: { id: string; score: number; pinned: boolean }[];
@@ -35,8 +39,12 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
     title: file.title,
     mimetype: file.mimetype,
     size: file.size,
+    created_at: file.created_at,
     updated_at: file.updated_at,
     creator: file.creator,
+    creator_id: file.creator_id,
+    role: file.role,
+    content: file.content,
     status: file.status,
     topics: file.topics,
   })),
@@ -132,4 +140,57 @@ export const useSubjects = () => {
       ...refresh,
     }),
   };
+};
+
+/**
+ * What a card says in words: a summary of the file on the subject being
+ * looked at, and one sentence per neighbour saying what the pair shares.
+ */
+export type FileBrief = {
+  subject: string;
+  summary: string;
+  links: { id: string; sentence: string }[];
+};
+
+/**
+ * Read when a card opens, never with the graph: it costs a reading of the
+ * files, and a drive of nine hundred would spend it on the cards nobody
+ * opens. The backend keeps every answer a week, so reopening a card is free.
+ */
+export const useFileBrief = (fileId: string | null, subject: string, neighbours: string[]) => {
+  const asked = neighbours.join(",");
+  return useQuery({
+    enabled: Boolean(fileId),
+    queryKey: ["graph-brief", fileId, subject, asked],
+    queryFn: async () => {
+      const response = await fetchAPI(`graph/files/${fileId}/brief/`, {
+        params: { subject, with: asked },
+      });
+      return (await response.json()) as FileBrief;
+    },
+    // The answer depends on the file and the subject, both of which are in
+    // the key: nothing is gained by asking again while the card is open.
+    staleTime: Infinity,
+    retry: false,
+  });
+};
+
+/**
+ * Send a file to the trash from the graph, the way the explorer does.
+ *
+ * Offered on a neighbour a file shares its whole content with: two copies of
+ * the same document are the one thing a graph can point at that a folder
+ * cannot, and the answer to it is to keep one.
+ */
+export const useDeleteFile = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => fetchAPI(`items/${id}/`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["graph"] });
+      // The explorer lists the same files: it must not keep showing one that
+      // has just left.
+      queryClient.invalidateQueries({ queryKey: ["items"] });
+    },
+  });
 };

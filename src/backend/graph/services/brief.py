@@ -42,6 +42,10 @@ LINK_TOKENS = 70
 CACHE_TTL = 7 * 24 * 3600
 # Calls run side by side, one per neighbour plus the summary.
 MAX_WORKERS = 7
+# How long one of them may take. Albert answers a card in a second or two;
+# this is only there so a request cannot sit on a worker until gunicorn kills
+# it at ninety seconds, which would take the card down with it.
+TIMEOUT = 30
 
 
 def text_of(items, limit):
@@ -93,7 +97,7 @@ def link_prompt(text, other, subject):
 def ask(prompt, tokens):
     """Albert's answer to one prompt, or "" when it cannot be reached."""
     try:
-        return AlbertClient().chat(prompt, max_tokens=tokens)
+        return AlbertClient(timeout=TIMEOUT).chat(prompt, max_tokens=tokens)
     except AlbertError as exc:
         logger.warning("Albert could not answer a brief: %s", exc)
         return ""

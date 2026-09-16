@@ -12,12 +12,13 @@ import {
   ZoomControls,
   headerHeight,
 } from "@gouvfr-lasuite/ui-components";
-import { ChevronDown, ChevronRight, Edit, Plus, Settings, XMark } from "@gouvfr-lasuite/ui-components/icons";
+import { ChevronDown, ChevronRight, Edit, Filter, Plus, Settings, Trash, XMark } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
 import { GraphData, GraphFile, Subject } from "../data/types";
 import { ForceSimulation, SimNode } from "../simulation";
 import {
   CATEGORY_ORDER,
+  OWNERSHIP_ORDER,
   PANEL_STORAGE_KEY,
   THEMES,
   THEME_STORAGE_KEY,
@@ -27,7 +28,8 @@ import {
 } from "../data/theme";
 import { normalize } from "../data/naming";
 import { LINK_MIN_CLOSENESS, Model, buildModel } from "../data/model";
-import { useSubjects } from "../api";
+import { useDeleteFile, useFileBrief, useSubjects } from "../api";
+import { DuplicateModal } from "./DuplicateModal";
 import { SubjectModal } from "./SubjectModal";
 
 /**
@@ -37,6 +39,41 @@ import { SubjectModal } from "./SubjectModal";
  */
 const TOPIC_FILTER_PREFIX = "topic:";
 const CATEGORY_FILTER_PREFIX = "cat:";
+const AUTHOR_FILTER_PREFIX = "author:";
+const DATE_FILTER_PREFIX = "date:";
+const RIGHT_FILTER_PREFIX = "right:";
+
+/**
+ * The ages a file can be filtered on, counted from the day it was added.
+ *
+ * Disjoint on purpose: facets of one family widen the selection, so two
+ * ranges that overlap would let "the last month" and "the last year" answer
+ * the same files twice and read as though one contained the other.
+ */
+const DATE_BUCKETS = [
+  { id: "month", from: 0, to: 31 },
+  { id: "quarter", from: 31, to: 92 },
+  { id: "year", from: 92, to: 366 },
+  { id: "older", from: 366, to: Infinity },
+];
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Above this, a pair is close enough to be read as the same document even
+ * without the fingerprints agreeing: a one-line file has one passage, and
+ * its copy answers 1 exactly.
+ *
+ * The fingerprint is what usually says it ‒ see the card. A link's weight is
+ * the whole of one file against the nearest passage of the other, so two
+ * copies of a twelve-passage document sit at 0.96 and never reach 1.
+ */
+const DUPLICATE_WEIGHT = 0.995;
+/** Neighbours a card explains in words ‒ what the backend answers for. */
+const EXPLAINED_NEIGHBORS = 6;
+/** How near the pointer must come to a thread to pick it up, in pixels. */
+const LINK_HIT_SLACK = 7;
+/** Similarities written on the stage at once, around the file being read. */
+const MAX_WEIGHT_LABELS = 8;
 /**
  * Steps run on a subject's own layout before the camera looks at it, so the
  * stage shows the shape of the subject rather than where its files were left.
@@ -167,9 +204,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   /** The subjects panel, folded down to its dots when closed. */
   const [panelOpen, setPanelOpen] = useState(true);
-  /** Settings that are read once and left alone: strength, types, background. */
+  /** Settings that are read once and left alone: folder, threads, background. */
   const [displayOpen, setDisplayOpen] = useState(false);
   const displayRef = useRef<HTMLDivElement>(null);
+  /** The facets: what the stage is narrowed to, and what the colours mean. */
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setTheme(readStoredTheme());
@@ -235,6 +275,54 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return CATEGORY_ORDER.filter((c) => counts.has(c)).map((c) => ({ id: c, count: counts.get(c) ?? 0 }));
   }, [model]);
 
+  /**
+   * Which age bracket each file falls in, counted from the day it arrived.
+   *
+   * Read once per graph rather than per frame or per click: the brackets are
+   * what the date filter cuts on, and the stage asks for them on every
+   * keystroke of the filter panel.
+   */
+  const buckets = useMemo(() => {
+    const now = Date.now();
+    return model.data.files.map((file) => {
+      const added = Date.parse(file.created_at ?? file.updated_at) || now;
+      const days = Math.max(0, (now - added) / DAY);
+      return (DATE_BUCKETS.find((range) => days >= range.from && days < range.to) ?? DATE_BUCKETS[DATE_BUCKETS.length - 1]).id;
+    });
+  }, [model]);
+
+  /** The age brackets this drive actually holds, newest first. */
+  const datesInUse = useMemo(() => {
+    const counts = new Map<string, number>();
+    buckets.forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1));
+    return DATE_BUCKETS.filter((range) => counts.has(range.id)).map((range) => ({
+      id: range.id,
+      count: counts.get(range.id) ?? 0,
+    }));
+  }, [buckets]);
+
+  /** Who wrote what, most prolific first: the author filter reads off this. */
+  const authorsInUse = useMemo(() => {
+    const counts = new Map<string, { id: string; name: string; count: number }>();
+    model.data.files.forEach((file) => {
+      const id = file.creator_id || file.creator || "";
+      const held = counts.get(id) ?? { id, name: file.creator || t("graph.author_unknown"), count: 0 };
+      held.count += 1;
+      counts.set(id, held);
+    });
+    return [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [model, t]);
+
+  /** What the reader may do with the files of this drive: the dots' colours. */
+  const rightsInUse = useMemo(() => {
+    const counts = new Map<string, number>();
+    model.ownerships.forEach((role) => counts.set(role, (counts.get(role) ?? 0) + 1));
+    return OWNERSHIP_ORDER.filter((role) => counts.has(role)).map((role) => ({
+      id: role,
+      count: counts.get(role) ?? 0,
+    }));
+  }, [model]);
+
   /** Files whose content is still being analysed: they pulse and are polled. */
   const pendingCount = useMemo(
     () => model.data.files.filter((file) => file.status === "pending").length,
@@ -250,12 +338,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (!list.length) {
         return [];
       }
-      const topics = list
-        .filter((f) => f.startsWith(TOPIC_FILTER_PREFIX))
-        .map((f) => Number(f.slice(TOPIC_FILTER_PREFIX.length)));
-      const kinds = list
-        .filter((f) => f.startsWith(CATEGORY_FILTER_PREFIX))
-        .map((f) => f.slice(CATEGORY_FILTER_PREFIX.length));
+      const of = (prefix: string) =>
+        list.filter((f) => f.startsWith(prefix)).map((f) => f.slice(prefix.length));
+      const topics = of(TOPIC_FILTER_PREFIX).map(Number);
+      const kinds = of(CATEGORY_FILTER_PREFIX);
+      const authors = of(AUTHOR_FILTER_PREFIX);
+      const ages = of(DATE_FILTER_PREFIX);
+      const rights = of(RIGHT_FILTER_PREFIX);
       // Subjects select what they hold, not only what is drawn in their
       // colour: a file in two subjects answers to both.
       const held = new Set<number>();
@@ -263,18 +352,27 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         model.topics[group]?.members.forEach((i) => held.add(i));
       });
       const kept: number[] = [];
-      model.data.files.forEach((_, i) => {
+      model.data.files.forEach((file, i) => {
         if (topics.length && !held.has(i)) {
           return;
         }
         if (kinds.length && !kinds.includes(model.categories[i])) {
           return;
         }
+        if (authors.length && !authors.includes(file.creator_id || file.creator || "")) {
+          return;
+        }
+        if (ages.length && !ages.includes(buckets[i])) {
+          return;
+        }
+        if (rights.length && !rights.includes(model.ownerships[i])) {
+          return;
+        }
         kept.push(i);
       });
       return kept;
     },
-    [model],
+    [buckets, model],
   );
 
   /**
@@ -335,9 +433,18 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     setStrength(closeness.length > wanted ? 1 - wanted / closeness.length : 0);
   }, [closeness, model]);
 
-  /** Color of a node: its file family. */
+  /**
+   * Colour of a node: what the reader holds on that file.
+   *
+   * The dot used to carry the file family. Nobody reads a drive by format ‒
+   * "the PDFs" is not a question ‒ while whose a file is decides what may be
+   * done with it, which on a shared drive is the first thing to know about a
+   * document somebody points you at. The family is still drawn, as the square
+   * of a folder, and is still a filter.
+   */
   const nodeColor = useCallback(
-    (i: number, themeName: "dark" | "light") => THEMES[themeName].categoryColor(model.categories[i]),
+    (i: number, themeName: "dark" | "light") =>
+      THEMES[themeName].ownershipColor(model.ownerships[i]),
     [model],
   );
 
@@ -364,6 +471,39 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return chosen.length ? nodesOfFacets(chosen) : null;
   }, [facets, nodesOfFacets]);
   const stagedRef = useRef<Set<number> | null>(null);
+
+  /**
+   * How much each file belongs to the subject being looked at, or null when
+   * none is.
+   *
+   * The threads of a subject are then drawn by it: a tie between two files
+   * squarely inside it shows, one grazing it barely does. Reading a subject
+   * is reading what holds it together, and until now every thread on stage
+   * was drawn as though it were equally about it.
+   */
+  const subjectScores = useMemo(() => {
+    const chosen = facets.filter((f) => f.startsWith(TOPIC_FILTER_PREFIX));
+    if (chosen.length !== 1) {
+      return null;
+    }
+    const subject = model.subjects[Number(chosen[0].slice(TOPIC_FILTER_PREFIX.length))];
+    if (!subject) {
+      return null;
+    }
+    return Float64Array.from(
+      model.data.files.map((file) => {
+        const membership = file.topics?.find((topic) => topic.id === subject.id);
+        if (!membership) {
+          return 0;
+        }
+        return membership.pinned ? 1 : membership.score;
+      }),
+    );
+  }, [facets, model]);
+  const subjectScoresRef = useRef(subjectScores);
+  subjectScoresRef.current = subjectScores;
+  /** Where each drawn thread runs, for the pointer and for the figures. */
+  const drawnLinksRef = useRef<{ link: number; ax: number; ay: number; bx: number; by: number; weight: number; near: boolean }[]>([]);
 
   const litNodes = useCallback((): Set<number> | null => {
     const ui = uiRef.current;
@@ -524,6 +664,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     }
 
     ctx.lineCap = "round";
+    const scores = subjectScoresRef.current;
+    const drawn: typeof drawnLinksRef.current = [];
     // Every pair is linked: the closeness alone says how much a line shows.
     // Below LINK_MIN_CLOSENESS nothing is drawn, above it the line fades in,
     // except around the focused file where even faint ties are worth seeing.
@@ -558,6 +700,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const strength = close * close;
       let alpha = (0.18 + 0.7 * strength) * (0.55 + 0.45 * depth) * dim * intro;
       let lineWidth = Math.min(3.2, 1.6 * Math.sqrt(scale));
+      // A subject is being read: a thread shows as much as the subject holds
+      // its two ends. Never down to nothing ‒ the tie is still there, and a
+      // line that disappears reads as a file with no neighbours.
+      if (scores) {
+        alpha *= 0.2 + 0.8 * scores[link.source] * scores[link.target];
+      }
       if (touchesFocus || isActive) {
         alpha = Math.max(alpha, 0.3 + 0.7 * close);
         lineWidth *= isActive ? 2.1 : 1.6;
@@ -578,7 +726,17 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       ctx.moveTo(a.sx, a.sy);
       ctx.lineTo(b.sx, b.sy);
       ctx.stroke();
+      drawn.push({
+        link: li,
+        ax: a.sx,
+        ay: a.sy,
+        bx: b.sx,
+        by: b.sy,
+        weight: model.linkMeta[li].weight,
+        near: touchesFocus || isActive,
+      });
     });
+    drawnLinksRef.current = drawn;
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
 
@@ -664,6 +822,45 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (emphasis > 0.5) {
         labelled.push(i);
       }
+    }
+
+    /**
+     * How close a pair is, written on the thread that joins them.
+     *
+     * The card lists that figure next to each neighbour, and the stage could
+     * only ever say it with ink: two threads of 0.82 and 0.64 are drawn a
+     * shade apart and read as "both quite close". Only around the file being
+     * read, and only its strongest few, or the stage becomes a sheet of
+     * numbers laid over a drawing.
+     */
+    const figures = drawn
+      .filter((one) => one.near)
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, MAX_WEIGHT_LABELS);
+    if (figures.length) {
+      const figureSize = Math.round(10 * Math.min(1.5, Math.max(1, Math.sqrt(scale))));
+      ctx.font = `600 ${figureSize}px Marianne, system-ui, sans-serif`;
+      for (const one of figures) {
+        const x = (one.ax + one.bx) / 2;
+        const y = (one.ay + one.by) / 2;
+        const label = `${Math.round(one.weight * 100)} %`;
+        const width = ctx.measureText(label).width + 12;
+        const height = figureSize + 8;
+        if (overlaps(x, y, width, height)) {
+          continue;
+        }
+        placed.push({ x, y, w: width, h: height });
+        // On a pill of the background, so a figure sitting on its own thread
+        // stays readable instead of being crossed out by it.
+        ctx.globalAlpha = 0.94;
+        ctx.fillStyle = theme.labelHalo;
+        ctx.beginPath();
+        ctx.roundRect(x - width / 2, y - height / 2, width, height, height / 2);
+        ctx.fill();
+        ctx.fillStyle = theme.label;
+        ctx.fillText(label, x, y);
+      }
+      ctx.globalAlpha = 1;
     }
 
     // Labels are a second pass, richest file first: a name is worth more on
@@ -848,6 +1045,31 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return null;
   }, []);
 
+  /**
+   * The thread under the pointer, or null.
+   *
+   * Only the threads drawn on the last frame are measured, which is what
+   * makes this cheap: a drive of nine hundred files draws a few thousand of
+   * its two hundred thousand pairs, and the slider takes that down further.
+   */
+  const hitTestLink = useCallback((x: number, y: number): number | null => {
+    let best: number | null = null;
+    let nearest = LINK_HIT_SLACK;
+    for (const one of drawnLinksRef.current) {
+      const dx = one.bx - one.ax;
+      const dy = one.by - one.ay;
+      const span = dx * dx + dy * dy;
+      // Where on the segment the pointer falls, kept between its two ends.
+      const at = span ? Math.max(0, Math.min(1, ((x - one.ax) * dx + (y - one.ay) * dy) / span)) : 0;
+      const distance = Math.hypot(x - (one.ax + at * dx), y - (one.ay + at * dy));
+      if (distance < nearest) {
+        nearest = distance;
+        best = one.link;
+      }
+    }
+    return best;
+  }, []);
+
   // Canvas sizing, intro and wheel zoom.
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -1020,10 +1242,25 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     }
   };
 
-  const previewCategory = (id: string | null) => {
-    previewCategoryRef.current = id;
-    requestRender();
-  };
+  const previewCategory = useCallback(
+    (id: string | null) => {
+      previewCategoryRef.current = id;
+      requestRender();
+    },
+    [requestRender],
+  );
+
+  /**
+   * A facet lights its files while the pointer rests on its row. When the
+   * panel closes under the pointer ‒ on Escape, or on a click that both
+   * chooses a facet and shuts the panel ‒ that row never sees the pointer
+   * leave, and the stage stayed dimmed around files nobody was pointing at.
+   */
+  useEffect(() => {
+    if (!filtersOpen && !displayOpen) {
+      previewCategory(null);
+    }
+  }, [filtersOpen, displayOpen, previewCategory]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -1031,6 +1268,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         setQuery("");
         setSearchOpen(false);
         setDisplayOpen(false);
+        setFiltersOpen(false);
         clearFilters();
       }
     };
@@ -1038,19 +1276,23 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return () => window.removeEventListener("keydown", onKey);
   }, [clearFilters]);
 
-  // The display popover closes on a click anywhere else, as the ui-kit ones do.
+  // The popovers close on a click anywhere else, as the ui-kit ones do.
   useEffect(() => {
-    if (!displayOpen) {
+    if (!displayOpen && !filtersOpen) {
       return;
     }
     const onDown = (event: PointerEvent) => {
-      if (!displayRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!displayRef.current?.contains(target)) {
         setDisplayOpen(false);
+      }
+      if (!filtersRef.current?.contains(target)) {
+        setFiltersOpen(false);
       }
     };
     window.addEventListener("pointerdown", onDown);
     return () => window.removeEventListener("pointerdown", onDown);
-  }, [displayOpen]);
+  }, [displayOpen, filtersOpen]);
 
   // --- Pointer interactions: drag a node, pan the view, hover, click to select.
 
@@ -1069,13 +1311,21 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
-  const setHover = (hit: number | null, canvas: HTMLCanvasElement) => {
+  const setHover = (hit: number | null, canvas: HTMLCanvasElement, at?: { x: number; y: number }) => {
+    // A thread is only picked up when no file is under the pointer and none
+    // is open: a card already lists every tie of its file, with its figure,
+    // and lighting a thread underneath it would fight with the card.
+    const link =
+      hit === null && at && uiRef.current.selected === null ? hitTestLink(at.x, at.y) : null;
     if (hit !== hoverRef.current) {
       hoverRef.current = hit;
       setHovered(hit);
-      canvas.style.cursor = hit === null ? "grab" : "pointer";
       requestRender();
     }
+    if (link !== uiRef.current.activeLink) {
+      setFilters((f) => ({ ...f, activeLink: link }));
+    }
+    canvas.style.cursor = hit === null && link === null ? "grab" : "pointer";
   };
 
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1103,7 +1353,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     const { x, y } = localPoint(event);
     const gesture = gestureRef.current;
     if (!gesture) {
-      setHover(hitTest(x, y), event.currentTarget);
+      setHover(hitTest(x, y), event.currentTarget, { x, y });
       return;
     }
     const dx = x - gesture.lastX;
@@ -1180,17 +1430,87 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     selected !== null
       ? [...model.neighbors[selected]].sort((a, b) => b.link.weight - a.link.weight).slice(0, MAX_LISTED_NEIGHBORS)
       : [];
+  /**
+   * The subject the card answers on.
+   *
+   * What the reader is looking at, in order: the subject they put on stage,
+   * what they typed in the search field, and failing both the subject this
+   * file belongs to most. A card opened out of the blue then still says what
+   * the file is about rather than nothing.
+   */
+  const readingSubject = useMemo(() => {
+    const chosen = facets.filter((f) => f.startsWith(TOPIC_FILTER_PREFIX));
+    if (chosen.length === 1) {
+      return model.topics[Number(chosen[0].slice(TOPIC_FILTER_PREFIX.length))]?.label ?? "";
+    }
+    const typed = query.trim();
+    if (typed) {
+      return typed;
+    }
+    const own = selectedFile?.topics?.[0];
+    return own ? (model.subjects.find((subject) => subject.id === own.id)?.name ?? "") : "";
+  }, [facets, model, query, selectedFile]);
+
+  // The neighbours the card explains in words: the closest ones, as many as
+  // the backend answers for. The rest keep the passage the storage holds.
+  const explained = selectedNeighbors
+    .slice(0, EXPLAINED_NEIGHBORS)
+    .map(({ node }) => model.data.files[node].id);
+  const brief = useFileBrief(selectedFile?.id ?? null, readingSubject, explained);
+  const sentences = useMemo(
+    () => new Map((brief.data?.links ?? []).map((link) => [link.id, link.sentence])),
+    [brief.data],
+  );
+  const removeFile = useDeleteFile();
+  /** The neighbour holding the same content as the open file, once confirmed. */
+  const [duplicate, setDuplicate] = useState<{ id: string; title: string } | null>(null);
+
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
   const hoveredScreen = hovered !== null ? screenRef.current[hovered] : null;
   const activeLinkMeta = activeLink !== null ? model.linkMeta[activeLink] : null;
-  const dotColor = THEMES[theme].categoryColor;
   const colorOf = (i: number) => nodeColor(i, theme);
 
-  const filterName = (id: string) =>
-    id.startsWith(TOPIC_FILTER_PREFIX)
-      ? (model.topics[Number(id.slice(TOPIC_FILTER_PREFIX.length))]?.label ?? "")
-      : t(`graph.categories.${id.replace(CATEGORY_FILTER_PREFIX, "")}`);
+  const filterName = (id: string) => {
+    const value = id.slice(id.indexOf(":") + 1);
+    if (id.startsWith(TOPIC_FILTER_PREFIX)) {
+      return model.topics[Number(value)]?.label ?? "";
+    }
+    if (id.startsWith(AUTHOR_FILTER_PREFIX)) {
+      return authorsInUse.find((author) => author.id === value)?.name ?? value;
+    }
+    if (id.startsWith(DATE_FILTER_PREFIX)) {
+      return t(`graph.dates.${value}`);
+    }
+    if (id.startsWith(RIGHT_FILTER_PREFIX)) {
+      return t(`graph.rights_of.${value}`);
+    }
+    return t(`graph.categories.${value}`);
+  };
   const filteredCount = facets.length ? nodesOfFacets(facets).length : 0;
+
+  /**
+   * One line of a filter list: the facet, how many files answer to it, and
+   * for the rights, the colour those files are drawn in.
+   */
+  const renderFacet = (id: string, label: string, count: number, dot?: string) => {
+    const on = facets.includes(id);
+    return (
+      <button
+        key={id}
+        type="button"
+        className={`file-graph__legend-item${on ? " file-graph__legend-item--active" : ""}`}
+        style={on && dot ? { background: `${dot}33` } : undefined}
+        aria-pressed={on}
+        onClick={() => toggleFacet(id)}
+        onMouseEnter={() => previewCategory(id)}
+        onMouseLeave={() => previewCategory(null)}
+      >
+        {dot && <span className="file-graph__dot" style={{ background: dot }} />}
+        <span className="file-graph__facet-label">{label}</span>
+        <span className="file-graph__legend-count">{count}</span>
+      </button>
+    );
+  };
 
   const renderCard = (i: number, file: GraphFile) => (
     <aside className="file-graph__card">
@@ -1201,12 +1521,35 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           <XMark />
         </button>
       </div>
-      <p className="file-graph__card-line">
-        {t(`graph.categories.${model.categories[i]}`)}
-        {file.size > 0 && <> · {prettyBytes(file.size, { locale: i18n.language })}</>}
-        {" · "}
-        {formatDate(file.updated_at)}
-      </p>
+      {/*
+        What the file is, when it arrived, who wrote it and what may be done
+        with it: the four things the stage draws it by, written out, so the
+        size of a dot and its colour can be read back in words.
+      */}
+      <dl className="file-graph__meta">
+        <div>
+          <dt>{t("graph.category")}</dt>
+          <dd>
+            {t(`graph.categories.${model.categories[i]}`)}
+            {file.size > 0 && <> · {prettyBytes(file.size, { locale: i18n.language })}</>}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("graph.added_on")}</dt>
+          <dd>{formatDate(file.created_at ?? file.updated_at)}</dd>
+        </div>
+        <div>
+          <dt>{t("graph.created_by")}</dt>
+          <dd>{file.creator || t("graph.author_unknown")}</dd>
+        </div>
+        <div>
+          <dt>{t("graph.rights")}</dt>
+          <dd>
+            <span className="file-graph__dot" style={{ background: colorOf(i) }} />
+            {t(`graph.rights_of.${model.ownerships[i]}`)}
+          </dd>
+        </div>
+      </dl>
       <div className="file-graph__card-actions">
         <Tooltip content={t("graph.isolate_hint", { count: NEIGHBOURHOOD })}>
           <Button
@@ -1277,18 +1620,80 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         file.status === "idle") && (
         <p className="file-graph__pending">{t(`graph.status_${file.status}`)}</p>
       )}
+      {/*
+        What the file says, on whatever is being looked at. Asked for when the
+        card opens: it costs a reading of the file, and most cards are never
+        opened.
+      */}
+      <h3 className="file-graph__card-subtitle">
+        {t("graph.summary")}
+        {readingSubject && (
+          <span className="file-graph__card-subject" title={readingSubject}>
+            {readingSubject}
+          </span>
+        )}
+      </h3>
+      {brief.isPending ? (
+        <p className="file-graph__loading-lines" aria-label={t("graph.summary_loading")}>
+          <span />
+          <span />
+          <span />
+        </p>
+      ) : brief.data?.summary ? (
+        <p className="file-graph__summary">{brief.data.summary}</p>
+      ) : (
+        <p className="file-graph__reason">{t("graph.summary_missing")}</p>
+      )}
       <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
       <ul className="file-graph__links">
-        {selectedNeighbors.map(({ node, link }) => (
-          <li key={node}>
-            <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
-              <span className="file-graph__dot" style={{ background: colorOf(node) }} />
-              <span className="file-graph__link-title">{model.data.files[node].title}</span>
-              <span className="file-graph__weight">{Math.round(link.weight * 100)}%</span>
-            </button>
-            {link.reason && <p className="file-graph__reason">{link.reason}</p>}
-          </li>
-        ))}
+        {selectedNeighbors.map(({ node, link }) => {
+          const neighbour = model.data.files[node];
+          const sentence = sentences.get(neighbour.id);
+          // The same document twice: the passages match, or the pair is so
+          // close that a one-passage file and its copy cannot be told apart.
+          const twin =
+            (Boolean(file.content) && neighbour.content === file.content) ||
+            link.weight >= DUPLICATE_WEIGHT;
+          return (
+            <li key={node}>
+              <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
+                <span className="file-graph__dot" style={{ background: colorOf(node) }} />
+                <span className="file-graph__link-title">{neighbour.title}</span>
+                <span className="file-graph__weight">{Math.round(link.weight * 100)}%</span>
+              </button>
+              {/*
+                What the two have in common, in a sentence, and failing that
+                the passage the storage kept to justify the tie.
+              */}
+              {sentence ? (
+                <p className="file-graph__sentence">{sentence}</p>
+              ) : brief.isPending && explained.includes(neighbour.id) ? (
+                <p className="file-graph__loading-lines file-graph__loading-lines--one">
+                  <span />
+                </p>
+              ) : link.reason ? (
+                <p className="file-graph__reason">{link.reason}</p>
+              ) : null}
+              {/*
+                Same content on both sides: the one thing a graph can show
+                that a folder cannot, so it comes with the answer to it.
+              */}
+              {twin && (
+                <p className="file-graph__twin">
+                  <span className="file-graph__twin-note">{t("graph.duplicate_found")}</span>
+                  <button
+                    type="button"
+                    className="file-graph__twin-drop"
+                    onClick={() => setDuplicate({ id: neighbour.id, title: neighbour.title })}
+                  >
+                    <Trash />
+                    {t("graph.duplicate_delete")}
+                  </button>
+                </p>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </aside>
   );
@@ -1521,6 +1926,69 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         <div
           className={`file-graph__viewtools${selectedFile ? " file-graph__viewtools--aside" : ""}`}
         >
+          {/*
+            Filters answer four questions about a file ‒ when it arrived, who
+            wrote it, what it is, and what may be done with it ‒ and the last
+            one is also the legend of the colours on stage. Subjects stay in
+            their own panel on the left: they are a filter too, but they are
+            what the reader writes, not what the drive already knows.
+          */}
+          <div className="file-graph__display" ref={filtersRef}>
+            {filtersOpen && (
+              <div className="file-graph__display-pop file-graph__filters-pop" role="group" aria-label={t("graph.filters")}>
+                {datesInUse.length > 1 && (
+                  <div className="file-graph__display-section">
+                    <span className="file-graph__section-title">{t("graph.date")}</span>
+                    {datesInUse.map(({ id, count }) =>
+                      renderFacet(DATE_FILTER_PREFIX + id, t(`graph.dates.${id}`), count),
+                    )}
+                  </div>
+                )}
+                {authorsInUse.length > 1 && (
+                  <div className="file-graph__display-section">
+                    <span className="file-graph__section-title">{t("graph.author")}</span>
+                    {authorsInUse.map(({ id, name, count }) =>
+                      renderFacet(AUTHOR_FILTER_PREFIX + id, name, count),
+                    )}
+                  </div>
+                )}
+                {categoriesInUse.length > 1 && (
+                  <div className="file-graph__display-section">
+                    <span className="file-graph__section-title">{t("graph.types")}</span>
+                    {categoriesInUse.map(({ id, count }) =>
+                      renderFacet(CATEGORY_FILTER_PREFIX + id, t(`graph.categories.${id}`), count),
+                    )}
+                  </div>
+                )}
+                <div className="file-graph__display-section">
+                  <span className="file-graph__section-title">{t("graph.rights")}</span>
+                  {rightsInUse.map(({ id, count }) =>
+                    renderFacet(RIGHT_FILTER_PREFIX + id, t(`graph.rights_of.${id}`), count, THEMES[theme].ownershipColor(id)),
+                  )}
+                </div>
+                {facets.length > 0 && (
+                  <button type="button" className="file-graph__inline-link file-graph__filters-clear" onClick={clearFilters}>
+                    {t("graph.filter_clear")}
+                  </button>
+                )}
+              </div>
+            )}
+            <Button
+              size="small"
+              variant="bordered"
+              color="neutral"
+              icon={<Filter />}
+              active={filtersOpen}
+              aria-expanded={filtersOpen}
+              onClick={() => {
+                setFiltersOpen(!filtersOpen);
+                setDisplayOpen(false);
+              }}
+            >
+              {t("graph.filters")}
+              {facets.length > 0 && <span className="file-graph__filters-badge">{facets.length}</span>}
+            </Button>
+          </div>
           <div className="file-graph__display" ref={displayRef}>
             {displayOpen && (
               <div className="file-graph__display-pop" role="group" aria-label={t("graph.display")}>
@@ -1566,24 +2034,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                     aria-label={t("graph.strength")}
                   />
                 </label>
-                <div className="file-graph__display-section">
-                  <span className="file-graph__section-title">{t("graph.types")}</span>
-                  {categoriesInUse.map(({ id, count }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={`file-graph__legend-item${facets.includes(CATEGORY_FILTER_PREFIX + id) ? " file-graph__legend-item--active" : ""}`}
-                      style={facets.includes(CATEGORY_FILTER_PREFIX + id) ? { background: `${dotColor(id)}33` } : undefined}
-                      onClick={() => toggleFacet(CATEGORY_FILTER_PREFIX + id)}
-                      onMouseEnter={() => previewCategory(CATEGORY_FILTER_PREFIX + id)}
-                      onMouseLeave={() => previewCategory(null)}
-                    >
-                      <span className="file-graph__dot" style={{ background: dotColor(id) }} />
-                      {t(`graph.categories.${id}`)}
-                      <span className="file-graph__legend-count">{count}</span>
-                    </button>
-                  ))}
-                </div>
                 <Switch
                   label={t("graph.theme_dark")}
                   checked={theme === "dark"}
@@ -1598,7 +2048,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               icon={<Settings />}
               active={displayOpen}
               aria-expanded={displayOpen}
-              onClick={() => setDisplayOpen(!displayOpen)}
+              onClick={() => {
+                setDisplayOpen(!displayOpen);
+                setFiltersOpen(false);
+              }}
             >
               {t("graph.display")}
             </Button>
@@ -1609,6 +2062,20 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         </div>
 
         {selectedFile && selected !== null && renderCard(selected, selectedFile)}
+
+        {duplicate && selectedFile && (
+          <DuplicateModal
+            kept={selectedFile.title}
+            dropped={duplicate.title}
+            busy={removeFile.isPending}
+            onClose={() => setDuplicate(null)}
+            onConfirm={() =>
+              removeFile.mutate(duplicate.id, {
+                onSettled: () => setDuplicate(null),
+              })
+            }
+          />
+        )}
 
         {editingSubject && (
           <SubjectModal
@@ -1626,13 +2093,28 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           />
         )}
 
-        {activeLinkMeta && selected === null && (
+        {/*
+          A thread under the pointer says which two files it joins and how
+          close they are. The figure is drawn on the thread as well; here it
+          comes with the names, which the stage can only show one at a time.
+        */}
+        {activeLink !== null && activeLinkMeta && selected === null && (
           <div className="file-graph__callout">
-            <span className="file-graph__dash file-graph__dash--inline" />
-            <span>{activeLinkMeta.reason}</span>
-            <button type="button" className="file-graph__close file-graph__close--inline" onClick={clearFilters} aria-label={t("graph.close")}>
-              ×
-            </button>
+            <span className="file-graph__callout-pair">
+              <span className="file-graph__dot" style={{ background: colorOf(model.links[activeLink].source) }} />
+              <span className="file-graph__callout-name">
+                {model.data.files[model.links[activeLink].source].title}
+              </span>
+              <span className="file-graph__dash file-graph__dash--inline" aria-hidden="true" />
+              <span className="file-graph__dot" style={{ background: colorOf(model.links[activeLink].target) }} />
+              <span className="file-graph__callout-name">
+                {model.data.files[model.links[activeLink].target].title}
+              </span>
+              <span className="file-graph__weight">{Math.round(activeLinkMeta.weight * 100)}%</span>
+            </span>
+            {activeLinkMeta.reason && (
+              <span className="file-graph__callout-reason">{activeLinkMeta.reason}</span>
+            )}
           </div>
         )}
       </div>

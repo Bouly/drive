@@ -788,7 +788,37 @@
         "no_subject_one": "{{count}} file in no subject",
         "no_subject_other": "{{count}} files in no subject",
         "loading": "Reading your drive…",
-        "isolate_hint": "Keep this file and its {{count}} closest on the stage"
+        "isolate_hint": "Keep this file and its {{count}} closest on the stage",
+        "filters": "Filters",
+        "date": "Date added",
+        "dates": {
+          "month": "This month",
+          "quarter": "1 to 3 months ago",
+          "year": "3 to 12 months ago",
+          "older": "Over a year ago"
+        },
+        "author": "Author",
+        "author_unknown": "Unknown author",
+        "rights": "Your rights",
+        "added_on": "Added on",
+        "summary": "What this document says",
+        "summary_loading": "Reading the document",
+        "summary_missing": "No summary could be written just now.",
+        "duplicate_found": "Same content as this file.",
+        "duplicate_delete": "Delete the duplicate",
+        "duplicate_title": "Delete a duplicate?",
+        "duplicate_explain": "This file holds exactly the same text as the one you are reading:",
+        "duplicate_keeps": "The file that stays:",
+        "duplicate_trash": "The duplicate goes to the trash: it can be restored.",
+        "duplicate_cancel": "Cancel",
+        "duplicate_confirm": "Delete the duplicate",
+        "rights_of": {
+          "owner": "You own it",
+          "administrator": "You administer it",
+          "editor": "You can edit it",
+          "reader": "You can read it",
+          "none": "Reached through a link"
+        }
       }
     }
   },
@@ -1581,7 +1611,37 @@
         "no_subject_one": "{{count}} fichier dans aucun sujet",
         "no_subject_other": "{{count}} fichiers dans aucun sujet",
         "loading": "Lecture de votre drive…",
-        "isolate_hint": "Ne garder que ce fichier et ses {{count}} plus proches"
+        "isolate_hint": "Ne garder que ce fichier et ses {{count}} plus proches",
+        "filters": "Filtres",
+        "date": "Date d'ajout",
+        "dates": {
+          "month": "Ce mois-ci",
+          "quarter": "Il y a 1 à 3 mois",
+          "year": "Il y a 3 à 12 mois",
+          "older": "Il y a plus d'un an"
+        },
+        "author": "Auteur",
+        "author_unknown": "Auteur inconnu",
+        "rights": "Vos droits",
+        "added_on": "Ajouté le",
+        "summary": "Ce que dit ce document",
+        "summary_loading": "Lecture du document en cours",
+        "summary_missing": "Le résumé n'a pas pu être écrit pour l'instant.",
+        "duplicate_found": "Contenu identique à ce fichier.",
+        "duplicate_delete": "Supprimer le doublon",
+        "duplicate_title": "Supprimer un doublon ?",
+        "duplicate_explain": "Ce fichier contient exactement le même texte que celui que vous consultez :",
+        "duplicate_keeps": "Le fichier conservé :",
+        "duplicate_trash": "Le doublon part à la corbeille : il peut être restauré.",
+        "duplicate_cancel": "Annuler",
+        "duplicate_confirm": "Supprimer le doublon",
+        "rights_of": {
+          "owner": "Vous êtes propriétaire",
+          "administrator": "Vous administrez",
+          "editor": "Vous pouvez modifier",
+          "reader": "Vous pouvez lire",
+          "none": "Accès par lien"
+        }
       }
     }
   },
@@ -2374,7 +2434,37 @@
         "no_subject_one": "{{count}} bestand in geen enkel onderwerp",
         "no_subject_other": "{{count}} bestanden in geen enkel onderwerp",
         "loading": "Je drive wordt gelezen…",
-        "isolate_hint": "Alleen dit bestand en zijn {{count}} naaste buren tonen"
+        "isolate_hint": "Alleen dit bestand en zijn {{count}} naaste buren tonen",
+        "filters": "Filters",
+        "date": "Toegevoegd op",
+        "dates": {
+          "month": "Deze maand",
+          "quarter": "1 tot 3 maanden geleden",
+          "year": "3 tot 12 maanden geleden",
+          "older": "Meer dan een jaar geleden"
+        },
+        "author": "Auteur",
+        "author_unknown": "Onbekende auteur",
+        "rights": "Uw rechten",
+        "added_on": "Toegevoegd op",
+        "summary": "Wat dit document zegt",
+        "summary_loading": "Het document wordt gelezen",
+        "summary_missing": "Er kon nu geen samenvatting worden geschreven.",
+        "duplicate_found": "Zelfde inhoud als dit bestand.",
+        "duplicate_delete": "Duplicaat verwijderen",
+        "duplicate_title": "Een duplicaat verwijderen?",
+        "duplicate_explain": "Dit bestand bevat exact dezelfde tekst als het bestand dat u bekijkt:",
+        "duplicate_keeps": "Het bestand dat blijft:",
+        "duplicate_trash": "Het duplicaat gaat naar de prullenbak en kan worden hersteld.",
+        "duplicate_cancel": "Annuleren",
+        "duplicate_confirm": "Duplicaat verwijderen",
+        "rights_of": {
+          "owner": "U bent eigenaar",
+          "administrator": "U beheert dit bestand",
+          "editor": "U kunt bewerken",
+          "reader": "U kunt lezen",
+          "none": "Bereikt via een link"
+        }
       }
     }
   }

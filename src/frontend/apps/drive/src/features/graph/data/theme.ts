@@ -21,6 +21,41 @@ const CATEGORY_COLORS: Record<string, string> = {
 export const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
 
 /**
+ * One colour per right the reader holds on a file, which is what a dot is
+ * filled with: their own files, the ones a colleague lets them write in, the
+ * ones they only read, and the ones they reach through a link and hold
+ * nothing on.
+ *
+ * It replaces the file family, which the dot used to carry. A drive is not
+ * read by format ‒ nobody looks for "the PDFs" ‒ but whose a file is decides
+ * what may be done with it, and on a shared drive that is the first thing to
+ * know about a document somebody points you at. The family is still there,
+ * as the shape of the dot for folders and as a filter.
+ *
+ * Four steps of one walk, from full rights to none, rather than four hues
+ * picked apart: the subjects already own the saturated wheel, and they ride
+ * the halo right behind these dots.
+ */
+const OWNERSHIP_COLORS: Record<"dark" | "light", Record<string, string>> = {
+  dark: {
+    owner: "#6E8CFF",
+    administrator: "#B18CFF",
+    editor: "#3FCF8E",
+    reader: "#F2A65A",
+    none: "#A9A9BF",
+  },
+  light: {
+    owner: "#2E52D8",
+    administrator: "#7A3FD0",
+    editor: "#0F8A5F",
+    reader: "#C2661A",
+    none: "#75758A",
+  },
+};
+/** Most rights first: the order the legend and the filter read in. */
+export const OWNERSHIP_ORDER = ["owner", "administrator", "editor", "reader", "none"];
+
+/**
  * One color per subject. Sixteen of them, so a drive can hold sixteen
  * subjects before two share a hue.
  *
@@ -77,6 +112,8 @@ export type Theme = {
   ring: string;
   glow: boolean;
   categoryColor: (category: string) => string;
+  /** Colour of a dot: what the reader may do with that file. */
+  ownershipColor: (role: string) => string;
 };
 // Values are DSFR palette tokens (cunningham-tokens.css): gray-*, brand-*, warning-*.
 export const THEMES: Record<"dark" | "light", Theme> = {
@@ -90,6 +127,7 @@ export const THEMES: Record<"dark" | "light", Theme> = {
     glow: true,
     clusterColor: (slot) => CLUSTER_COLORS.dark[slot],
     categoryColor: (category) => lighten(CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other, 0.3),
+    ownershipColor: (role) => OWNERSHIP_COLORS.dark[role] ?? OWNERSHIP_COLORS.dark.none,
   },
   light: {
     bg: "#F0F0F3", // gray-050
@@ -101,6 +139,7 @@ export const THEMES: Record<"dark" | "light", Theme> = {
     glow: false,
     clusterColor: (slot) => CLUSTER_COLORS.light[slot],
     categoryColor: (category) => CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other,
+    ownershipColor: (role) => OWNERSHIP_COLORS.light[role] ?? OWNERSHIP_COLORS.light.none,
   },
 };
 export const THEME_STORAGE_KEY = "drive-graph-theme";

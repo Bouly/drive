@@ -18,8 +18,10 @@ answer reads as a drive of its own.
 from collections import Counter
 from datetime import timedelta
 
+from django.contrib.postgres.aggregates import StringAgg
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Exists, OuterRef, Q, Subquery
+from django.db.models.functions import MD5
 from django.utils import timezone
 
 from rest_framework import views
@@ -163,6 +165,29 @@ def graph_items(user, root=None):
     )
 
 
+def content_keys(item_ids):
+    """
+    A fingerprint of each file's content, as ``{item_id: key}``.
+
+    Two files holding the same passages carry the same key, and that is what
+    "the same document twice" means ‒ the weight of a link cannot say it. A
+    link's weight is the whole of one file against the nearest passage of the
+    other, so two copies of a twelve-passage document sit at 0.96 and never
+    reach 1, while two one-line files that merely agree do. The card offers to
+    drop a copy, which is not something to offer on a resemblance.
+
+    Built by Postgres in one pass, from the hashes the chunks already carry:
+    reading every hash back to fold it here costs ten megabytes on a large
+    drive, for an answer of one line per file.
+    """
+    rows = (
+        ItemChunk.objects.filter(item_id__in=item_ids)
+        .values("item_id")
+        .annotate(key=MD5(StringAgg("text_hash", delimiter=",", order_by="text_hash")))
+    )
+    return {row["item_id"]: row["key"] for row in rows}
+
+
 def item_status(item):
     """
     Where an item stands in the pipeline, for the page to show it right.
@@ -188,7 +213,7 @@ def item_status(item):
     return "idle"
 
 
-def serialize_item(item, topics_by_item, user):
+def serialize_item(item, topics_by_item, user, keys):
     """The node shape the graph page expects."""
     creator = item.creator
     return {
@@ -210,6 +235,9 @@ def serialize_item(item, topics_by_item, user):
         # The page colours a dot by it: whose file this is, at a glance.
         "role": item.get_role(user) or "",
         "status": item_status(item),
+        # Files holding exactly the same passages share this key: the page
+        # marks them as the same document and offers to keep one.
+        "content": keys.get(item.id, ""),
         # The subjects this file fell into, closest first.
         "topics": topics_by_item.get(item.id, []),
     }
@@ -272,9 +300,12 @@ class GraphView(views.APIView):
                 }
             )
 
+        keys = content_keys(item_ids)
         return Response(
             {
-                "files": [serialize_item(item, topics_by_item, request.user) for item in items],
+                "files": [
+                    serialize_item(item, topics_by_item, request.user, keys) for item in items
+                ],
                 "links": serialize_links(item_ids),
                 # Every folder that can be drawn, so the page can offer a
                 # different one without sending the reader back to the explorer.

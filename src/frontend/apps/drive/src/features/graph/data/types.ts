@@ -7,14 +7,33 @@
 
 export const FOLDER_MIMETYPE = "application/x-directory";
 
+/**
+ * What the reader may do with a file, which is the colour of its dot: a file
+ * of their own, one they may write in, one they only read, or one they reach
+ * through a link and hold no right on at all.
+ */
+export type Ownership = "owner" | "administrator" | "editor" | "reader" | "";
+
 export type GraphFile = {
   id: string;
   title: string;
   mimetype: string;
   /** Bytes. */
   size: number;
+  /** When the file was added to the drive: the size of its dot. */
+  created_at: string;
+  /** When it was last saved, which is a different question. */
   updated_at: string;
   creator: string;
+  /** The author, as an id: two colleagues can share a name. */
+  creator_id: string;
+  /** What the reader holds on it: the colour of its dot. */
+  role: Ownership;
+  /**
+   * Fingerprint of the passages the file holds. Two files carrying the same
+   * one are the same document twice, which a link's weight cannot say.
+   */
+  content?: string;
   /**
    * Where the file stands: "indexed" (content analysed), "pending" (being
    * analysed, drawn pulsing), "empty" (analysed, no text inside), "failed"
