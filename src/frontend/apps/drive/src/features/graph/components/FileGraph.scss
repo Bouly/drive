@@ -266,6 +266,31 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     padding: var(--c--globals--spacings--sm, 12px);
   }
 
+  // The kit's controls are built for the page's own surface; inside the dark
+  // panel they keep their light one, so the label of the switch goes grey on
+  // grey and the select drops a white box onto the stage. They are given the
+  // panel's colours here rather than their own theme.
+  &__display-pop {
+    .c__switch {
+      color: var(--fg-text);
+      font-size: var(--c--globals--font--sizes--xs, 12px);
+    }
+
+    .c__select {
+      .c__select__wrapper,
+      .c__select__inner {
+        border-color: var(--fg-panel-border);
+        background: transparent;
+        color: var(--fg-text);
+      }
+
+      .labelled-box__label,
+      .c__select__inner__value {
+        color: var(--fg-text);
+      }
+    }
+  }
+
   &__display-section {
     display: flex;
     flex-direction: column;
