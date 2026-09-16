@@ -27,6 +27,11 @@ import { SubjectModal } from "./SubjectModal";
  */
 const TOPIC_FILTER_PREFIX = "topic:";
 const CATEGORY_FILTER_PREFIX = "cat:";
+/**
+ * Steps run on a subject's own layout before the camera looks at it, so the
+ * stage shows the shape of the subject rather than where its files were left.
+ */
+const STAGE_WARMUP = 320;
 /** Files kept around the one being explored on its own. */
 const NEIGHBOURHOOD = 8;
 
@@ -850,7 +855,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       simRef.current = model.simulation;
     } else {
       const rank = new Map(stagedNodes.map((node, at) => [node, at]));
-      simRef.current = new ForceSimulation(
+      const staged = new ForceSimulation(
         stagedNodes.map((node) => model.nodes[node]),
         model.links
           .filter((link) => rank.has(link.source) && rank.has(link.target))
@@ -860,6 +865,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             target: rank.get(link.target) as number,
           })),
       );
+      // Settle it before the camera looks, the way the whole graph is settled
+      // when it is built: the files of a subject start scattered across the
+      // drive, so framing them first would frame the drive and show nothing.
+      for (let step = 0; step < STAGE_WARMUP; step++) {
+        staged.tick();
+      }
+      simRef.current = staged;
     }
     // Only move the camera when the staging itself changed: a refetch keeps
     // whatever the reader was looking at, and the effect above frames new files.

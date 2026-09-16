@@ -57,15 +57,19 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     gap: var(--c--globals--spacings--xs, 8px);
   }
 
+  // Shares the look of the floating panels, but sits in the topbar's flow:
+  // it is styled on its own rather than with them, which would place it.
   &__counter {
-    // Sits in the topbar's flow: it shares the panel look, not the placement.
-    position: static;
     display: flex;
     align-items: center;
     gap: 6px;
     height: 36px;
     padding: 0 12px;
+    border: 1px solid var(--fg-panel-border);
     border-radius: 999px;
+    background: var(--fg-panel);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 24px var(--fg-panel-shadow);
     font-size: var(--c--globals--font--sizes--xs, 12px);
     color: var(--fg-muted);
     white-space: nowrap;
@@ -315,7 +319,6 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   &__card,
   &__tooltip,
   &__callout,
-  &__counter,
   &__facets,
   &__display-pop {
     position: absolute;
