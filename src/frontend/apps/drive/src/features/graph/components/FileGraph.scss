@@ -701,3 +701,83 @@
     animation: none;
   }
 }
+
+// Subjects the user writes: the panel that creates them, the chips that
+// put a file in one.
+.file-graph {
+  &__subject-new {
+    display: flex;
+    gap: 4px;
+    margin-bottom: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__subject-input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fg-text);
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--sm, 13px);
+  }
+
+  &__subject-add {
+    flex: none;
+    width: 26px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--fg-text);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--fg-hover);
+    }
+  }
+
+  &__legend-note {
+    margin: 2px 0 0;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    color: var(--fg-faint);
+  }
+
+  &__subjects {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: var(--c--globals--spacings--xs, 8px) 0 0;
+  }
+
+  &__subject {
+    padding: 3px 8px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fg-muted);
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--fg-link);
+      color: var(--fg-text);
+    }
+
+    // In the subject because it resembles it...
+    &--in {
+      border-color: var(--fg-link);
+      color: var(--fg-link);
+    }
+
+    // ...or because the user put it there.
+    &--pinned {
+      background: var(--fg-active);
+      color: var(--fg-text);
+      font-weight: var(--c--globals--font--weights--bold, 600);
+    }
+  }
+}

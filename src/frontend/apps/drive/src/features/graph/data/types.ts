@@ -22,6 +22,15 @@ export type GraphFile = {
    * analysed and not queued for it).
    */
   status?: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
+  /** Subjects this file fell into, closest first. */
+  topics?: { id: string; score: number; pinned: boolean }[];
+};
+
+/** A subject its owner wrote; files fall into it on their own. */
+export type Subject = {
+  id: string;
+  name: string;
+  description: string;
 };
 
 export type GraphLink = {
@@ -35,4 +44,6 @@ export type GraphLink = {
 export type GraphData = {
   files: GraphFile[];
   links: GraphLink[];
+  /** The subjects of the user reading the graph; empty until they write one. */
+  subjects: Subject[];
 };

@@ -221,6 +221,11 @@ class Base(Configuration):
     GRAPH_ALBERT_CHAT_MODEL = values.Value(
         "openweight-medium", environ_name="GRAPH_ALBERT_CHAT_MODEL", environ_prefix=None
     )
+    # How close a file must be to a subject to fall into it. Measured on a
+    # real drive: 0.45 gathers what belongs, 0.55 leaves obvious files out.
+    GRAPH_TOPIC_MIN_SIMILARITY = values.FloatValue(
+        0.45, environ_name="GRAPH_TOPIC_MIN_SIMILARITY", environ_prefix=None
+    )
     # Model describing images that hold no readable text, so a photo is
     # placed in the graph by what it shows.
     GRAPH_ALBERT_VISION_MODEL = values.Value(

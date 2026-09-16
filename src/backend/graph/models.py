@@ -129,3 +129,67 @@ class ItemLink(BaseModel):
 
     def __str__(self):
         return f"{self.source_id} -> {self.target_id} ({self.kind}, {self.weight:.2f})"
+
+
+class Topic(BaseModel):
+    """
+    A subject someone created, that files fall into on their own.
+
+    The subject is defined by what its owner says of it, in words and by
+    example: a name, a description, and the files pinned to it. Those give it
+    a vector, and every file close enough to that vector joins it. Nothing is
+    invented: the names are the user's, and a file is in a subject because it
+    resembles what the user put there.
+    """
+
+    name = models.CharField(_("name"), max_length=255)
+    # What the subject is about, in a sentence or two. A name alone makes a
+    # weak vector; a description, or a few pinned files, make a solid one.
+    description = models.TextField(_("description"), blank=True)
+    creator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="graph_topics"
+    )
+    # Mean of the description and of the pinned files, normalized; None while
+    # the subject has neither.
+    vector = VectorField(dimensions=settings.GRAPH_EMBEDDING_DIM, null=True, blank=True)
+
+    class Meta:
+        db_table = "drive_graph_topic"
+        verbose_name = _("Topic")
+        verbose_name_plural = _("Topics")
+        ordering = ("name",)
+        constraints = [
+            models.UniqueConstraint(fields=["creator", "name"], name="unique_topic_name_per_user"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class ItemTopic(BaseModel):
+    """
+    A file in a subject, because its owner put it there or because it fits.
+
+    ``pinned`` marks the files the user chose: they define the subject and are
+    never taken out by a recomputation. The others carry the ``score`` that
+    put them there.
+    """
+
+    item = models.ForeignKey(Item, on_delete=models.CASCADE, related_name="topics")
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE, related_name="memberships")
+    # True when the user pinned the file to the subject.
+    pinned = models.BooleanField(_("pinned"), default=False)
+    # Cosine similarity with the subject, 1.0 for a pinned file.
+    score = models.FloatField(_("score"), default=0.0)
+
+    class Meta:
+        db_table = "drive_graph_item_topic"
+        verbose_name = _("Item topic")
+        verbose_name_plural = _("Item topics")
+        ordering = ("-score",)
+        constraints = [
+            models.UniqueConstraint(fields=["item", "topic"], name="unique_item_per_topic"),
+        ]
+
+    def __str__(self):
+        return f"{self.item_id} in {self.topic_id}"

@@ -56,7 +56,7 @@ def test_empty_graph():
     client.force_login(user)
     response = client.get(URL)
     assert response.status_code == 200
-    assert response.json() == {"files": [], "links": []}
+    assert response.json() == {"files": [], "links": [], "topics": []}
 
 
 def test_graph_only_shows_readable_files_and_their_links():

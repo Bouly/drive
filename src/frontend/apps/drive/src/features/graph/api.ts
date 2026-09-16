@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAPI } from "@/features/api/fetchApi";
 import { GraphData } from "./data/types";
 
@@ -12,6 +12,7 @@ type ApiGraph = {
     updated_at: string;
     creator: string;
     status: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
+    topics: { id: string; score: number; pinned: boolean }[];
   }[];
   links: {
     source: string;
@@ -21,6 +22,7 @@ type ApiGraph = {
     reason: string;
     evidence: string;
   }[];
+  topics: { id: string; name: string; description: string }[];
 };
 
 /** Converts the API payload to the dataset shape the graph component draws. */
@@ -33,6 +35,7 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
     updated_at: file.updated_at,
     creator: file.creator,
     status: file.status,
+    topics: file.topics,
   })),
   links: mergeReciprocalLinks(api.links).map((link) => ({
     source: link.source,
@@ -42,6 +45,7 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
     // the similarity is already shown next to it.
     reason: link.evidence || link.reason || undefined,
   })),
+  subjects: api.topics,
 });
 
 /**
@@ -80,3 +84,34 @@ export const useGraph = () =>
     refetchInterval: ({ state }) =>
       state.data?.files.some((file) => file.status === "pending") ? PENDING_POLL_MS : false,
   });
+
+/**
+ * Writing a subject: each call answers once the files have been sorted into
+ * it, so the graph only has to be read again.
+ */
+export const useSubjects = () => {
+  const queryClient = useQueryClient();
+  const refresh = { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["graph"] }) };
+
+  return {
+    create: useMutation({
+      mutationFn: (subject: { name: string; description?: string }) =>
+        fetchAPI("graph/topics/", { method: "POST", body: JSON.stringify(subject) }),
+      ...refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => fetchAPI(`graph/topics/${id}/`, { method: "DELETE" }),
+      ...refresh,
+    }),
+    pin: useMutation({
+      mutationFn: ({ topic, item }: { topic: string; item: string }) =>
+        fetchAPI(`graph/topics/${topic}/files/`, { method: "POST", body: JSON.stringify({ item }) }),
+      ...refresh,
+    }),
+    unpin: useMutation({
+      mutationFn: ({ topic, item }: { topic: string; item: string }) =>
+        fetchAPI(`graph/topics/${topic}/files/${item}/`, { method: "DELETE" }),
+      ...refresh,
+    }),
+  };
+};

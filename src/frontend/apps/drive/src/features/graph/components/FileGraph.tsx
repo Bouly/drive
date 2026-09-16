@@ -5,6 +5,7 @@ import { Maximize, ZoomMinus, ZoomPlus } from "@gouvfr-lasuite/ui-components/ico
 import prettyBytes from "pretty-bytes";
 import { FOLDER_MIMETYPE, GraphData, GraphFile, GraphLink } from "../data/types";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
+import { useSubjects } from "../api";
 
 /**
  * One color per file family, taken from the ui-kit file icons (mime-*.svg) so
@@ -561,13 +562,30 @@ const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       (groups[group] ??= []).push(i);
     }
   });
-  const labels = nameTopics(groups, bags, spelling, data.files, degree);
+  // Subjects the user wrote win over the groups read off the links: they are
+  // named, stable, and a file is in one because it resembles what the user
+  // put there. The computed groups only stand in while there is none.
   const taken = new Set<number>();
-  const topics = groups.map((files, group) => ({
-    label: labels[group],
-    color: colorOfName(labels[group], taken),
-    files,
-  }));
+  let topics;
+  if (data.subjects.length) {
+    const rank = new Map(data.subjects.map((subject, i) => [subject.id, i]));
+    data.files.forEach((file, i) => {
+      const best = file.topics?.[0];
+      clusters[i] = best ? (rank.get(best.id) ?? -1) : -1;
+    });
+    topics = data.subjects.map((subject, group) => ({
+      label: subject.name,
+      color: colorOfName(subject.name, taken),
+      files: data.files.map((_, i) => i).filter((i) => clusters[i] === group),
+    }));
+  } else {
+    const labels = nameTopics(groups, bags, spelling, data.files, degree);
+    topics = groups.map((files, group) => ({
+      label: labels[group],
+      color: colorOfName(labels[group], taken),
+      files,
+    }));
+  }
 
   // Now that the groups are known, the layout can say so: a pair inside a
   // group rests closer, a pair across two groups is held further apart, and
@@ -620,6 +638,8 @@ type FileGraphProps = {
 };
 
 export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
+  const subjects = useSubjects();
+  const [newSubject, setNewSubject] = useState("");
   const { t, i18n } = useTranslation();
   /** Where each file sits, so a refetch does not shuffle the whole graph. */
   const placedRef = useRef(new Map<string, SimNode>());
@@ -1538,6 +1558,36 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       <Button size="small" variant={isolated ? "primary" : "bordered"} color="neutral" onClick={toggleIsolate}>
         {t(isolated ? "graph.isolate_off" : "graph.isolate", { count: NEIGHBOURHOOD })}
       </Button>
+      {model.data.subjects.length > 0 && (
+        <div className="file-graph__subjects">
+          {model.data.subjects.map((subject) => {
+            const membership = file.topics?.find((t) => t.id === subject.id);
+            return (
+              <button
+                key={subject.id}
+                type="button"
+                className={`file-graph__subject${membership ? " file-graph__subject--in" : ""}${
+                  membership?.pinned ? " file-graph__subject--pinned" : ""
+                }`}
+                title={
+                  membership?.pinned
+                    ? t("graph.subject_pinned")
+                    : membership
+                      ? t("graph.subject_matched", { score: Math.round(membership.score * 100) })
+                      : t("graph.subject_put")
+                }
+                onClick={() =>
+                  membership?.pinned
+                    ? subjects.unpin.mutate({ topic: subject.id, item: file.id })
+                    : subjects.pin.mutate({ topic: subject.id, item: file.id })
+                }
+              >
+                {subject.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {file.status === "pending" && (
         <p className="file-graph__pending">
           <span className="file-graph__pulse" />
@@ -1725,6 +1775,28 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         )}
 
         <aside className="file-graph__legend" aria-label={t("graph.legend")}>
+          <form
+            className="file-graph__subject-new"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = newSubject.trim();
+              if (name) {
+                subjects.create.mutate({ name });
+                setNewSubject("");
+              }
+            }}
+          >
+            <input
+              className="file-graph__subject-input"
+              value={newSubject}
+              placeholder={t("graph.subject_new")}
+              aria-label={t("graph.subject_new")}
+              onChange={(event) => setNewSubject(event.target.value)}
+            />
+            <button type="submit" className="file-graph__subject-add" aria-label={t("graph.subject_add")}>
+              +
+            </button>
+          </form>
           {model.topics.map((topic, i) => {
             const id = `${TOPIC_FILTER_PREFIX}${i}`;
             const color =
@@ -1745,6 +1817,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               </button>
             );
           })}
+          {model.data.subjects.length > 0 && (
+            <p className="file-graph__legend-note">{t("graph.subject_hint")}</p>
+          )}
           {categoriesInUse.map(({ id, count }) => (
             <button
               key={id}

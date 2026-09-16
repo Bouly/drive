@@ -15,7 +15,7 @@ from celery import shared_task
 
 from core.models import Item, ItemTypeChoices
 
-from graph.models import ItemIndex
+from graph.models import ItemIndex, Topic
 from graph.services import storage
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.chunking import Chunk, chunk_text, hash_text
@@ -26,6 +26,7 @@ from graph.services.extraction import (
     is_extractable,
 )
 from graph.services.linking import forget_item, live_files, relink_all
+from graph.services.subjects import sort_into_subjects
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,8 @@ def index_item(item_id):
     # everybody's list. Links are stored for everyone; the API filters by
     # access rights when reading, and trashed files are never targets.
     relink_all(live_files())
+    # The file also falls into the subjects it fits, without touching theirs.
+    sort_into_subjects(item, Topic.objects.exclude(vector=None))
 
 
 @shared_task
