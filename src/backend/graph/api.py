@@ -30,6 +30,7 @@ from core import models
 from core.api import permissions
 
 from graph.models import ItemChunk, ItemIndex, ItemLink, ItemTopic, Topic
+from graph.services.brief import MAX_NEIGHBOURS, brief
 from graph.services.extraction import is_extractable
 from graph.services.scope import readable_by
 
@@ -140,7 +141,7 @@ def graph_items(user, root=None):
         | Q(Exists(ItemLink.objects.filter(source=OuterRef("pk"))))
         | Q(Exists(ItemLink.objects.filter(target=OuterRef("pk"))))
     )
-    items = readable_by(user)
+    items = readable_by(user).annotate_user_roles(user)
     if root is not None:
         # The materialised path answers in one index scan, so a folder ten
         # levels down costs what the whole drive costs. The folder itself is
@@ -187,7 +188,7 @@ def item_status(item):
     return "idle"
 
 
-def serialize_item(item, topics_by_item):
+def serialize_item(item, topics_by_item, user):
     """The node shape the graph page expects."""
     creator = item.creator
     return {
@@ -195,8 +196,19 @@ def serialize_item(item, topics_by_item):
         "title": item.title,
         "mimetype": item.mimetype or ("application/x-directory" if item.type == "folder" else ""),
         "size": item.size or 0,
+        # When the file landed in the drive, and when it was last touched: the
+        # page draws a dot by its age and lets the reader filter on it, which
+        # is a question about the arrival, not about the last save.
+        "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
         "creator": (creator.full_name or creator.email) if creator else "",
+        # Who the author is, as an id: two colleagues can share a name, and
+        # the page groups the files by author.
+        "creator_id": str(creator.id) if creator else "",
+        # What the reader holds on this file ‒ "owner", "administrator",
+        # "editor", "reader", or "" when they only reach it through a link.
+        # The page colours a dot by it: whose file this is, at a glance.
+        "role": item.get_role(user) or "",
         "status": item_status(item),
         # The subjects this file fell into, closest first.
         "topics": topics_by_item.get(item.id, []),
@@ -262,7 +274,7 @@ class GraphView(views.APIView):
 
         return Response(
             {
-                "files": [serialize_item(item, topics_by_item) for item in items],
+                "files": [serialize_item(item, topics_by_item, request.user) for item in items],
                 "links": serialize_links(item_ids),
                 # Every folder that can be drawn, so the page can offer a
                 # different one without sending the reader back to the explorer.
@@ -283,3 +295,35 @@ class GraphView(views.APIView):
                 ),
             }
         )
+
+
+class FileBriefView(views.APIView):
+    """
+    What a file says about a subject, and what ties it to its neighbours.
+
+    GET /api/v1.0/graph/files/<id>/brief/?subject=<words>&with=<id>,<id>
+
+    Read on its own rather than sent with the graph: it costs a reading of
+    the files, and a drive of nine hundred would spend it on the eight
+    hundred cards nobody opens. The card asks for it when it opens.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, item_id):
+        """The summary of one file and a sentence per neighbour."""
+        readable = readable_by(request.user).filter(ancestors_deleted_at__isnull=True)
+        item = readable.filter(pk=item_id).first()
+        if item is None:
+            raise NotFound("No such file.")
+
+        asked = [one for one in request.query_params.get("with", "").split(",") if one]
+        # Only the files the reader can open: the card must not name, nor
+        # summarise, a file the graph would never have shown them.
+        try:
+            found = {str(one.id): one for one in readable.filter(pk__in=asked[:MAX_NEIGHBOURS])}
+        except (DjangoValidationError, ValueError):
+            found = {}
+        neighbours = [found[one] for one in asked if one in found]
+
+        return Response(brief(item, neighbours, subject=request.query_params.get("subject", "")))

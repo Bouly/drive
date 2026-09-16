@@ -121,6 +121,43 @@ def test_graph_only_shows_readable_files_and_their_links():
     assert "reason" not in semantic
 
 
+def test_a_node_says_when_it_arrived_and_what_the_reader_may_do_with_it():
+    """
+    Size and colour of a dot are read off the node: its date, and the rights.
+
+    Both are questions about the file that the page also filters on, and
+    neither can be guessed from the rest of the payload ‒ the date a file was
+    added is not the date it was last saved, and the right a reader holds
+    comes from a folder they may never have opened.
+    """
+    user = factories.UserFactory()
+    colleague = factories.UserFactory(full_name="Camille Martin")
+    mine = with_chunk(make_file("à moi", users=[(user, models.RoleChoices.OWNER)]), 0)
+    folder = factories.ItemFactory(
+        title="partagé",
+        type=models.ItemTypeChoices.FOLDER,
+        link_reach=models.LinkReachChoices.RESTRICTED,
+        users=[(colleague, models.RoleChoices.OWNER), (user, models.RoleChoices.READER)],
+    )
+    theirs = with_chunk(make_file("à elle", parent=folder), 1)
+    models.Item.objects.filter(pk=theirs.pk).update(creator=colleague)
+    added = timezone.now() - timedelta(days=200)
+    models.Item.objects.filter(pk=mine.pk).update(created_at=added)
+
+    client = APIClient()
+    client.force_login(user)
+    files = {f["title"]: f for f in client.get(URL).json()["files"]}
+
+    assert files["à moi"]["role"] == "owner"
+    # Read through the folder above it: the file itself carries no access.
+    assert files["à elle"]["role"] == "reader"
+    assert files["à elle"]["creator"] == "Camille Martin"
+    assert files["à elle"]["creator_id"] == str(colleague.id)
+    # The day it arrived, which the page draws, next to the day it changed.
+    assert files["à moi"]["created_at"].startswith(added.date().isoformat())
+    assert files["à moi"]["created_at"] != files["à moi"]["updated_at"]
+
+
 def test_a_file_uploaded_in_my_drive_stays_in_my_drive():
     """
     The graph of one account is not the graph of another.
