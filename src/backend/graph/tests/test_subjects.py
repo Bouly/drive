@@ -162,20 +162,24 @@ def test_a_file_the_reranker_judges_relevant_joins_the_subject():
 
     # The words of the subject sit far from both files; the reranker reads
     # them and puts the CV first by a wide margin.
-    with albert(mix({0: 1.0}), rerank={"CV_Ahmed.pdf": 0.53, "Facture EDF": 0.02}):
+    third = indexed_file("Quittance de loyer", mix({32: 1.0}), user)
+    scores = {"CV_Ahmed.pdf": 0.53, "Facture EDF": 0.02, "Quittance de loyer": 0.01}
+    with albert(mix({0: 1.0}), rerank=scores):
         sort_files_into(topic)
 
     assert set(topic.memberships.values_list("item_id", flat=True)) == {cv.id}
-    assert not ItemTopic.objects.filter(item=other).exists()
+    assert not ItemTopic.objects.filter(item__in=[other, third]).exists()
 
 
-def test_a_subject_nothing_answers_to_stays_empty():
-    """When the best score is weak, the reranker brings nobody in."""
+def test_a_subject_the_reranker_only_guesses_at_stays_empty():
+    """Close scores mean the reranker is guessing: it brings nobody in."""
     user = factories.UserFactory()
-    indexed_file("Facture EDF", mix({31: 1.0}), user)
+    for title, axis in (("Facture EDF", 31), ("Relevé bancaire", 32), ("Quittance", 33)):
+        indexed_file(title, mix({axis: 1.0}), user)
     topic = Topic.objects.create(name="photo", creator=user)
 
-    with albert(mix({0: 1.0}), rerank={"Facture EDF": 0.19}):
+    guessing = {"Facture EDF": 0.19, "Relevé bancaire": 0.12, "Quittance": 0.11}
+    with albert(mix({0: 1.0}), rerank=guessing):
         sort_files_into(topic)
 
     assert not topic.memberships.exists()

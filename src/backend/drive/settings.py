@@ -227,14 +227,17 @@ class Base(Configuration):
         "openweight-rerank", environ_name="GRAPH_ALBERT_RERANK_MODEL", environ_prefix=None
     )
     # A file is relevant to a subject when the reranker gives it at least this
-    # share of the best score, and the best score is itself worth something:
-    # measured on a real drive, what belongs scores above a quarter of the
-    # best, what does not falls an order of magnitude below.
+    # share of the best score.
     GRAPH_TOPIC_RERANK_RATIO = values.FloatValue(
         0.25, environ_name="GRAPH_TOPIC_RERANK_RATIO", environ_prefix=None
     )
-    GRAPH_TOPIC_RERANK_FLOOR = values.FloatValue(
-        0.25, environ_name="GRAPH_TOPIC_RERANK_FLOOR", environ_prefix=None
+    # ...and the reranker only has a say when its answer stands out: the best
+    # score must be this many times the third one. Its scores change scale
+    # with the wording, so what counts is the gap, not the value: on a real
+    # drive "cv" scored 0.53 against a third at 0.13 (it was right), while
+    # "photo" scored 0.19 against a third at 0.11 (it was guessing).
+    GRAPH_TOPIC_RERANK_STANDOUT = values.FloatValue(
+        3.0, environ_name="GRAPH_TOPIC_RERANK_STANDOUT", environ_prefix=None
     )
     # How close a file must be to a subject to fall into it. Measured on a
     # real drive: what belongs sits at 0.56 and above, what does not at 0.46,

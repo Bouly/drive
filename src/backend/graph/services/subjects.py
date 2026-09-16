@@ -83,8 +83,9 @@ def relevant_by_reading(topic, items):
         logger.warning("Albert could not judge topic %s: %s", topic.id, exc)
         return {}
 
-    best = max(scores, default=0.0)
-    if best < settings.GRAPH_TOPIC_RERANK_FLOOR:
+    ranked = sorted(scores, reverse=True)
+    best, third = ranked[0], (ranked[2] if len(ranked) > 2 else 0.0)
+    if best <= 0 or best < third * settings.GRAPH_TOPIC_RERANK_STANDOUT:
         return {}
     keep = best * settings.GRAPH_TOPIC_RERANK_RATIO
     return {ids[i]: score for i, score in enumerate(scores) if score >= keep}
