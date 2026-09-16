@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 # nothing to do with.
 NEIGHBOURS = 4
 FLOOR = 0.55
+# Below this, two files have nothing to do with each other at all.
+WEAK_FLOOR = 0.5
 # A group keeps the name of the topic it shares at least this share of files
 # with. Kept high: a name inherited by a group that drifted is worse than a
 # new one, and Albert is only asked about groups that really changed.
@@ -134,17 +136,27 @@ def louvain(size, edges, resolution=1.0):
 def communities(items):
     """Groups of related items; an item related to nothing stays alone."""
     position = {str(item.id): i for i, item in enumerate(items)}
-    edges = {}
+    close, best = {}, {}
     for i, item in enumerate(items):
         vector = storage.item_vector(item)
         if vector is None:
             continue
-        for neighbour in storage.nearest_items(
-            vector, items, k=NEIGHBOURS, min_similarity=FLOOR, exclude_item=item
-        ):
-            j = position[neighbour.item_id]
-            # Weights start near zero at the floor so weak links barely count.
-            edges[(min(i, j), max(i, j))] = neighbour.similarity - FLOOR + 0.05
+        neighbours = storage.nearest_items(
+            vector, items, k=NEIGHBOURS, min_similarity=WEAK_FLOOR, exclude_item=item
+        )
+        if neighbours:
+            best[i] = position[neighbours[0].item_id]
+        for neighbour in neighbours:
+            close[(i, position[neighbour.item_id])] = neighbour.similarity
+
+    edges = {}
+    for (i, j), similarity in close.items():
+        # A pair counts when it is close enough, or when the two files are
+        # each other's closest: two lonely files on the same subject make a
+        # topic, a file merely less far than the rest does not.
+        if similarity >= FLOOR or (best.get(i) == j and best.get(j) == i):
+            # Weights start near zero at the floor so weak ties barely count.
+            edges[(min(i, j), max(i, j))] = similarity - WEAK_FLOOR + 0.05
     return [[items[i] for i in sorted(group)] for group in louvain(len(items), edges)]
 
 

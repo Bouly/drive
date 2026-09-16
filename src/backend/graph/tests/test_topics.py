@@ -129,6 +129,17 @@ def test_a_weak_tie_does_not_found_a_topic():
     assert ItemTopic.objects.filter(item=hr[0]).exists()
 
 
+def test_two_files_that_choose_each_other_make_a_topic():
+    """Two lonely files closest to each other are grouped, even below the floor."""
+    two_groups()
+    first = indexed_file("Vélo de route", mix({40: 1.0, 41: 0.62}))
+    second = indexed_file("Entretien du vélo", mix({40: 1.0, 42: 0.62}))
+
+    assign_topics(client=FakeChat())
+
+    assert ItemTopic.objects.get(item=first).topic == ItemTopic.objects.get(item=second).topic
+
+
 def test_assign_topics_leaves_given_topics_and_lonely_files_alone():
     """Albert-themed files keep their topic; a file related to nothing gets none."""
     hr, _ = two_groups()
