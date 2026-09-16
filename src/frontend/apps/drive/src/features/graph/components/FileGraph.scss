@@ -430,7 +430,10 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     display: flex;
     flex-direction: column;
     width: 202px;
-    max-height: calc(100% - 32px);
+    // Eighteen subjects would otherwise take the whole left edge of the stage,
+    // which is the complaint the panel was folded for in the first place: past
+    // a dozen it scrolls rather than grows.
+    max-height: min(420px, calc(100% - 32px));
     padding: var(--c--globals--spacings--2xs, 6px);
   }
 
