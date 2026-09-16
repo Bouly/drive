@@ -149,17 +149,24 @@ class GraphView(views.APIView):
         item_ids = {item.id for item in items}
 
         topics = Topic.objects.filter(creator=request.user)
+        bars = {topic.id: topic.cut for topic in topics}
         topics_by_item = {}
-        for membership in ItemTopic.objects.filter(item_id__in=item_ids, topic__in=topics).order_by(
-            "-score"
-        ):
+        for membership in ItemTopic.objects.filter(item_id__in=item_ids, topic__in=topics):
             topics_by_item.setdefault(membership.item_id, []).append(
                 {
                     "id": str(membership.topic_id),
                     "score": membership.score,
                     "pinned": membership.pinned,
+                    # How far above its subject's bar the file sits. Scores
+                    # from two subjects are not comparable ‒ a reranker
+                    # answers on a different scale to each ‒ but this is, and
+                    # it is what tells which subject a file belongs to most
+                    # when it is in several.
+                    "strength": membership.score / (bars.get(membership.topic_id) or 1.0),
                 }
             )
+        for memberships in topics_by_item.values():
+            memberships.sort(key=lambda m: -m["strength"])
 
         return Response(
             {

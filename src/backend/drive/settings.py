@@ -232,24 +232,32 @@ class Base(Configuration):
     GRAPH_ALBERT_RERANK_MODEL = values.Value(
         "openweight-rerank", environ_name="GRAPH_ALBERT_RERANK_MODEL", environ_prefix=None
     )
-    # A file is relevant to a subject when the reranker gives it at least this
-    # share of the best score.
+    # A file belongs to a subject when the reranker gives it at least this
+    # share of the best score of that subject. The reranker's scores change
+    # scale with the wording ‒ "cv" answers 0.53 where "curriculum vitae"
+    # answers 0.07 on the same two files ‒ so only the gap can be read, never
+    # the value.
     GRAPH_TOPIC_RERANK_RATIO = values.FloatValue(
         0.25, environ_name="GRAPH_TOPIC_RERANK_RATIO", environ_prefix=None
     )
-    # ...and the reranker only has a say when its answer stands out: the best
-    # score must be this many times the third one. Its scores change scale
-    # with the wording, so what counts is the gap, not the value: on a real
-    # drive "cv" scored 0.53 against a third at 0.13 (it was right), while
-    # "photo" scored 0.19 against a third at 0.11 (it was guessing).
+    # ...and the reranker only has a say when its best answer stands out from
+    # the batch: it must be this many times the median score. A subject the
+    # reader recognises leaves the rest far behind ‒ "Abeilles" answered 0.62
+    # to a hive and 0.001 to the rest of the drive ‒ while a subject it is
+    # guessing at answers 0.19, 0.12, 0.11 to three files that have nothing
+    # to do with it, and is better left empty.
     GRAPH_TOPIC_RERANK_STANDOUT = values.FloatValue(
         3.0, environ_name="GRAPH_TOPIC_RERANK_STANDOUT", environ_prefix=None
     )
-    # How close a file must be to a subject to fall into it. Measured on a
-    # real drive: what belongs sits at 0.56 and above, what does not at 0.46,
-    # so the line is drawn between the two.
+    # How close a file must be to a subject to be *shown* to the reranker.
+    # This only draws up the shortlist; it never admits anyone by itself.
+    # Measured on a real drive, cosine puts half the files between 0.45 and
+    # 0.60 whatever the subject: "memory" took in 550 files at 0.52, a dozen
+    # role-playing PDFs landed in "Abeilles", and kernel headers in "cv".
+    # A cut inside that band cannot separate anything, so the reading decides
+    # and this line is set low enough that nothing plausible is left out.
     GRAPH_TOPIC_MIN_SIMILARITY = values.FloatValue(
-        0.52, environ_name="GRAPH_TOPIC_MIN_SIMILARITY", environ_prefix=None
+        0.45, environ_name="GRAPH_TOPIC_MIN_SIMILARITY", environ_prefix=None
     )
     # Model describing images that hold no readable text, so a photo is
     # placed in the graph by what it shows.

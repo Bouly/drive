@@ -11,7 +11,7 @@ from core import factories, models
 from graph.models import ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
-from graph.services.subjects import sort_files_into
+from graph.services.subjects import sort_files_into, topic_vector
 
 pytestmark = pytest.mark.django_db
 
@@ -50,21 +50,61 @@ def albert(vector, rerank=None):
         yield client
 
 
-def test_files_close_to_the_words_fall_into_the_subject():
-    """A subject described in words gathers the files that resemble it."""
+def test_the_files_that_read_like_the_subject_fall_into_it():
+    """A subject gathers the files the reader says are about it."""
     user = factories.UserFactory()
     close = indexed_file("Marché hébergement", mix({0: 1.0, 1: 0.2}), user)
     far = indexed_file("Recette de cuisine", mix({50: 1.0}), user)
     topic = Topic.objects.create(name="Marchés publics", creator=user)
 
-    with albert(mix({0: 1.0})):
+    scores = {"Marché hébergement": 0.62, "Recette de cuisine": 0.01}
+    with albert(mix({0: 1.0}), rerank=scores):
         sort_files_into(topic)
 
     assert set(topic.memberships.values_list("item_id", flat=True)) == {close.id}
-    assert ItemTopic.objects.get(item=close).score > 0.9
+    assert ItemTopic.objects.get(item=close).score == pytest.approx(0.62)
     assert not ItemTopic.objects.filter(item=far).exists()
     topic.refresh_from_db()
     assert topic.vector is not None
+    # The bar is kept, so the next uploaded file is judged on the same scale.
+    assert topic.cut == pytest.approx(0.62 * 0.25)
+
+
+def test_a_file_that_looks_close_but_reads_wrong_stays_out():
+    """Vectors only draw up the shortlist; the reading decides.
+
+    A deer photo and a bee photo are both "faune, nature, animal" to a
+    vector, which is how two deer ended up in a subject about bees on a real
+    drive. Read against the words of the subject, the deer is plainly out.
+    """
+    user = factories.UserFactory()
+    bee = indexed_file("essaim-abeilles.jpg", mix({0: 1.0, 1: 0.3}), user)
+    deer = indexed_file("cerf-prairie.jpg", mix({0: 1.0, 1: 0.25}), user)
+    indexed_file("Facture EDF", mix({40: 1.0}), user)
+    topic = Topic.objects.create(name="Abeilles", description="ruches, miel", creator=user)
+
+    scores = {"essaim-abeilles.jpg": 0.62, "cerf-prairie.jpg": 0.006, "Facture EDF": 0.001}
+    with albert(mix({0: 1.0}), rerank=scores):
+        sort_files_into(topic)
+
+    assert set(topic.memberships.values_list("item_id", flat=True)) == {bee.id}
+    assert not ItemTopic.objects.filter(item=deer).exists()
+
+
+def test_the_words_weigh_as_much_as_all_the_pinned_files():
+    """One file pinned by mistake tilts the subject, it does not take it over."""
+    user = factories.UserFactory()
+    topic = Topic.objects.create(name="Abeilles", creator=user)
+    for title in ("cerf-1.jpg", "cerf-2.jpg"):
+        ItemTopic.objects.create(
+            item=indexed_file(title, mix({10: 1.0}), user), topic=topic, pinned=True, score=1.0
+        )
+
+    with albert(mix({0: 1.0})):
+        vector = topic_vector(topic)
+
+    # Half the words, half the pinned files, however many there are.
+    assert vector[0] == pytest.approx(vector[10])
 
 
 def test_a_pinned_file_defines_the_subject_and_stays_in_it():
@@ -75,8 +115,9 @@ def test_a_pinned_file_defines_the_subject_and_stays_in_it():
     topic = Topic.objects.create(name="Budget", creator=user)
     ItemTopic.objects.create(item=pinned, topic=topic, pinned=True, score=1.0)
 
-    # The words say nothing useful; the pinned file carries the subject.
-    with albert(mix({40: 1.0})):
+    # The words say nothing useful; the reading places the other note.
+    scores = {"Note de cadrage": 0.5, "Note d'arbitrage": 0.4}
+    with albert(mix({40: 1.0}), rerank=scores):
         sort_files_into(topic)
 
     assert set(topic.memberships.values_list("item_id", flat=True)) == {pinned.id, like_pinned.id}
@@ -88,7 +129,7 @@ def test_a_subject_lets_go_of_a_file_that_no_longer_fits():
     user = factories.UserFactory()
     item = indexed_file("Marché hébergement", mix({0: 1.0}), user)
     topic = Topic.objects.create(name="Marchés", creator=user)
-    with albert(mix({0: 1.0})):
+    with albert(mix({0: 1.0}), rerank={"Marché hébergement": 0.5}):
         sort_files_into(topic)
     assert topic.memberships.count() == 1
 
@@ -109,7 +150,8 @@ def test_the_api_creates_a_subject_and_sorts_the_drive_into_it():
     client = APIClient()
     client.force_login(user)
 
-    with albert(mix({0: 1.0})):
+    scores = {"Cahier des charges": 0.6, "Photo de vacances": 0.01}
+    with albert(mix({0: 1.0}), rerank=scores):
         response = client.post(TOPICS, {"name": "Marchés publics"}, format="json")
 
     assert response.status_code == 201
@@ -172,7 +214,7 @@ def test_a_file_the_reranker_judges_relevant_joins_the_subject():
 
 
 def test_a_subject_the_reranker_only_guesses_at_stays_empty():
-    """Close scores mean the reranker is guessing: it brings nobody in."""
+    """No gap between the best answer and the middle of the batch: nobody in."""
     user = factories.UserFactory()
     for title, axis in (("Facture EDF", 31), ("Relevé bancaire", 32), ("Quittance", 33)):
         indexed_file(title, mix({axis: 1.0}), user)

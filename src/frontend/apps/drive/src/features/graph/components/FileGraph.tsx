@@ -577,6 +577,14 @@ const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       label: subject.name,
       color: colorOfName(subject.name, taken),
       files: data.files.map((_, i) => i).filter((i) => clusters[i] === group),
+      // A file can be in several subjects but is drawn in one of them ‒ the
+      // one it fits best. `members` is everything the subject holds, which
+      // is what its count and its filter must say: the two CVs sat in both
+      // "cv" and "curriculum vitae", were drawn in the second, and "cv"
+      // looked like it had found nothing.
+      members: data.files
+        .map((_, i) => i)
+        .filter((i) => data.files[i].topics?.some((t) => t.id === subject.id)),
     }));
   } else {
     const labels = nameTopics(groups, bags, spelling, data.files, degree);
@@ -584,6 +592,7 @@ const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       label: labels[group],
       color: colorOfName(labels[group], taken),
       files,
+      members: files,
     }));
   }
 
@@ -770,9 +779,15 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const kinds = list
         .filter((f) => f.startsWith(CATEGORY_FILTER_PREFIX))
         .map((f) => f.slice(CATEGORY_FILTER_PREFIX.length));
+      // Subjects select what they hold, not only what is drawn in their
+      // colour: a file in two subjects answers to both.
+      const held = new Set<number>();
+      topics.forEach((group) => {
+        model.topics[group]?.members.forEach((i) => held.add(i));
+      });
       const kept: number[] = [];
       model.data.files.forEach((_, i) => {
-        if (topics.length && !topics.includes(model.clusters[i])) {
+        if (topics.length && !held.has(i)) {
           return;
         }
         if (kinds.length && !kinds.includes(model.categories[i])) {
@@ -1864,7 +1879,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               >
                 <span className="file-graph__dot" style={{ background: color }} />
                 {topic.label}
-                <span className="file-graph__legend-count">{topic.files.length}</span>
+                <span className="file-graph__legend-count">{topic.members.length}</span>
                 {subject && (
                   <span
                     role="button"

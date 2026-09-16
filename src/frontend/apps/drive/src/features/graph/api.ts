@@ -12,7 +12,8 @@ type ApiGraph = {
     updated_at: string;
     creator: string;
     status: "indexed" | "pending" | "empty" | "failed" | "skipped" | "idle";
-    topics: { id: string; score: number; pinned: boolean }[];
+    // The subjects this file is in, the one it fits best first.
+    topics: { id: string; score: number; pinned: boolean; strength: number }[];
   }[];
   links: {
     source: string;

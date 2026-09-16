@@ -149,9 +149,14 @@ class Topic(BaseModel):
     creator = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="graph_topics"
     )
-    # Mean of the description and of the pinned files, normalized; None while
-    # the subject has neither.
+    # The description and the pinned files, weighing half each, normalized;
+    # None while the subject has neither. Used to shortlist the files worth
+    # reading, never to decide on its own.
     vector = VectorField(dimensions=settings.GRAPH_EMBEDDING_DIM, null=True, blank=True)
+    # The reading score a file has to reach to belong here, kept from the last
+    # sort. The reranker answers on its own scale for every subject, so the
+    # bar of one subject means nothing to another and has to be remembered.
+    cut = models.FloatField(_("cut"), default=0.0)
 
     class Meta:
         db_table = "drive_graph_topic"
