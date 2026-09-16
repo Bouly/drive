@@ -638,21 +638,39 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       clouds.set(cluster, cloud);
     });
     const centres = new Map<number, { x: number; y: number; lit: number }>();
+    const reach = Math.hypot(width, height);
     for (const [cluster, cloud] of clouds) {
       if (cloud.count < 2) {
         continue;
       }
       const cx = cloud.x / cloud.count;
       const cy = cloud.y / cloud.count;
-      centres.set(cluster, { x: cx, y: cy, lit: cloud.lit / cloud.count });
       let radius = 0;
       screen.forEach((node, i) => {
         if (model.clusters[i] === cluster) {
           radius = Math.max(radius, Math.hypot(node.sx - cx, node.sy - cy) + node.sr * 6);
         }
       });
+      /**
+       * A cloud says where a subject sits. A subject whose files are spread
+       * over the whole stage does not sit anywhere, and its cloud then says
+       * nothing while painting everything: four of them at once left the
+       * stage a wash of colour with its files barely visible through it, and
+       * each name floating over empty space in the middle.
+       *
+       * So a subject fades as it spreads, and is named on the stage only
+       * while its cloud still stands for a place. Nothing is lost by it: the
+       * panel lists every subject, whatever shape it is in, and choosing one
+       * lays the stage out over its files alone ‒ which is exactly when the
+       * cloud tightens and comes back.
+       */
+      const tight = Math.max(0, 1 - (radius / reach) * 2.2);
+      if (tight < 0.05) {
+        continue;
+      }
+      centres.set(cluster, { x: cx, y: cy, lit: cloud.lit / cloud.count });
       const rgb = hexToRgb(theme.clusterColor(model.topics[cluster].color));
-      const peak = (theme.glow ? 0.3 : 0.2) * (cloud.lit / cloud.count);
+      const peak = (theme.glow ? 0.3 : 0.2) * (cloud.lit / cloud.count) * tight;
       const cloudGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
       cloudGradient.addColorStop(0, `rgba(${rgb}, ${peak})`);
       cloudGradient.addColorStop(0.55, `rgba(${rgb}, ${peak * 0.45})`);
