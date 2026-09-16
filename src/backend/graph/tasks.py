@@ -9,6 +9,7 @@ import logging
 import re
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.files.storage import default_storage
 
 from celery import shared_task
@@ -25,10 +26,25 @@ from graph.services.extraction import (
     extract_text,
     is_extractable,
 )
-from graph.services.linking import forget_item, live_files, relink_around
+from graph.services.linking import (
+    forget_item,
+    link_item,
+    live_files,
+    relink_all,
+    relink_around,
+)
 from graph.services.subjects import sort_into_subjects
 
 logger = logging.getLogger(__name__)
+
+# The files whose neighbourhood is waiting to be mended, and how long the
+# mending waits so a burst of uploads is served in one go.
+MEND_KEY = "graph-links-to-mend"
+MEND_SCHEDULED = "graph-links-mending"
+MEND_DELAY = 20
+MEND_TIMEOUT = 3600
+# Past this many newcomers, rebuilding the whole web is the cheaper way.
+MEND_ONE_BY_ONE = 40
 
 
 def readable_title(title):
@@ -153,12 +169,41 @@ def index_item(item_id):
     storage.save_chunks(item, chunks)
     _remember(item, ItemIndex.State.DONE, detail)
 
-    # A newcomer only shifts the neighbourhood it lands in, so only those
-    # files are relinked. Links are stored for everyone; the API filters by
-    # access rights when reading, and trashed files are never targets.
-    relink_around(item, live_files())
+    # Its own links are written at once, so the file shows up connected right
+    # away. Mending the neighbourhood it landed in is left to a task shared by
+    # the whole burst: uploading a folder of four thousand files would
+    # otherwise mend the same neighbourhoods four thousand times.
+    link_item(item, live_files())
+    waiting = cache.get(MEND_KEY) or set()
+    waiting.add(str(item.id))
+    cache.set(MEND_KEY, waiting, timeout=MEND_TIMEOUT)
+    # One mending for the whole burst: the first file to arrive books it.
+    if cache.add(MEND_SCHEDULED, "1", timeout=MEND_DELAY * 3):
+        mend_links.apply_async(countdown=MEND_DELAY)
     # The file also falls into the subjects it fits, without touching theirs.
     sort_into_subjects(item, Topic.objects.exclude(vector=None))
+
+
+@shared_task
+def mend_links():
+    """
+    Give the files around the newcomers their closest neighbours back.
+
+    Runs once for a burst of uploads rather than once per file. Past a few
+    dozen newcomers, rebuilding the whole web costs less than mending one
+    neighbourhood at a time.
+    """
+    waiting = cache.get(MEND_KEY) or set()
+    cache.delete(MEND_KEY)
+    cache.delete(MEND_SCHEDULED)
+    if not waiting:
+        return
+    candidates = live_files()
+    if len(waiting) > MEND_ONE_BY_ONE:
+        relink_all(candidates)
+        return
+    for item in Item.objects.filter(id__in=waiting):
+        relink_around(item, candidates)
 
 
 @shared_task

@@ -5,9 +5,11 @@ A link is stored per file, so a file that arrives, changes, goes to the trash
 or comes back must rewrite the links of the files around it, not only its own.
 """
 
+import uuid
 from io import BytesIO
 from unittest import mock
 
+from django.core.cache import cache
 from django.core.files.storage import default_storage
 
 import pytest
@@ -18,7 +20,7 @@ from graph.models import ItemLink
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
 from graph.services.linking import relink_all
-from graph.tasks import index_item
+from graph.tasks import MEND_KEY, MEND_ONE_BY_ONE, index_item, mend_links
 
 pytestmark = pytest.mark.django_db
 
@@ -196,3 +198,36 @@ def test_restoring_a_file_puts_it_back_in_the_graph(settings, django_capture_on_
 
     assert links_of(restored) == [kept.id]
     assert links_of(kept) == [restored.id]
+
+
+def test_a_burst_of_uploads_mends_the_web_once(settings):
+    """Past a few dozen newcomers, one rebuild replaces the neighbourhoods."""
+    settings.GRAPH_CHUNK_WORDS = 350
+    cache.delete(MEND_KEY)
+    cache.set(MEND_KEY, {str(uuid.uuid4()) for _ in range(MEND_ONE_BY_ONE + 1)}, timeout=60)
+
+    with (
+        mock.patch("graph.tasks.relink_all") as rebuild,
+        mock.patch("graph.tasks.relink_around") as mend_one,
+    ):
+        mend_links()
+
+    rebuild.assert_called_once()
+    mend_one.assert_not_called()
+    assert cache.get(MEND_KEY) is None
+
+
+def test_a_single_upload_mends_only_its_neighbourhood():
+    """One newcomer moves its neighbours, not the whole drive."""
+    cache.delete(MEND_KEY)
+    item = make_file("seul", "texte", unit(0))
+    cache.set(MEND_KEY, {str(item.id)}, timeout=60)
+
+    with (
+        mock.patch("graph.tasks.relink_all") as rebuild,
+        mock.patch("graph.tasks.relink_around") as mend_one,
+    ):
+        mend_links()
+
+    rebuild.assert_not_called()
+    mend_one.assert_called_once()
