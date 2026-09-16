@@ -21,24 +21,39 @@ const CATEGORY_COLORS: Record<string, string> = {
 export const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
 
 /**
- * One color per subject, in the order their owner wrote them.
+ * One color per subject. Sixteen of them, so a drive can hold sixteen
+ * subjects before two share a hue.
  *
- * Any two groups can end up side by side on the stage, so the eight hues are
- * held to the all-pairs floors of the data-viz palette: telling two groups
- * apart must not depend on color vision. Each theme has its own steps, picked
- * for its background rather than lightened from the other one.
+ * Any two subjects can end up side by side on the stage, so the hues are held
+ * to the all-pairs floors of the data-viz palette: telling two apart must not
+ * depend on color vision. Each theme has its own steps, picked for its
+ * background rather than lightened from the other one.
  *
  * They were searched, not picked: a greedy walk over the OKLCH wheel (hue by
  * lightness, each at the most chroma sRGB holds there) keeping the set whose
  * worst pair is furthest apart. Hand-picked eights do not survive that test ‒
  * the reference eight of the data-viz palette drops to a distance of 3.2 for
- * a color-blind reader and 7.1 for everyone else, while this one holds 10.5
- * and 17.4 on the light stage, 8.9 and 16.7 on the dark one. Past the eighth
- * group the color is dropped rather than reused.
+ * a color-blind reader and 7.1 for everyone else.
+ *
+ * The first eight are that search; the next eight continue it, seeded with
+ * them so none of the eight moved. Measured as CIEDE2000 over every pair, for
+ * a reader with normal vision, with deuteranopia and with protanopia, the
+ * light stage holds 12.14 / 3.78 / 8.77 at eight colors and 9.44 / 3.78 /
+ * 8.77 at sixteen, the dark one 12.75 / 6.00 / 7.10 and 11.00 / 6.00 / 7.10:
+ * what the sixteenth costs is room for a reader who has all three cones, and
+ * the floor that binds ‒ the one a color-blind reader reads ‒ never moves. It
+ * was already set by two of the original eight. Going on to twenty is what
+ * finally costs them: protanopia drops to 7.52 on the light stage.
  */
 export const CLUSTER_COLORS: Record<"dark" | "light", string[]> = {
-  dark: ["#B0005C", "#65A800", "#332CFF", "#009ED9", "#FF199D", "#955900", "#8D00C1", "#8A6FFF"],
-  light: ["#A20054", "#6EB600", "#2F00FC", "#00ACEB", "#FF53A8", "#955900", "#8100B1", "#8A6FFF"],
+  dark: [
+    "#B0005C", "#65A800", "#332CFF", "#009ED9", "#FF199D", "#955900", "#8D00C1", "#8A6FFF",
+    "#07715E", "#D10C31", "#0FA462", "#148908", "#E311CC", "#0D9491", "#B20A8F", "#FD453C",
+  ],
+  light: [
+    "#A20054", "#6EB600", "#2F00FC", "#00ACEB", "#FF53A8", "#955900", "#8100B1", "#8A6FFF",
+    "#066754", "#0C9430", "#DF10C2", "#CE0C30", "#0C8B93", "#FD4543", "#C00B89", "#10AF5B",
+  ],
 };
 
 /** Mixes a hex color with white; the dark stage needs brighter families. */

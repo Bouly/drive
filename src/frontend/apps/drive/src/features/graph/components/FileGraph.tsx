@@ -432,11 +432,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           radius = Math.max(radius, Math.hypot(node.sx - cx, node.sy - cy) + node.sr * 6);
         }
       });
-      const slot = model.topics[cluster].color;
-      if (slot === null) {
-        continue;
-      }
-      const rgb = hexToRgb(theme.clusterColor(slot));
+      const rgb = hexToRgb(theme.clusterColor(model.topics[cluster].color));
       const peak = (theme.glow ? 0.3 : 0.2) * (cloud.lit / cloud.count);
       const cloudGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
       cloudGradient.addColorStop(0, `rgba(${rgb}, ${peak})`);
@@ -1374,7 +1370,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                   className="file-graph__dot"
                   style={{
                     background:
-                      topic.color === null ? dotColor("other") : THEMES[theme].clusterColor(topic.color),
+                      THEMES[theme].clusterColor(topic.color),
                   }}
                 />
               ))}
@@ -1386,7 +1382,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               {model.topics.map((topic, i) => {
                 const id = `${TOPIC_FILTER_PREFIX}${i}`;
                 const color =
-                  topic.color === null ? dotColor("other") : THEMES[theme].clusterColor(topic.color);
+                  THEMES[theme].clusterColor(topic.color);
                 const subject = model.subjects[i];
                 return (
                   <div key={id} className="file-graph__legend-line">
