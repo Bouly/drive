@@ -3,7 +3,7 @@ import { ForceSimulation, SimNode, SimLink } from "./src/features/graph/simulati
 const build = (n: number, perNode = 24) => {
   const nodes: SimNode[] = [];
   for (let i = 0; i < n; i++) {
-    nodes.push({ id: `${i}`, x: Math.random() * 1200 - 600, y: Math.random() * 1200 - 600, z: 0, vx: 0, vy: 0, r: 6, degree: perNode, fx: null, fy: null });
+    nodes.push({ id: `${i}`, x: Math.random() * 1200 - 600, y: Math.random() * 1200 - 600, z: 0, vx: 0, vy: 0, r: 6, degree: perNode, group: i % 12, fx: null, fy: null });
   }
   const links: SimLink[] = [];
   for (let i = 0; i < n; i++) {

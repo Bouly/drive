@@ -8,10 +8,10 @@ import { colorOfName, normalize } from "./naming";
 /** Smallest and largest dot, in world units: the range recency is mapped to. */
 const NODE_MIN_RADIUS = 3;
 const NODE_MAX_RADIUS = 7;
-/** How much further apart two files of two different groups are held. */
-const CROSS_GROUP_SPREAD = 1.25;
-/** How much closer two files of the same group rest. */
-const INSIDE_GROUP_TIGHTEN = 0.85;
+/** How much further apart two files of two different packets are held. */
+const CROSS_GROUP_SPREAD = 2.2;
+/** How much closer two files of the same packet rest. */
+const INSIDE_GROUP_TIGHTEN = 0.6;
 
 /** Passages kept per file for the search: enough to know what it says. */
 const SEARCH_PASSAGES = 8;
@@ -172,6 +172,8 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
           ? NODE_MAX_RADIUS
           : NODE_MIN_RADIUS + (NODE_MAX_RADIUS - NODE_MIN_RADIUS) * freshness(i),
       degree: degree[i],
+      // Filled in below, once the packets are known.
+      group: -1,
       fx: null,
       fy: null,
     };
@@ -223,6 +225,9 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   // packet is called and what color it takes ‒ never where it lands, so a
   // drive with no subject is still laid out and not piled up.
   const groups = findClusters(data.files.length, links, linkCloseness, linkTies);
+  groups.forEach((group, i) => {
+    nodes[i].group = group;
+  });
   links.forEach((link) => {
     const group = groups[link.source];
     const same = group >= 0 && group === groups[link.target];
