@@ -138,13 +138,36 @@ def test_a_video_that_speaks_is_not_looked_at():
     """Speech says what the video is about: no frame travels to the model."""
     item = make_file("video/mp4", b"fake video", filename="reunion.mp4")
     client = mock.Mock()
+    speech = "Bonjour à tous, voici le compte rendu de la réunion de préavis de ce matin."
 
     text = extract_text(
-        item, extractor=FakeTika(""), transcriber=FakeTranscriber("Bonjour à tous.", client=client)
+        item, extractor=FakeTika(""), transcriber=FakeTranscriber(speech, client=client)
     )
 
-    assert text == "Bonjour à tous."
+    assert text == speech
     client.describe_image.assert_not_called()
+
+
+def test_a_video_the_model_only_heard_credits_in_is_looked_at():
+    """Three words of subtitling credits are silence, whatever the model says."""
+    item = make_file("video/mp4", b"fake video", filename="abeilles.mp4")
+    client = mock.Mock()
+    client.describe_image.return_value = "Un essaim d'abeilles."
+
+    def run(command, **kwargs):  # pylint: disable=unused-argument
+        if command[0] == "ffprobe":
+            return completed("8.0\n")
+        Path(command[-1]).write_bytes(b"jpeg bytes")
+        return completed()
+
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=run):
+        text = extract_text(
+            item,
+            extractor=FakeTika(""),
+            transcriber=FakeTranscriber("Sous-titrage ST' 501", client=client),
+        )
+
+    assert text == "Un essaim d'abeilles.\n\nSous-titrage ST' 501"
 
 
 def test_extract_text_document_streams_the_file_to_tika():

@@ -30,6 +30,11 @@ from graph.services.albert import AlbertClient, AlbertError
 logger = logging.getLogger(__name__)
 
 MEDIA_PREFIXES = ("video/", "audio/")
+# Under this many words, a transcription says nothing about the video: either
+# it is silent, or the model heard a few seconds of music and answered with
+# the credit of a subtitling company ‒ a silent bee video came back as
+# "Sous-titrage ST' 501" and nothing else.
+SPEECH_WORDS = 12
 # Bytes read at once when copying a file out of object storage.
 COPY_BLOCK_SIZE = 8 * 1024 * 1024
 
@@ -267,8 +272,8 @@ def _extract_media(path, item, extractor, transcriber):
         metadata = pool.submit(_media_metadata, path, item, extractor)
         speech = pool.submit(transcriber.transcribe, path)
         parts = [metadata.result().strip(), speech.result().strip()]
-    if not parts[1] and (item.mimetype or "").startswith("video/"):
-        # Nobody speaks: what the video shows is all it has to say. The
+    if len(parts[1].split()) < SPEECH_WORDS and (item.mimetype or "").startswith("video/"):
+        # Nobody really speaks: what the video shows is all it has to say. The
         # description comes first, so it survives the cap on long texts.
         parts.insert(0, describe_frame(path, item, getattr(transcriber, "client", None)))
     return "\n\n".join(part for part in parts if part)
