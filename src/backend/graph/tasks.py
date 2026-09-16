@@ -2,15 +2,13 @@
 Celery tasks of the file graph: index a file once its upload is safe.
 
 Chained here: extraction (1), chunking (2), embeddings (3), storage (4) and
-semantic links (5); topics (6) are regrouped by a follow-up task. Albert
-errors are retried with a backoff.
+semantic links (5). Albert errors are retried with a backoff.
 """
 
 import logging
 import re
 
 from django.conf import settings
-from django.core.cache import cache
 from django.core.files.storage import default_storage
 
 from celery import shared_task
@@ -27,39 +25,9 @@ from graph.services.extraction import (
     extract_text,
     is_extractable,
 )
-from graph.services.linking import forget_item, link_item, live_files, relink_neighbours
-from graph.services.topics import assign_topics
+from graph.services.linking import forget_item, live_files, relink_all
 
 logger = logging.getLogger(__name__)
-
-TOPICS_LOCK = "graph-refresh-topics"
-# Set while a refresh is queued: uploads in the meantime join it.
-TOPICS_SCHEDULED = "graph-refresh-topics-scheduled"
-# Seconds to wait before regrouping, so several uploads are grouped in one run.
-TOPICS_DELAY = 10
-
-# Every description starts the same way and ends on the same generic words;
-# both say what the file is (a picture) instead of what it is about, and drag
-# every picture towards every other one.
-OPENING = re.compile(
-    r"^\s*(on y voit|on voit|l'image (montre|représente|présente)|cette image "
-    r"(montre|représente|présente)|la (photo|photographie) (montre|représente)|"
-    r"il s'agit d')\s*",
-    re.IGNORECASE,
-)
-MEDIUM_WORDS = {
-    "image",
-    "images",
-    "photo",
-    "photos",
-    "photographie",
-    "illustration",
-    "illustrations",
-    "dessin",
-    "dessins",
-    "représentation",
-    "capture",
-}
 
 
 def readable_title(title):
@@ -95,27 +63,24 @@ def describe_picture(item):
 
 def picture_chunks(title, description):
     """
-    The passages of a described picture: the sentence, then the keywords.
+    The one passage of a described picture: its name, what Albert sees on it
+    and the keywords of its subject, held together.
 
-    They are kept apart on purpose. The sentence reads well and is quoted as
-    the reason of a link, but its wording ("on y voit…") is shared by every
-    description and drags pictures towards each other. The keywords carry the
-    subject: on a poop emoji, they are three times closer to a file about
-    "caca" than the sentence is.
+    The sentence and the keywords used to be two passages. That gave every
+    picture a passage made of the wording shared by all descriptions ("on y
+    voit…", "l'image montre…"), and since files are compared passage by
+    passage, pictures were drawn to each other by that wording alone: on this
+    drive a photo of bees sat closer to a photo of a bicycle (0.59) than to a
+    PDF about bees (0.55). Stripping the wording changes nothing, as it is the
+    shape of the sentence that carries; only the keywords standing next to it
+    in the same passage do. They now win: that photo of a bicycle is closer to
+    the PDF on bicycle upkeep (0.44) than to the photo of bees (0.42).
     """
-    parts = [line.strip(" -•\t") for line in description.splitlines() if line.strip()]
-    if len(parts) == 1:
-        # The model sometimes answers on a single line: the keyword list is
-        # the comma-separated tail, "… une ruche. abeilles, insectes, nature."
-        tail = re.search(r"([^.\n]+,[^.\n]+,[^.\n]+?)\.?\s*$", parts[0])
-        if tail:
-            parts = [parts[0][: tail.start(1)].strip(), tail.group(1).strip()]
-    sentence = OPENING.sub("", parts[0]).strip() if parts else ""
-    sentence = sentence[:1].upper() + sentence[1:]
-    words = (word.strip().strip(".") for word in " ".join(parts[1:]).split(","))
-    keywords = ", ".join(word for word in words if word and word.lower() not in MEDIUM_WORDS)
-    texts = [text for text in (f"{title} {sentence}".strip(), keywords) if text]
-    return [Chunk(index=i, text=text, text_hash=hash_text(text)) for i, text in enumerate(texts)]
+    lines = [line.strip(" -•\t") for line in description.splitlines() if line.strip()]
+    text = " ".join(part for part in (title, *lines) if part).strip()
+    if not text:
+        return []
+    return [Chunk(index=0, text=text, text_hash=hash_text(text))]
 
 
 def _remember(item, state, detail=""):
@@ -139,12 +104,6 @@ def embed_chunks(chunks):
         vectors.update(zip(missing, embedded, strict=True))
     for chunk in chunks:
         chunk.embedding = vectors[chunk.text_hash]
-
-
-def schedule_topics_refresh():
-    """Queue one topic refresh for a burst of uploads rather than one per file."""
-    if cache.add(TOPICS_SCHEDULED, "1", timeout=TOPICS_DELAY):
-        refresh_topics.apply_async(countdown=TOPICS_DELAY)
 
 
 @shared_task(autoretry_for=(AlbertError,), retry_backoff=True, max_retries=5)
@@ -193,14 +152,10 @@ def index_item(item_id):
     storage.save_chunks(item, chunks)
     _remember(item, ItemIndex.State.DONE, detail)
 
-    # Links are stored for everyone; the API filters by access rights when
-    # reading. Trashed files must not become targets though.
-    candidates = live_files()
-    link_item(item, candidates)
-    # Files indexed earlier may now have this one among their closest.
-    relink_neighbours(item, candidates)
-    # Topics depend on the whole graph: regroup once a burst of uploads settles.
-    schedule_topics_refresh()
+    # Every indexed file points at all the others, so a newcomer changes
+    # everybody's list. Links are stored for everyone; the API filters by
+    # access rights when reading, and trashed files are never targets.
+    relink_all(live_files())
 
 
 @shared_task
@@ -223,16 +178,3 @@ def forget_from_graph(item_id, restore=False):
             index_item.delay(file.id)
         else:
             forget_item(file)
-    if files and not restore:
-        schedule_topics_refresh()
-
-
-@shared_task(bind=True, max_retries=30)
-def refresh_topics(self):
-    """Recompute the automatic topics; one run at a time, others wait their turn."""
-    if not cache.add(TOPICS_LOCK, "1", timeout=600):
-        raise self.retry(countdown=TOPICS_DELAY)
-    try:
-        assign_topics()
-    finally:
-        cache.delete(TOPICS_LOCK)

@@ -131,7 +131,6 @@ def test_replace_links_rewrites_outgoing_links():
                 "kind": ItemLink.Kind.COPY,
                 "reason": "Passage repris",
                 "evidence": "même clause",
-                "surprising": True,
             }
         ],
     )
@@ -139,7 +138,6 @@ def test_replace_links_rewrites_outgoing_links():
     link = ItemLink.objects.get(source=a)
     assert link.target == c
     assert link.kind == "copy"
-    assert link.surprising is True
     assert link.evidence == "même clause"
     assert ItemLink.objects.filter(source=b).count() == 1
 

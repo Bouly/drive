@@ -6,7 +6,7 @@ from django.utils.html import format_html, format_html_join
 
 from core.models import Item
 
-from graph.models import ItemChunk, ItemIndex, ItemLink, Topic
+from graph.models import ItemChunk, ItemIndex, ItemLink
 from graph.services import storage
 
 # Values of the vector shown before the "show all" toggle.
@@ -133,19 +133,10 @@ class ItemChunkAdmin(ReadOnlyAdmin):
 class ItemLinkAdmin(ReadOnlyAdmin):
     """Links between items."""
 
-    list_display = ("source", "target", "kind", "weight", "surprising", "updated_at")
-    list_filter = ("kind", "surprising")
+    list_display = ("source", "target", "kind", "weight", "updated_at")
+    list_filter = ("kind",)
     search_fields = ("source__title", "target__title", "reason")
     raw_id_fields = ("source", "target")
-
-
-@admin.register(Topic)
-class TopicAdmin(ReadOnlyAdmin):
-    """Topics and their keywords."""
-
-    list_display = ("label", "automatic", "keywords", "updated_at")
-    list_filter = ("automatic",)
-    search_fields = ("label",)
 
 
 @admin.register(ItemIndex)

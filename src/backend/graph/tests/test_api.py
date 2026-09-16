@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from core import factories, models
 
-from graph.models import ItemIndex, ItemLink, ItemTopic, Topic
+from graph.models import ItemIndex, ItemLink
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
 
@@ -56,7 +56,7 @@ def test_empty_graph():
     client.force_login(user)
     response = client.get(URL)
     assert response.status_code == 200
-    assert response.json() == {"files": [], "links": [], "clusters": []}
+    assert response.json() == {"files": [], "links": []}
 
 
 def test_graph_only_shows_readable_files_and_their_links():
@@ -76,10 +76,6 @@ def test_graph_only_shows_readable_files_and_their_links():
             {"target": linked, "weight": 0.5, "kind": ItemLink.Kind.FOLDER},
         ],
     )
-    topic = Topic.objects.create(label="Budget", keywords=["budget", "subvention"])
-    ItemTopic.objects.create(item=mine, topic=topic)
-    Topic.objects.create(label="Unused")
-
     client = APIClient()
     client.force_login(user)
     data = client.get(URL).json()
@@ -89,8 +85,6 @@ def test_graph_only_shows_readable_files_and_their_links():
     assert node["mimetype"] == "application/pdf"
     assert node["size"] == 1234
     assert node["creator"]
-    assert node["cluster"] == str(topic.id)
-    assert next(f for f in data["files"] if f["title"] == "shared")["cluster"] is None
 
     assert {(l["target"], l["kind"]) for l in data["links"]} == {
         (str(shared.id), "semantic"),
@@ -100,11 +94,6 @@ def test_graph_only_shows_readable_files_and_their_links():
     assert semantic["source"] == str(mine.id)
     assert semantic["weight"] == 0.8
     assert semantic["reason"] == "proches"
-    assert semantic["surprising"] is False
-
-    assert data["clusters"] == [
-        {"id": str(topic.id), "label": "Budget", "keywords": ["budget", "subvention"]}
-    ]
 
 
 def test_public_files_are_part_of_the_graph():

@@ -17,6 +17,7 @@ from core import factories, models
 from graph.models import ItemLink
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
+from graph.services.linking import relink_all
 from graph.tasks import index_item
 
 pytestmark = pytest.mark.django_db
@@ -84,10 +85,10 @@ def test_a_new_file_relinks_the_files_it_is_now_closest_to(
     assert links_of(newcomer)[0] == old.id
 
 
-def test_changing_a_file_drops_the_links_that_pointed_at_its_old_subject(
+def test_changing_a_file_drops_the_weight_of_the_links_that_pointed_at_it(
     settings, django_capture_on_commit_callbacks
 ):
-    """A file that moves to another subject stops being the neighbour it was."""
+    """A file that moves to another subject is still linked, but barely."""
     settings.GRAPH_CHUNK_WORDS = 350
     neighbour = make_file("voisin", "sujet X", unit(0))
     moving = make_file("qui change", "sujet X", unit(0))
@@ -110,8 +111,23 @@ def test_changing_a_file_drops_the_links_that_pointed_at_its_old_subject(
         client.return_value.embed.side_effect = lambda texts: [unit(5) for _ in texts]
         index_item.apply(args=[moving.id], throw=True)
 
-    assert links_of(neighbour) == []
-    assert links_of(moving) == []
+    # Every pair stays linked: what changes is the weight, from 1 to 0.
+    assert ItemLink.objects.get(source=neighbour, target=moving).weight == 0.0
+    assert ItemLink.objects.get(source=moving, target=neighbour).weight == 0.0
+
+
+def test_relinking_drops_the_links_of_a_file_that_left_the_graph():
+    """A link kept from a file no longer indexed is swept away on the next pass."""
+    kept = make_file("gardé", "sujet X", unit(0))
+    gone = make_file("parti", "sujet X", unit(0))
+    storage.replace_links(kept, [{"target": gone, "weight": 1.0, "kind": ItemLink.Kind.SEMANTIC}])
+    # Its passages are gone (emptied, or trashed without passing by the signal).
+    storage.delete_chunks(gone)
+
+    relink_all()
+
+    assert not ItemLink.objects.filter(target=gone).exists()
+    assert links_of(kept) == []
 
 
 def test_trashing_a_file_removes_its_links_both_ways(django_capture_on_commit_callbacks):

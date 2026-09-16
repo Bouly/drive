@@ -17,7 +17,7 @@ from graph.services.seed import seed_from_albert
 
 
 class Command(BaseCommand):
-    """Create real files with stored chunks, topics and links from Albert."""
+    """Create real files with stored chunks and links from Albert."""
 
     help = "Seed the graph storage with Albert public documents."
 
@@ -55,7 +55,6 @@ class Command(BaseCommand):
         self.stdout.write(
             self.style.SUCCESS(
                 f"{report.items} files created ({report.skipped} skipped), "
-                f"{report.chunks} chunks, {report.links} links, "
-                f"topics: {', '.join(report.topics) or 'none'}"
+                f"{report.chunks} chunks, {report.links} links"
             )
         )

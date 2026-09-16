@@ -7,9 +7,9 @@ import responses
 
 from core import factories, models
 
-from graph.models import ItemChunk, ItemLink, ItemTopic, Topic
+from graph.models import ItemChunk, ItemLink
 from graph.services.albert import AlbertClient, AlbertError
-from graph.services.seed import FOLDER_TITLE, seed_from_albert, slugify, topic_label
+from graph.services.seed import FOLDER_TITLE, seed_from_albert, slugify
 
 pytestmark = pytest.mark.django_db
 
@@ -80,8 +80,8 @@ class FakeAlbert:
         return [self.vectors[text] for text in texts]
 
 
-def test_seed_creates_files_chunks_topics_and_links():
-    """Documents become readable files with vectors, themed topics and semantic links."""
+def test_seed_creates_files_chunks_and_links():
+    """Documents become readable files with vectors, linked to one another."""
     user = factories.UserFactory()
     with mock.patch("graph.services.seed.default_storage.save") as save:
         report = seed_from_albert(user, FakeAlbert(), [10, 20], documents_per_collection=5)
@@ -89,7 +89,6 @@ def test_seed_creates_files_chunks_topics_and_links():
     assert report.items == 3
     assert report.chunks == 4
     assert report.skipped == 0
-    assert sorted(report.topics) == ["Argent - Impôts", "Travail"]
 
     folder = models.Item.objects.get(title=FOLDER_TITLE)
     files = models.Item.objects.children(folder.path).filter(type="file").order_by("title")
@@ -108,29 +107,24 @@ def test_seed_creates_files_chunks_topics_and_links():
     assert models.Item.objects.readable_per_se(stranger).filter(id__in=files).count() == 0
 
     assert ItemChunk.objects.count() == 4
-    assert Topic.objects.count() == 2
-    assert (
-        ItemTopic.objects.get(item__title="Crédit d'impôt syndical").topic.label
-        == "Argent - Impôts"
-    )
 
-    # The two "Travail" documents are close; the tax one is orthogonal to both.
+    # Every file is linked to every other one: 3 files, 6 directed links.
     demission = models.Item.objects.get(title="Démission d'un salarié")
     preavis = models.Item.objects.get(title="Préavis de démission")
     links = {(l.source.title, l.target.title): l for l in ItemLink.objects.all()}
-    assert set(links) == {
-        ("Démission d'un salarié", "Préavis de démission"),
-        ("Préavis de démission", "Démission d'un salarié"),
-    }
+    assert len(links) == 6
+    assert report.links == 6
+
+    # The two "Travail" documents are close; the tax one is orthogonal to both.
     link = links[("Démission d'un salarié", "Préavis de démission")]
     assert link.kind == "semantic"
-    assert link.surprising is False
     # Item vectors are chunk means: (0.99, 0.16) vs (0.80, 0.60) -> cosine ~0.89.
     assert 0.85 < link.weight < 0.92
     assert "similarité" in link.reason
     assert link.evidence == "Le préavis de démission est fixé par la convention."
-    assert report.links == 2
     assert {demission.id, preavis.id} == {link.source_id, link.target_id}
+    # ...and the distant pair is linked too, with a weight near zero.
+    assert links[("Démission d'un salarié", "Crédit d'impôt syndical")].weight < 0.2
 
 
 def test_seed_is_idempotent():
@@ -145,11 +139,8 @@ def test_seed_is_idempotent():
 
 
 def test_helpers():
-    """File names and topic labels are derived safely."""
+    """File names are derived safely."""
     assert slugify("Occupation du domaine public (AOT) !") == "occupation-du-domaine-public-aot"
-    assert topic_label("fiches", {"theme": "Argent - Impôts, Argent - Impôts"}) == "Argent - Impôts"
-    assert topic_label("fiches", {}) == "fiches"
-    assert topic_label("mediatech-fiches-travail-emploi", {}) == "Travail - Emploi"
 
 
 @responses.activate
