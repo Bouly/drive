@@ -2,8 +2,8 @@
 import { getMimeCategory } from "@gouvfr-lasuite/ui-components";
 import { FOLDER_MIMETYPE, GraphData, GraphFile, GraphLink } from "./types";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
-import { findClusters, mutualCloseness } from "./clusters";
-import { NAME_PASSAGE_WEIGHT, colorOfName, nameTopics, nameWords, normalize } from "./naming";
+import { mutualCloseness } from "./clusters";
+import { colorOfName, normalize } from "./naming";
 
 /** Smallest and largest dot, in world units: the range a degree is mapped to. */
 const NODE_MIN_RADIUS = 3;
@@ -79,21 +79,8 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   const linkMeta: GraphLink[] = [];
   const linkCloseness: number[] = [];
   const linkTies: boolean[] = [];
-  // What each file is about, in words: its name, and the passages its ties
-  // quote. This is what the groups are named after.
-  // How each word is really written, taken from a title first: a file name
-  // is spelled by someone, a passage is whatever the extraction returned.
-  const spelling = new Map<string, string>();
   // The passages a file's ties quote: what the search reads besides its name.
   const passages: string[][] = data.files.map(() => []);
-  const bags = data.files.map((file) => {
-    const bag = new Map<string, number>();
-    for (const [word, raw] of nameWords(file.title)) {
-      bag.set(word, 1);
-      spelling.set(word, raw);
-    }
-    return bag;
-  });
   pairs.forEach(({ source, target, link }, i) => {
     const tie = closeness[i] >= LINK_MIN_CLOSENESS || best[source] === i || best[target] === i;
     // A pair kept as somebody's closest neighbour is drawn and pulled like
@@ -110,16 +97,6 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       for (const node of [source, target]) {
         if (passages[node].length < SEARCH_PASSAGES && !passages[node].includes(link.reason)) {
           passages[node].push(link.reason);
-        }
-      }
-      for (const [word, raw] of nameWords(link.reason)) {
-        if (!spelling.has(word)) {
-          spelling.set(word, raw.toLowerCase());
-        }
-        for (const bag of [bags[source], bags[target]]) {
-          if (!bag.has(word)) {
-            bag.set(word, NAME_PASSAGE_WEIGHT);
-          }
         }
       }
     }
@@ -183,46 +160,31 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   // the titles alone, so a word that appears inside a file finds it.
   const searchText = data.files.map((file, i) => normalize(`${file.title} ${passages[i].join(" ")}`));
 
-  const clusters = findClusters(data.files.length, links, linkCloseness, linkTies);
-  const groups: number[][] = [];
-  clusters.forEach((group, i) => {
-    if (group >= 0) {
-      (groups[group] ??= []).push(i);
-    }
-  });
-  // Subjects the user wrote win over the groups read off the links: they are
-  // named, stable, and a file is in one because it resembles what the user
-  // put there. The computed groups only stand in while there is none.
+  // Subjects belong to whoever writes them, and the drive never invents one.
+  // Groups read off the links used to stand in while a drive had none, named
+  // after the words their files happened to share: that was the automatic
+  // topic, it put words in the reader's mouth, and a name nobody chose was
+  // read as one somebody had. A drive with no subject now shows none.
   const taken = new Set<number>();
-  let topics;
-  if (data.subjects.length) {
-    const rank = new Map(data.subjects.map((subject, i) => [subject.id, i]));
-    data.files.forEach((file, i) => {
-      const best = file.topics?.[0];
-      clusters[i] = best ? (rank.get(best.id) ?? -1) : -1;
-    });
-    topics = data.subjects.map((subject, group) => ({
-      label: subject.name,
-      color: colorOfName(subject.name, taken),
-      files: data.files.map((_, i) => i).filter((i) => clusters[i] === group),
-      // A file can be in several subjects but is drawn in one of them ‒ the
-      // one it fits best. `members` is everything the subject holds, which
-      // is what its count and its filter must say: the two CVs sat in both
-      // "cv" and "curriculum vitae", were drawn in the second, and "cv"
-      // looked like it had found nothing.
-      members: data.files
-        .map((_, i) => i)
-        .filter((i) => data.files[i].topics?.some((t) => t.id === subject.id)),
-    }));
-  } else {
-    const labels = nameTopics(groups, bags, spelling, data.files, degree);
-    topics = groups.map((files, group) => ({
-      label: labels[group],
-      color: colorOfName(labels[group], taken),
-      files,
-      members: files,
-    }));
-  }
+  const rank = new Map(data.subjects.map((subject, i) => [subject.id, i]));
+  // A file can be in several subjects but is drawn in one ‒ the one it fits
+  // best, which the API sends first.
+  const clusters = data.files.map((file) => {
+    const closest = file.topics?.[0];
+    return closest ? (rank.get(closest.id) ?? -1) : -1;
+  });
+  const topics = data.subjects.map((subject, group) => ({
+    label: subject.name,
+    color: colorOfName(subject.name, taken),
+    files: data.files.map((_, i) => i).filter((i) => clusters[i] === group),
+    // `members` is everything the subject holds, which is what its count and
+    // its filter must say: the two CVs sat in both "cv" and "curriculum
+    // vitae", were drawn in the second, and "cv" looked like it had found
+    // nothing.
+    members: data.files
+      .map((_, i) => i)
+      .filter((i) => data.files[i].topics?.some((t) => t.id === subject.id)),
+  }));
 
   // Now that the groups are known, the layout can say so: a pair inside a
   // group rests closer, a pair across two groups is held further apart, and

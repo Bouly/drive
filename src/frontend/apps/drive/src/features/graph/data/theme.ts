@@ -21,8 +21,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 export const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
 
 /**
- * One color per group of files that talk about the same thing. The backend
- * sends no topics, so the groups are read off the links themselves.
+ * One color per subject, in the order their owner wrote them.
  *
  * Any two groups can end up side by side on the stage, so the eight hues are
  * held to the all-pairs floors of the data-viz palette: telling two groups
@@ -41,7 +40,6 @@ export const CLUSTER_COLORS: Record<"dark" | "light", string[]> = {
   dark: ["#B0005C", "#65A800", "#332CFF", "#009ED9", "#FF199D", "#955900", "#8D00C1", "#8A6FFF"],
   light: ["#A20054", "#6EB600", "#2F00FC", "#00ACEB", "#FF53A8", "#955900", "#8100B1", "#8A6FFF"],
 };
-export const CLUSTER_ROUNDS = 8;
 
 /** Mixes a hex color with white; the dark stage needs brighter families. */
 export const lighten = (hex: string, amount: number) => {

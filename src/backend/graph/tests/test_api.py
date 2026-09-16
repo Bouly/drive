@@ -381,3 +381,23 @@ def test_no_folder_draws_the_whole_drive():
     data = client.get(URL).json()
     assert {f["id"] for f in data["files"]} == {str(inside.id), str(outside.id)}
     assert data["scope"] is None
+
+
+def test_a_drive_with_no_subject_is_given_none():
+    """
+    Subjects are written, never invented.
+
+    A drive full of files and empty of subjects answers an empty list: the
+    page draws no group at all, rather than naming ones nobody asked for.
+    """
+    user = factories.UserFactory()
+    drive = make_drive(user)
+    for name in ("un.pdf", "deux.pdf", "trois.pdf"):
+        with_chunk(make_file(name, parent=drive, link_reach=None))
+
+    client = APIClient()
+    client.force_login(user)
+    data = client.get(URL).json()
+    assert len(data["files"]) == 3
+    assert data["topics"] == []
+    assert all(f["topics"] == [] for f in data["files"])
