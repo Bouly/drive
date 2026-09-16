@@ -72,6 +72,24 @@ def scope_folder(user, folder_id):
     return folder
 
 
+def scope_trail(user, folder):
+    """
+    The folder's name, preceded by the folders above it, root first.
+
+    "Divers" says little when three drives hold one. Only the ancestors the
+    reader can open are named: a folder shared on its own sits under parents
+    whose very names they have no right to know, so the trail starts where
+    their access starts.
+    """
+    above = (
+        folder.ancestors()
+        .filter(id__in=readable_by(user).values("id"))
+        .order_by("path")
+        .values_list("title", flat=True)
+    )
+    return [*above, folder.title]
+
+
 def graph_items(user, root=None):
     """
     The items the user can read that belong in the graph.
@@ -219,7 +237,13 @@ class GraphView(views.APIView):
                 ],
                 # What the page puts in its title, and what it offers to leave.
                 "scope": (
-                    {"id": str(folder.id), "title": folder.title} if folder is not None else None
+                    {
+                        "id": str(folder.id),
+                        "title": folder.title,
+                        "path": scope_trail(request.user, folder),
+                    }
+                    if folder is not None
+                    else None
                 ),
             }
         )

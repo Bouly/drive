@@ -285,7 +285,11 @@ def test_folder_scope_holds_only_what_the_folder_holds():
     assert {f["id"] for f in data["files"]} == {str(child.id), str(grandchild.id)}
     # The folder frames the drawing, it is not drawn itself.
     assert str(folder.id) not in {f["id"] for f in data["files"]}
-    assert data["scope"] == {"id": str(folder.id), "title": "dossier"}
+    assert data["scope"] == {
+        "id": str(folder.id),
+        "title": "dossier",
+        "path": ["dossier"],
+    }
 
 
 def test_folder_scope_drops_the_links_that_leave_it():
@@ -381,6 +385,54 @@ def test_no_folder_draws_the_whole_drive():
     data = client.get(URL).json()
     assert {f["id"] for f in data["files"]} == {str(inside.id), str(outside.id)}
     assert data["scope"] is None
+
+
+def test_the_trail_names_the_folders_above_the_scope():
+    """The scope carries where it sits, so two "Divers" tell each other apart."""
+    user = factories.UserFactory()
+    drive = make_drive(user, "Mon espace")
+    middle = factories.ItemFactory(
+        title="Archives", type=models.ItemTypeChoices.FOLDER, parent=drive, link_reach=None
+    )
+    folder = factories.ItemFactory(
+        title="Divers", type=models.ItemTypeChoices.FOLDER, parent=middle, link_reach=None
+    )
+    with_chunk(make_file("note.pdf", parent=folder, link_reach=None))
+
+    client = APIClient()
+    client.force_login(user)
+    data = client.get(URL, {"folder": str(folder.id)}).json()
+    assert data["scope"]["path"] == ["Mon espace", "Archives", "Divers"]
+
+
+def test_the_trail_starts_where_the_reader_s_access_starts():
+    """A folder shared on its own never names the parents above it."""
+    me = factories.UserFactory()
+    owner = factories.UserFactory()
+    drive = make_drive(owner, "Direction générale")
+    secret = factories.ItemFactory(
+        title="Ressources humaines",
+        type=models.ItemTypeChoices.FOLDER,
+        parent=drive,
+        link_reach=None,
+    )
+    shared = factories.ItemFactory(
+        title="Pour moi",
+        type=models.ItemTypeChoices.FOLDER,
+        parent=secret,
+        link_reach=None,
+        users=[(me, models.RoleChoices.READER)],
+    )
+    with_chunk(make_file("note.pdf", parent=shared, link_reach=None))
+
+    client = APIClient()
+    client.force_login(me)
+    data = client.get(URL, {"folder": str(shared.id)}).json()
+    assert data["scope"]["path"] == ["Pour moi"]
+    # And the names above it appear nowhere else in the answer either.
+    body = client.get(URL, {"folder": str(shared.id)}).content.decode()
+    assert "Ressources humaines" not in body
+    assert "Direction générale" not in body
 
 
 def test_a_drive_with_no_subject_is_given_none():

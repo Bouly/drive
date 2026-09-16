@@ -45,6 +45,8 @@ export type GraphLink = {
 export type GraphScope = {
   id: string;
   title: string;
+  /** The folders above it the reader can open, root first, ending on itself. */
+  path: string[];
 };
 
 export type GraphData = {

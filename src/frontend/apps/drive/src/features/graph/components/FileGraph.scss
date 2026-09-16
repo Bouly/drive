@@ -76,6 +76,43 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     font-variant-numeric: tabular-nums;
   }
 
+  // The folder being drawn, named next to the count it explains.
+  &__scope {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 36px;
+    padding: 0 6px 0 12px;
+    border-radius: 999px;
+    background: var(--c--contextuals--background--semantic--neutral--secondary, #f4f4fa);
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    white-space: nowrap;
+  }
+
+  &__scope-name {
+    color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    text-decoration: none;
+    max-width: 22ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+  }
+
+  &__scope-leave {
+    display: flex;
+    align-items: center;
+    color: var(--fg-muted);
+
+    &:hover {
+      color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
+    }
+  }
+
   // Which filters are in force is a state of the stage, so it sits on it.
   &__facets {
     position: absolute;

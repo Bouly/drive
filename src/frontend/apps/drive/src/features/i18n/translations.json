@@ -778,7 +778,6 @@
         "isolate": "Isolate this file and its {{count}} closest",
         "isolate_off": "Show every file again",
         "scope": {
-          "hint": "Only what this folder holds, at any depth.",
           "empty": "Nothing in this folder has been analysed yet.",
           "leave": "See the whole drive"
         }
@@ -1564,7 +1563,6 @@
         "isolate": "Isoler ce fichier et ses {{count}} plus proches",
         "isolate_off": "Réafficher tous les fichiers",
         "scope": {
-          "hint": "Uniquement ce que contient ce dossier, à tous les niveaux.",
           "empty": "Rien n'a encore été analysé dans ce dossier.",
           "leave": "Voir tout le drive"
         }
@@ -2350,7 +2348,6 @@
         "isolate": "Isoleer dit bestand en zijn {{count}} naaste",
         "isolate_off": "Toon weer alle bestanden",
         "scope": {
-          "hint": "Alleen wat deze map bevat, op elk niveau.",
           "empty": "In deze map is nog niets geanalyseerd.",
           "leave": "De hele drive bekijken"
         }

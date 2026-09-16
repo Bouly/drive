@@ -24,7 +24,7 @@ type ApiGraph = {
     evidence?: string;
   }[];
   topics: { id: string; name: string; description: string }[];
-  scope: { id: string; title: string } | null;
+  scope: { id: string; title: string; path: string[] } | null;
 };
 
 /** Converts the API payload to the dataset shape the graph component draws. */
@@ -48,7 +48,7 @@ export const toGraphData = (api: ApiGraph): GraphData => ({
     reason: link.evidence || undefined,
   })),
   subjects: api.topics,
-  scope: api.scope ?? null,
+  scope: api.scope ? { ...api.scope, path: api.scope.path ?? [api.scope.title] } : null,
 });
 
 /**

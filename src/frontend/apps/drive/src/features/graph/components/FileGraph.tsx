@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import Link from "next/link";
 import { Badge, Button, Icon, Switch, Tooltip, ZoomControls, headerHeight } from "@gouvfr-lasuite/ui-components";
 import { ChevronDown, ChevronRight, Edit, Plus, Settings } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
@@ -79,6 +80,8 @@ type FileGraphProps = {
   demo?: boolean;
 };
 export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
+  // The folder this graph is restricted to, when it is not the whole drive.
+  const scope = data.scope ?? null;
   const subjects = useSubjects();
   /** What the subject modal is on: a subject to edit, "new" to name one. */
   const [editingSubject, setEditingSubject] = useState<Subject | "new" | null>(null);
@@ -1035,9 +1038,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       <Button size="small" variant={isolated ? "primary" : "bordered"} color="neutral" onClick={toggleIsolate}>
         {t(isolated ? "graph.isolate_off" : "graph.isolate", { count: NEIGHBOURHOOD })}
       </Button>
-      {model.data.subjects.length > 0 && (
+      {model.subjects.length > 0 && (
         <div className="file-graph__subjects">
-          {model.data.subjects.map((subject) => {
+          {model.subjects.map((subject) => {
             const membership = file.topics?.find((t) => t.id === subject.id);
             return (
               <button
@@ -1191,6 +1194,26 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               )}
             </span>
           </Tooltip>
+          {scope && (
+            // Which folder is being drawn is a state of the stage, like a
+            // filter: the name opens it in the explorer, the cross leaves it,
+            // and the tooltip says where it sits ‒ "Divers" is the name of a
+            // folder in three drives out of four.
+            <Tooltip content={scope.path.join(" / ")}>
+              <span className="file-graph__scope">
+                <Link href={`/explorer/items/${scope.id}`} className="file-graph__scope-name">
+                  {scope.title}
+                </Link>
+                <Link
+                  href="/explorer/graph"
+                  className="file-graph__scope-leave"
+                  aria-label={t("graph.scope.leave")}
+                >
+                  <Icon name="close" size={16} />
+                </Link>
+              </span>
+            </Tooltip>
+          )}
           {demo && (
             <Badge type="accent" uppercased>
               {t("graph.demo_badge")}
@@ -1275,7 +1298,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 const id = `${TOPIC_FILTER_PREFIX}${i}`;
                 const color =
                   topic.color === null ? dotColor("other") : THEMES[theme].clusterColor(topic.color);
-                const subject = model.data.subjects[i];
+                const subject = model.subjects[i];
                 return (
                   <div key={id} className="file-graph__legend-line">
                     <button

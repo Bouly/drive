@@ -166,14 +166,23 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   // topic, it put words in the reader's mouth, and a name nobody chose was
   // read as one somebody had. A drive with no subject now shows none.
   const taken = new Set<number>();
-  const rank = new Map(data.subjects.map((subject, i) => [subject.id, i]));
+  // Inside a folder, a subject holding none of its files would sit in the
+  // legend on a count of zero: the drive has that subject, this folder does
+  // not. Over the whole drive they all stay, an empty one included ‒ it was
+  // just written and its files are on their way.
+  const subjects = data.scope
+    ? data.subjects.filter((subject) =>
+        data.files.some((file) => file.topics?.some((t) => t.id === subject.id)),
+      )
+    : data.subjects;
+  const rank = new Map(subjects.map((subject, i) => [subject.id, i]));
   // A file can be in several subjects but is drawn in one ‒ the one it fits
   // best, which the API sends first.
   const clusters = data.files.map((file) => {
     const closest = file.topics?.[0];
     return closest ? (rank.get(closest.id) ?? -1) : -1;
   });
-  const topics = data.subjects.map((subject, group) => ({
+  const topics = subjects.map((subject, group) => ({
     label: subject.name,
     color: colorOfName(subject.name, taken),
     files: data.files.map((_, i) => i).filter((i) => clusters[i] === group),
@@ -222,6 +231,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     categories,
     clusters,
     topics,
+    subjects,
     searchText,
     simulation,
     emphasis,
