@@ -117,6 +117,18 @@ def test_assign_topics_falls_back_to_title_keywords():
     assert Topic.objects.get().label.startswith("Séminaire")
 
 
+def test_a_weak_tie_does_not_found_a_topic():
+    """A file whose only neighbour is far stays without a topic."""
+    hr, _ = two_groups()
+    # Similar enough to be linked (0.52), too far to belong to the group.
+    stranger = indexed_file("Autre chose", mix({0: 0.52, 40: 1.0}))
+
+    assign_topics(client=FakeChat())
+
+    assert not ItemTopic.objects.filter(item=stranger).exists()
+    assert ItemTopic.objects.filter(item=hr[0]).exists()
+
+
 def test_assign_topics_leaves_given_topics_and_lonely_files_alone():
     """Albert-themed files keep their topic; a file related to nothing gets none."""
     hr, _ = two_groups()

@@ -25,9 +25,12 @@ from graph.services.linking import link_item, live_files
 logger = logging.getLogger(__name__)
 
 # Neighbours taken per file to build the community graph, and the similarity
-# under which two files are not considered related at all.
+# a pair needs to count. Higher than the linking floor on purpose: a weak tie
+# is worth drawing, not founding a topic on. A file whose only ties are weak
+# stays on its own, without a topic, rather than joining a group it has
+# nothing to do with.
 NEIGHBOURS = 4
-FLOOR = 0.5
+FLOOR = 0.55
 # A group keeps the name of the topic it shares at least this share of files
 # with. Kept high: a name inherited by a group that drifted is worse than a
 # new one, and Albert is only asked about groups that really changed.
