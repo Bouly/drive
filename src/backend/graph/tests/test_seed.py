@@ -1,5 +1,7 @@
 """Tests for seeding the graph from Albert (client mocked, storage real)."""
 
+import zipfile
+from io import BytesIO
 from unittest import mock
 
 import pytest
@@ -8,9 +10,10 @@ import responses
 from core import factories, models
 
 from graph.models import ItemChunk, ItemLink
+from graph.services import documents
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.scope import readable_by
-from graph.services.seed import FOLDER_TITLE, seed_from_albert, slugify
+from graph.services.seed import FOLDERS, readable_name, seed_from_albert, slugify
 
 pytestmark = pytest.mark.django_db
 
@@ -33,115 +36,176 @@ def mix(a, b, weight, dim=1024):
 
 
 class FakeAlbert:
-    """Two collections, three documents; vectors chosen so links are predictable."""
+    """Two collections of three documents each, as Albert hands them over."""
 
     def __init__(self):
         self.docs = {
-            1: (
-                "Démission d'un salarié",
-                "Travail",
-                ["La démission met fin au CDI.", "Le préavis dépend de la convention."],
-            ),
-            2: (
-                "Préavis de démission",
-                "Travail",
-                ["Le préavis de démission est fixé par la convention."],
-            ),
-            3: (
-                "Crédit d'impôt syndical",
-                "Argent - Impôts",
-                ["Les cotisations syndicales ouvrent un crédit d'impôt."],
-            ),
-        }
-        self.vectors = {
-            "La démission met fin au CDI.": unit(0),
-            "Le préavis dépend de la convention.": mix(0, 1, 0.9),
-            "Le préavis de démission est fixé par la convention.": mix(0, 1, 0.8),
-            "Les cotisations syndicales ouvrent un crédit d'impôt.": unit(2),
+            i: (
+                f"fiche-{i}.pdf",
+                [f"Passage {j} du document {i}, sur le droit du travail." for j in range(3)],
+            )
+            for i in range(1, 7)
         }
 
     def collections(self):
         """Two public collections."""
-        return [{"id": 10, "name": "fiches-travail"}, {"id": 20, "name": "fiches-impots"}]
-
-    def documents(self, collection_id, limit=50, offset=0):  # pylint: disable=unused-argument
-        """Documents of a collection."""
-        ids = [1, 2] if collection_id == 10 else [3]
-        return [{"id": i, "name": self.docs[i][0], "chunks": len(self.docs[i][2])} for i in ids][
-            :limit
+        return [
+            {"id": 139226, "name": "mediatech-legifrance"},
+            {"id": 150277, "name": "mediatech-fiches-travail-emploi"},
         ]
 
+    def documents(self, collection_id, limit=50, offset=0):  # pylint: disable=unused-argument
+        """Documents of a collection: the first three, then the last three."""
+        ids = [1, 2, 3] if collection_id == 139226 else [4, 5, 6]
+        return [{"id": i, "name": self.docs[i][0]} for i in ids][:limit]
+
     def chunks(self, document_id):
-        """Chunks of a document, all tagged with its theme."""
-        _, theme, texts = self.docs[document_id]
-        return [{"content": text, "metadata": {"theme": f"{theme}, {theme}"}} for text in texts]
-
-    def embed(self, texts):
-        """Fixed vectors per text."""
-        return [self.vectors[text] for text in texts]
+        """Chunks of a document."""
+        return [{"content": text} for text in self.docs[document_id][1]]
 
 
-def test_seed_creates_files_chunks_and_links():
-    """Documents become readable files with vectors, linked to one another."""
+def seed(user, per_collection=3, vector=None):
+    """
+    Seed with Albert mocked and the pipeline reading back what was written.
+
+    The files are written for real ‒ an odt is a zip, a scan a PNG ‒ and the
+    extraction step is handed the text those files carry, which is what Tika
+    returns for the two office formats and what OCR reads off the scan.
+    """
+    text_by_file = {}
+    real_render = documents.render
+
+    def render(kind, title, paragraphs):
+        extension, mimetype, content = real_render(kind, title, paragraphs)
+        text_by_file[f"{slugify(title)}.{extension}"] = "\n\n".join(paragraphs)
+        return extension, mimetype, content
+
+    with (
+        mock.patch("graph.services.seed.render", side_effect=render),
+        mock.patch("graph.services.seed.default_storage.save", side_effect=lambda key, _: key),
+        mock.patch(
+            "graph.tasks.extract_text", side_effect=lambda item: text_by_file[item.filename]
+        ),
+        mock.patch("graph.tasks.AlbertClient") as client,
+    ):
+        client.return_value.embed.side_effect = lambda texts: [
+            vector(text) if vector else unit(0) for text in texts
+        ]
+        return seed_from_albert(
+            user, FakeAlbert(), [139226, 150277], documents_per_collection=per_collection
+        )
+
+
+def test_seed_writes_documents_sheets_and_scans():
+    """The bank holds the three formats, as real office files."""
     user = factories.UserFactory()
-    with mock.patch("graph.services.seed.default_storage.save") as save:
-        report = seed_from_albert(user, FakeAlbert(), [10, 20], documents_per_collection=5)
+    report = seed(user)
 
-    assert report.items == 3
-    assert report.chunks == 4
+    assert report.items == 6
     assert report.skipped == 0
+    assert report.formats == {"document": 4, "sheet": 1, "picture": 1}
 
-    folder = models.Item.objects.get(title=FOLDER_TITLE)
-    files = models.Item.objects.children(folder.path).filter(type="file").order_by("title")
-    assert [f.title for f in files] == [
-        "Crédit d'impôt syndical",
-        "Démission d'un salarié",
-        "Préavis de démission",
+    files = models.Item.objects.filter(type="file").order_by("created_at")
+    assert [file.mimetype for file in files] == [
+        documents.ODT_MIMETYPE,
+        documents.ODT_MIMETYPE,
+        documents.ODS_MIMETYPE,
+        documents.ODT_MIMETYPE,
+        documents.PNG_MIMETYPE,
+        documents.ODT_MIMETYPE,
     ]
-    assert all(f.mimetype == "text/plain" and f.upload_state == "ready" for f in files)
-    assert save.call_count == 3
-    # Every file is readable by its owner, so it shows in the graph API...
-    assert readable_by(user).filter(id__in=files).count() == 3
-    # ...and by nobody else: seeded files are restricted, not shared by link.
-    assert all(f.link_reach == models.LinkReachChoices.RESTRICTED for f in files)
-    stranger = factories.UserFactory()
-    assert readable_by(stranger).filter(id__in=files).count() == 0
-
-    assert ItemChunk.objects.count() == 4
-
-    # Every file is linked to every other one: 3 files, 6 directed links.
-    demission = models.Item.objects.get(title="Démission d'un salarié")
-    preavis = models.Item.objects.get(title="Préavis de démission")
-    links = {(l.source.title, l.target.title): l for l in ItemLink.objects.all()}
-    assert len(links) == 6
-    assert report.links == 6
-
-    # The two "Travail" documents are close; the tax one is orthogonal to both.
-    link = links[("Démission d'un salarié", "Préavis de démission")]
-    assert link.kind == "semantic"
-    # Item vectors are chunk means: (0.99, 0.16) vs (0.80, 0.60) -> cosine ~0.89.
-    assert 0.85 < link.weight < 0.92
-    assert "similarité" in link.reason
-    assert link.evidence == "Le préavis de démission est fixé par la convention."
-    assert {demission.id, preavis.id} == {link.source_id, link.target_id}
-    # ...and the distant pair is linked too, with a weight near zero.
-    assert links[("Démission d'un salarié", "Crédit d'impôt syndical")].weight < 0.2
+    # The name a reader sees carries the format, not the Albert file name.
+    assert [file.title for file in files][:3] == ["Fiche 1.odt", "Fiche 4.odt", "Fiche 2.ods"]
+    assert all(file.upload_state == "ready" and file.size > 0 for file in files)
 
 
-def test_seed_is_idempotent():
+def test_seed_spreads_dates_rights_and_authors():
+    """A bank where everything is equal shows nothing: the three vary."""
+    user = factories.UserFactory()
+    seed(user)
+
+    files = list(models.Item.objects.filter(type="file").order_by("created_at"))
+    # Dates are spread rather than all set to today, so dots differ in size.
+    days = {file.created_at.date() for file in files}
+    assert len(days) == len(files)
+    assert (files[-1].created_at - files[0].created_at).days > 300
+
+    # The three folders exist, and the reader holds a different right on each.
+    folders = models.Item.objects.filter(type="folder").order_by("title")
+    assert [folder.title for folder in folders] == sorted(title for title, _ in FOLDERS)
+    roles = {
+        folder.title: models.Item.objects.filter(pk=folder.pk)
+        .annotate_user_roles(user)
+        .first()
+        .get_role(user)
+        for folder in folders
+    }
+    assert set(roles.values()) == {"owner", "editor", "reader"}
+    # ...and every one of them is readable by the reader, whoever owns it.
+    assert readable_by(user).filter(id__in=[file.id for file in files]).count() == len(files)
+
+    # More than one author signs the bank, so filtering by author answers.
+    assert len({file.creator_id for file in files}) > 1
+
+
+def test_seed_indexes_and_links_every_file():
+    """Seeded files go through the ordinary pipeline: passages, then links."""
+    user = factories.UserFactory()
+    # Two documents close to each other, the rest orthogonal to them.
+    report = seed(user, vector=lambda text: unit(0) if "document 1" in text else unit(1))
+
+    assert report.chunks == ItemChunk.objects.count() > 0
+    assert report.failed == 0
+    # Every indexed pair is linked, the weight telling a close pair apart.
+    assert report.links == ItemLink.objects.count() > 0
+    weights = sorted(link.weight for link in ItemLink.objects.all())
+    assert weights[-1] == pytest.approx(1.0)
+    assert weights[0] == pytest.approx(0.0)
+
+
+def test_seed_skips_what_the_drive_already_holds():
     """Running the seed twice does not duplicate files."""
     user = factories.UserFactory()
-    with mock.patch("graph.services.seed.default_storage.save"):
-        seed_from_albert(user, FakeAlbert(), [10])
-        report = seed_from_albert(user, FakeAlbert(), [10])
+    seed(user)
+    report = seed(user)
     assert report.items == 0
-    assert report.skipped == 2
-    assert models.Item.objects.filter(type="file").count() == 2
+    assert report.skipped == 6
+    assert models.Item.objects.filter(type="file").count() == 6
+
+
+def test_documents_are_real_office_files():
+    """An OpenDocument is a zip whose content.xml holds the text, a scan a PNG."""
+    passages = ["Le télétravail est volontaire.", "Le préavis est d'un mois."]
+
+    extension, mimetype, raw = documents.render("document", "Fiche & télétravail", passages)
+    assert (extension, mimetype) == ("odt", documents.ODT_MIMETYPE)
+    with zipfile.ZipFile(BytesIO(raw)) as archive:
+        assert archive.namelist()[0] == "mimetype"
+        assert archive.read("mimetype").decode() == documents.ODT_MIMETYPE
+        body = archive.read("content.xml").decode("utf-8")
+    # The title is escaped, not dropped, and every passage is in there.
+    assert "Fiche &amp; télétravail" in body
+    assert all(passage in body for passage in passages)
+
+    extension, mimetype, raw = documents.render("sheet", "Extraits", passages)
+    assert (extension, mimetype) == ("ods", documents.ODS_MIMETYPE)
+    with zipfile.ZipFile(BytesIO(raw)) as archive:
+        body = archive.read("content.xml").decode("utf-8")
+    assert body.count("<table:table-row>") == len(passages) + 2  # title, headers, rows
+    assert "Extrait 2" in body
+
+    extension, mimetype, raw = documents.render("picture", "Fiche pratique", passages)
+    assert (extension, mimetype) == ("png", documents.PNG_MIMETYPE)
+    assert raw[:4] == b"\x89PNG"
+    assert len(raw) > 1000
 
 
 def test_helpers():
-    """File names are derived safely."""
+    """File names are derived safely, and Albert's own names made readable."""
     assert slugify("Occupation du domaine public (AOT) !") == "occupation-du-domaine-public-aot"
+    assert readable_name("fiche_teletravail-2024.pdf") == "Fiche teletravail 2024"
+    assert readable_name("LEGITEXT000006072050.txt") == "LEGITEXT000006072050"
+    assert readable_name("") == "Document"
 
 
 @responses.activate
