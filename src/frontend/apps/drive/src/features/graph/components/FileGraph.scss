@@ -83,6 +83,32 @@
     width: 260px;
   }
 
+  // How many files the stacked filters leave, and the way out of them.
+  &__filter-count {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    color: var(--fg-faint);
+    white-space: nowrap;
+  }
+
+  // Trims the web from every tie down to the closest pairs only.
+  &__strength {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    color: var(--fg-faint);
+    white-space: nowrap;
+
+    input[type="range"] {
+      width: 96px;
+      accent-color: var(--c--contextuals--content--semantic--brand--primary, #6969df);
+      cursor: pointer;
+    }
+  }
+
   &__search-icon {
     position: absolute;
     top: 50%;

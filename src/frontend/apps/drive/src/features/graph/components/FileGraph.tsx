@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Badge, Button, getMimeCategory, Icon, Switch, Tooltip } from "@gouvfr-lasuite/ui-components";
 import { Maximize, ZoomMinus, ZoomPlus } from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
-import { FOLDER_MIMETYPE, GraphData, GraphFile, GraphLink } from "../data/fakeGraph";
+import { FOLDER_MIMETYPE, GraphData, GraphFile, GraphLink } from "../data/types";
 import { ForceSimulation, SimLink, SimNode } from "../simulation";
 
 /**
@@ -25,12 +25,74 @@ const CATEGORY_COLORS: Record<string, string> = {
   other: "#A9A9BF", // gray-300
 };
 const CATEGORY_ORDER = ["folder", "doc", "calc", "powerpoint", "pdf", "image", "video", "archive", "other"];
-/** One color per topic when the graph is colored by topic (DSFR palette). */
-const TOPIC_COLORS = [
-  "#3E5DE7", "#027B3E", "#CB5000", "#7B3FA0", "#0F766E", "#D7010E", "#B8860B", "#AE6257",
-  "#0069CF", "#5A8228", "#6969DF", "#3A7EA0",
-];
-type ColorBy = "type" | "topic";
+
+/**
+ * One color per group of files that talk about the same thing. The backend
+ * sends no topics, so the groups are read off the links themselves.
+ *
+ * Any two groups can end up side by side on the stage, so the eight hues are
+ * held to the all-pairs floors of the data-viz palette: telling two groups
+ * apart must not depend on color vision. Each theme has its own steps, picked
+ * for its background rather than lightened from the other one.
+ *
+ * They were searched, not picked: a greedy walk over the OKLCH wheel (hue by
+ * lightness, each at the most chroma sRGB holds there) keeping the set whose
+ * worst pair is furthest apart. Hand-picked eights do not survive that test ‒
+ * the reference eight of the data-viz palette drops to a distance of 3.2 for
+ * a color-blind reader and 7.1 for everyone else, while this one holds 10.5
+ * and 17.4 on the light stage, 8.9 and 16.7 on the dark one. Past the eighth
+ * group the color is dropped rather than reused.
+ */
+const CLUSTER_COLORS: Record<"dark" | "light", string[]> = {
+  dark: ["#B0005C", "#65A800", "#332CFF", "#009ED9", "#FF199D", "#955900", "#8D00C1", "#8A6FFF"],
+  light: ["#A20054", "#6EB600", "#2F00FC", "#00ACEB", "#FF53A8", "#955900", "#8100B1", "#8A6FFF"],
+};
+const CLUSTER_ROUNDS = 8;
+/** Smallest and largest dot, in world units: the range a degree is mapped to. */
+const NODE_MIN_RADIUS = 3;
+const NODE_MAX_RADIUS = 7;
+/** How much further apart two files of two different groups are held. */
+const CROSS_GROUP_SPREAD = 1.25;
+/** How much closer two files of the same group rest. */
+const INSIDE_GROUP_TIGHTEN = 0.85;
+/** Words no group can be named after: too short, too common, or a file type. */
+const NAME_STOPWORDS = new Set(
+  (
+    "le la les de des du un une et en au aux pour par sur dans avec sans ce cet cette ces son sa ses leur " +
+    "leurs est sont qui que ont plus tres cela dont ainsi ils elles nous vous votre notre pas mais comme " +
+    "image images photo photos montre voit fichier fichiers document documents contenus proches similarite " +
+    "scaled final version copie jpeg webp docx xlsx pptx " +
+    "deux trois quatre cinq sept huit neuf vingt trente quarante cinquante soixante cent cents mille " +
+    "million millions milliard milliers dizaines centaines environ plusieurs autres chaque entre " +
+    "janvier fevrier mars avril juin juillet aout septembre octobre novembre decembre lundi mardi " +
+    "mercredi jeudi vendredi samedi dimanche " +
+    "portant relatif relative relatifs relatives concernant presente present presents susvise " +
+    "titre alinea paragraphe point points cas lors dont afin " +
+    "modifie modifiee modifies modifiees vigueur ci-dessus ci-apres"
+  ).split(" "),
+);
+/** A word must carry this share of a group, and be this rare elsewhere, to name it. */
+const NAME_MIN_SCORE = 0.3;
+/**
+ * How much a word found in a quoted passage weighs against one found in a
+ * file name. A name is chosen by someone, a passage is just a fragment the
+ * file happens to contain: "mille" in "mille espèces d'abeilles" should never
+ * outrank "abeilles".
+ */
+const NAME_PASSAGE_WEIGHT = 0.5;
+/**
+ * Filters stack: a file must satisfy every family of facets at once, and any
+ * one facet inside a family. Picking two subjects widens the selection,
+ * adding a file type narrows it.
+ */
+const TOPIC_FILTER_PREFIX = "topic:";
+const CATEGORY_FILTER_PREFIX = "cat:";
+/** Files kept around the one being explored on its own. */
+const NEIGHBOURHOOD = 8;
+/** Passages kept per file for the search: enough to know what it says. */
+const SEARCH_PASSAGES = 8;
+/** The strength slider runs the drawing threshold from every tie to the few strongest. */
+const STRENGTH_CEILING = 0.95;
 
 /** Mixes a hex color with white; the dark stage needs brighter families. */
 const lighten = (hex: string, amount: number) => {
@@ -43,13 +105,11 @@ type Theme = {
   bg: string;
   dot: string;
   link: string;
+  /** Color of a group of files that hang together, by palette slot. */
+  clusterColor: (slot: number) => string;
   label: string;
   labelHalo: string;
-  clusterLabel: string;
-  clusterHull: string;
   ring: string;
-  /** Color of the dashed "unexpected connection" links. */
-  surprise: string;
   glow: boolean;
   categoryColor: (category: string) => string;
 };
@@ -61,11 +121,9 @@ const THEMES: Record<"dark" | "light", Theme> = {
     link: "169, 169, 191", // gray-300
     label: "#F0F0F3", // gray-050
     labelHalo: "rgba(27, 27, 35, 0.85)",
-    clusterLabel: "rgba(169, 169, 191, 0.55)",
-    clusterHull: "255, 255, 255",
     ring: "rgba(27, 27, 35, 0.9)",
-    surprise: "#EB9970", // warning-300
     glow: true,
+    clusterColor: (slot) => CLUSTER_COLORS.dark[slot],
     categoryColor: (category) => lighten(CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other, 0.3),
   },
   light: {
@@ -74,11 +132,9 @@ const THEMES: Record<"dark" | "light", Theme> = {
     link: "105, 105, 125", // gray-550
     label: "#25252F", // gray-850
     labelHalo: "rgba(240, 240, 243, 0.92)",
-    clusterLabel: "rgba(105, 105, 125, 0.7)",
-    clusterHull: "94, 92, 208", // brand-550
     ring: "#FFFFFF",
-    surprise: "#CB5000", // warning-500
     glow: false,
+    clusterColor: (slot) => CLUSTER_COLORS.light[slot],
     categoryColor: (category) => CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other,
   },
 };
@@ -87,14 +143,39 @@ const THEME_STORAGE_KEY = "drive-graph-theme";
 /** How much depth shifts a node when panning: the fake-3D parallax. */
 const PARALLAX = 0.1;
 const MIN_SCALE = 0.35;
-const MAX_SCALE = 3.5;
+const MAX_SCALE = 14;
+/**
+ * Dots grow slower than the stage does, so zooming in pulls the files apart
+ * instead of inflating them: at full zoom the positions are 14 times further
+ * apart while a dot is only 4 times wider, which is what makes a crowded
+ * corner readable. Below 1 the dot follows the zoom exactly.
+ */
+const MARK_ZOOM_EXPONENT = 0.55;
+const markScale = (scale: number) => (scale <= 1 ? scale : scale ** MARK_ZOOM_EXPONENT);
 const INTRO_DURATION = 700;
 const INTRO_STAGGER = 14;
 /** Per-frame convergence of emphasis and camera animations (0..1). */
 const EASE = 0.22;
 const MAX_SEARCH_RESULTS = 6;
-/** Room kept above the graph so the top topic name stays visible. */
+/** Room kept above the graph so the top labels stay visible. */
 const TOP_INSET = 36;
+/**
+ * Below this closeness two files count as strangers: no edge is drawn, and
+ * their link only holds them apart (see buildModel). Above it the edge fades
+ * in with the closeness. Without it the stage would be a solid mesh.
+ *
+ * One exception: whatever the threshold says, every file keeps its closest
+ * neighbour. A topic held by two files only ‒ a photo of a bicycle and a PDF
+ * on bicycle upkeep ‒ is looser than a topic held by ten, and a single
+ * threshold would leave those two stranded on opposite sides of the stage.
+ *
+ * Measured on a drive of 39 files across four subjects: at 0.35 the stage
+ * draws 183 of its 741 pairs, only 8 of them between two subjects ‒ and those
+ * eight are real (CNIL rulings on staff files next to employment notices).
+ */
+const LINK_MIN_CLOSENESS = 0.35;
+/** Connections listed on a file card: the closest ones only. */
+const MAX_LISTED_NEIGHBORS = 12;
 
 type Neighbor = { node: number; link: GraphLink };
 
@@ -104,9 +185,11 @@ type ScreenNode = SimNode & { sx: number; sy: number; sr: number; depth: number;
 
 type Filters = {
   selected: number | null;
-  category: string | null;
-  cluster: number | null;
+  /** Stacked facets, "topic:2" or "cat:pdf". */
+  facets: string[];
   activeLink: number | null;
+  /** Show the selected file and its closest ones only, hiding the rest. */
+  isolated: boolean;
 };
 
 const normalize = (text: string) =>
@@ -120,6 +203,92 @@ const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 const hexToRgb = (hex: string) => {
   const value = parseInt(hex.slice(1), 16);
   return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
+};
+
+/**
+ * The words of a text as [folded, as written] pairs: counting needs the
+ * accents gone, but the name shown to someone keeps them.
+ */
+const nameWords = (text: string) =>
+  (text.replace(/[-_.]+/g, " ").match(/[\p{L}\p{N}'’]+/gu) ?? [])
+    .map((raw) => [normalize(raw).split(/['’]/).pop() as string, raw.split(/['’]/).pop() as string])
+    .filter(([word]) => word.length > 3 && !NAME_STOPWORDS.has(word) && !/^\d+$/.test(word));
+
+/**
+ * A name for each group: the words its files share and the other groups do
+ * not use. The titles and the passages the links quote are everything the
+ * page knows about what a file says, and it is enough: on a drive of photos
+ * and reports about bees and bicycles, this reads "Abeilles · Pollinisateurs"
+ * and "Velo · Route" without asking a model to name anything.
+ */
+const nameTopics = (
+  groups: number[][],
+  bags: Map<string, number>[],
+  spelling: Map<string, string>,
+  files: GraphFile[],
+  degree: number[],
+) => {
+  const shares = groups.map((members) => {
+    const seen = new Map<string, number>();
+    for (const i of members) {
+      for (const [word, weight] of bags[i]) {
+        seen.set(word, (seen.get(word) ?? 0) + weight);
+      }
+    }
+    return new Map([...seen].map(([word, total]) => [word, total / members.length] as const));
+  });
+
+  return groups.map((members, group) => {
+    const best = [...shares[group]]
+      .map(([word, share]) => {
+        const elsewhere = Math.max(
+          0,
+          ...shares.map((other, i) => (i === group ? 0 : (other.get(word) ?? 0))),
+        );
+        return { word, score: share * (1 - elsewhere) };
+      })
+      .filter(({ score }) => score >= NAME_MIN_SCORE)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 2);
+    if (best.length) {
+      return best
+        .map(({ word }) => spelling.get(word) ?? word)
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" · ");
+    }
+    // Nothing shared to name it with: the group goes by its busiest file.
+    const anchor = [...members].sort((a, b) => degree[b] - degree[a])[0];
+    const title = files[anchor].title.replace(/\.[^.]+$/, "");
+    return title.length > 24 ? `${title.slice(0, 23)}…` : title;
+  });
+};
+
+/**
+ * The palette slot of a name, or null once the four are taken.
+ *
+ * The slot comes from the name and not from the size of the group, so a topic
+ * keeps its color as long as it keeps its subject: a file arriving no longer
+ * swaps two colors around. Past the fourth group the color is dropped rather
+ * than reused ‒ two groups sharing a hue would be a lie, a gray one is only
+ * silent, and its name still shows in the legend.
+ */
+const colorOfName = (label: string, taken: Set<number>) => {
+  const slots = CLUSTER_COLORS.light.length;
+  if (taken.size >= slots) {
+    return null;
+  }
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = (hash * 31 + label.charCodeAt(i)) % 100000007;
+  }
+  for (let step = 0; step < slots; step++) {
+    const slot = (hash + step) % slots;
+    if (!taken.has(slot)) {
+      taken.add(slot);
+      return slot;
+    }
+  }
+  return null;
 };
 
 const categoryOf = (file: GraphFile) => {
@@ -139,71 +308,281 @@ const readStoredTheme = (): "dark" | "light" => {
   }
 };
 
+/**
+ * How close a pair is, in 0..1, judged from each of its two files rather than
+ * from the graph as a whole.
+ *
+ * Two files with nothing in common already share a fair amount of cosine
+ * similarity, and worse, some files are close to everyone: a long, general
+ * text sits near the middle of the embedding space and turns up next to
+ * anything. On this drive a photo of a bicycle came out closer to a physics
+ * syllabus (0.485) than to the PDF on bicycle upkeep (0.455), and no global
+ * threshold can fix that ‒ the syllabus is above average with everybody.
+ *
+ * So each file scores a pair against its own habits (how many standard
+ * deviations above its average this pair stands), and the pair keeps the
+ * lower of the two scores. A file that is everyone's neighbour has a high
+ * average, so its links score low from its side and the pair is dropped:
+ * being close to everything stops counting as being close to something.
+ */
+const MUTUAL_Z_LOW = 0.6;
+const MUTUAL_Z_HIGH = 2.2;
+
+const mutualCloseness = (weights: number[], ends: [number, number][], count: number) => {
+  // Too few pairs for a file to have habits: the raw value is all there is.
+  if (weights.length < 6) {
+    return weights.map((weight) => Math.min(1, Math.max(0, weight)));
+  }
+  const sum = new Float64Array(count);
+  const squares = new Float64Array(count);
+  const seen = new Float64Array(count);
+  weights.forEach((weight, i) => {
+    for (const node of ends[i]) {
+      sum[node] += weight;
+      squares[node] += weight * weight;
+      seen[node]++;
+    }
+  });
+  const mean = new Float64Array(count);
+  const deviation = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    mean[i] = seen[i] ? sum[i] / seen[i] : 0;
+    deviation[i] = Math.sqrt(Math.max(1e-9, (seen[i] ? squares[i] / seen[i] : 0) - mean[i] * mean[i]));
+  }
+  return weights.map((weight, i) => {
+    const [a, b] = ends[i];
+    const z = Math.min((weight - mean[a]) / deviation[a], (weight - mean[b]) / deviation[b]);
+    return Math.min(1, Math.max(0, (z - MUTUAL_Z_LOW) / (MUTUAL_Z_HIGH - MUTUAL_Z_LOW)));
+  });
+};
+
+/**
+ * Groups the files that talk about the same thing, by label propagation over
+ * the ties: each file repeatedly takes the group its closest neighbours
+ * share, weighted by how close they are. Returns one group index per file, -1 when a file belongs
+ * to no group, with the biggest group first so colors stay stable.
+ */
+const findClusters = (count: number, links: SimLink[], weights: number[], ties: boolean[]) => {
+  const adjacency: { node: number; weight: number }[][] = Array.from({ length: count }, () => []);
+  links.forEach((link, i) => {
+    // Groups are read off the ties: a pair the graph holds apart says nothing
+    // about what its two files are about.
+    if (!ties[i]) {
+      return;
+    }
+    adjacency[link.source].push({ node: link.target, weight: weights[i] });
+    adjacency[link.target].push({ node: link.source, weight: weights[i] });
+  });
+
+  const label = Array.from({ length: count }, (_, i) => i);
+  for (let round = 0; round < CLUSTER_ROUNDS; round++) {
+    let moved = false;
+    for (let i = 0; i < count; i++) {
+      const score = new Map<number, number>();
+      for (const { node, weight } of adjacency[i]) {
+        score.set(label[node], (score.get(label[node]) ?? 0) + weight);
+      }
+      let best = label[i];
+      let bestScore = score.get(best) ?? 0;
+      for (const [candidate, value] of score) {
+        // Ties go to the lowest label so the result does not depend on order.
+        if (value > bestScore || (value === bestScore && candidate < best)) {
+          best = candidate;
+          bestScore = value;
+        }
+      }
+      if (best !== label[i]) {
+        label[i] = best;
+        moved = true;
+      }
+    }
+    if (!moved) {
+      break;
+    }
+  }
+
+  const members = new Map<number, number>();
+  for (const value of label) {
+    members.set(value, (members.get(value) ?? 0) + 1);
+  }
+  // A file on its own is no group: it keeps the neutral color.
+  const ranked = [...members.entries()]
+    .filter(([, size]) => size > 1)
+    .sort((a, b) => b[1] - a[1])
+    .map(([value]) => value);
+  const rank = new Map(ranked.map((value, i) => [value, i]));
+  return label.map((value) => rank.get(value) ?? -1);
+};
+
 const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   const index = new Map(data.files.map((file, i) => [file.id, i]));
-  const clusterIndex = new Map(data.clusters.map((cluster, i) => [cluster.id, i]));
+  // Degree counts the links worth seeing, so a node's size still means
+  // something now that every file is linked to every other one.
   const degree = data.files.map(() => 0);
   const neighbors: Neighbor[][] = data.files.map(() => []);
 
-  const links: SimLink[] = [];
-  const linkMeta: GraphLink[] = [];
+  const pairs: { source: number; target: number; link: GraphLink }[] = [];
   for (const link of data.links) {
     const source = index.get(link.source);
     const target = index.get(link.target);
     if (source === undefined || target === undefined) {
       continue;
     }
-    degree[source]++;
-    degree[target]++;
+    pairs.push({ source, target, link });
+  }
+  const closeness = mutualCloseness(
+    pairs.map((pair) => pair.link.weight),
+    pairs.map((pair) => [pair.source, pair.target] as [number, number]),
+    data.files.length,
+  );
+
+  // The closest pair of each file, kept whatever the threshold says.
+  const best = data.files.map(() => -1);
+  pairs.forEach(({ source, target }, i) => {
+    for (const node of [source, target]) {
+      if (best[node] < 0 || closeness[i] > closeness[best[node]]) {
+        best[node] = i;
+      }
+    }
+  });
+
+  const links: SimLink[] = [];
+  const linkMeta: GraphLink[] = [];
+  const linkCloseness: number[] = [];
+  const linkTies: boolean[] = [];
+  // What each file is about, in words: its name, and the passages its ties
+  // quote. This is what the groups are named after.
+  // How each word is really written, taken from a title first: a file name
+  // is spelled by someone, a passage is whatever the extraction returned.
+  const spelling = new Map<string, string>();
+  // The passages a file's ties quote: what the search reads besides its name.
+  const passages: string[][] = data.files.map(() => []);
+  const bags = data.files.map((file) => {
+    const bag = new Map<string, number>();
+    for (const [word, raw] of nameWords(file.title)) {
+      bag.set(word, 1);
+      spelling.set(word, raw);
+    }
+    return bag;
+  });
+  pairs.forEach(({ source, target, link }, i) => {
+    const tie = closeness[i] >= LINK_MIN_CLOSENESS || best[source] === i || best[target] === i;
+    // A pair kept as somebody's closest neighbour is drawn and pulled like
+    // one at the threshold, otherwise the only tie of a small topic would be
+    // a line nobody can see.
+    const close = tie ? Math.max(closeness[i], LINK_MIN_CLOSENESS) : closeness[i];
+    if (tie) {
+      degree[source]++;
+      degree[target]++;
+    }
     neighbors[source].push({ node: target, link });
     neighbors[target].push({ node: source, link });
-    links.push({
-      source,
-      target,
-      length: link.kind === "surprise" ? 210 : 52 + (1 - link.weight) * 60,
-      strength: link.kind === "surprise" ? 0.012 : 0.05 + link.weight * 0.06,
-    });
+    if (tie && link.reason) {
+      for (const node of [source, target]) {
+        if (passages[node].length < SEARCH_PASSAGES && !passages[node].includes(link.reason)) {
+          passages[node].push(link.reason);
+        }
+      }
+      for (const [word, raw] of nameWords(link.reason)) {
+        if (!spelling.has(word)) {
+          spelling.set(word, raw.toLowerCase());
+        }
+        for (const bag of [bags[source], bags[target]]) {
+          if (!bag.has(word)) {
+            bag.set(word, NAME_PASSAGE_WEIGHT);
+          }
+        }
+      }
+    }
+    if (tie) {
+      // A close pair rests short and pulls hard; a looser one rests far and
+      // barely pulls, so the closeness alone shapes the layout.
+      links.push({
+        source,
+        target,
+        length: 30 + (1 - close) * (1 - close) * 240,
+        strength: 0.01 + close * close * 0.25,
+      });
+    } else {
+      // Strangers: the link never pulls them together, it only keeps them at
+      // arm's length, and the less they share the further apart they sit.
+      links.push({
+        source,
+        target,
+        length: 150 + (1 - close / LINK_MIN_CLOSENESS) * 130,
+        strength: 0.02,
+        spacer: true,
+      });
+    }
     linkMeta.push(link);
-  }
-  const surprises = linkMeta.map((meta, i) => (meta.kind === "surprise" ? i : -1)).filter((i) => i >= 0);
-
-  // Clusters sit on a ring; nodes start near their cluster with a bit of noise.
-  // A small graph (few topics) sits closer together than the demo dataset.
-  const ring = Math.min(320, 60 + 45 * data.clusters.length);
-  const centers = data.clusters.map((_, i) => {
-    const angle = (i / data.clusters.length) * Math.PI * 2 - Math.PI / 2;
-    return { x: Math.cos(angle) * ring, y: Math.sin(angle) * ring };
+    linkCloseness.push(close);
+    linkTies.push(tie);
   });
+
   let seed = 7;
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) % 4294967296;
     return seed / 4294967296;
   };
   const categories = data.files.map(categoryOf);
-  const clusterOf = data.files.map((file) => clusterIndex.get(file.cluster) ?? 0);
+  // A dot reads its degree against the busiest file of this drive, not
+  // against a fixed count: on a graph where everyone has twenty ties, a
+  // fixed scale saturates and every file ends up the same big blob.
+  const busiest = Math.max(1, ...degree);
   const nodes: SimNode[] = data.files.map((file, i) => {
-    const cluster = clusterOf[i];
     // A file already on screen keeps its place when the graph is refetched,
     // so a new file simply appears instead of everything moving.
     const before = placed?.get(file.id);
     return {
       id: file.id,
-      x: before ? before.x : centers[cluster].x + (rand() - 0.5) * 120,
-      y: before ? before.y : centers[cluster].y + (rand() - 0.5) * 120,
+      x: before ? before.x : (rand() - 0.5) * 320,
+      y: before ? before.y : (rand() - 0.5) * 320,
       z: rand() * 2 - 1,
       vx: 0,
       vy: 0,
-      r: categories[i] === "folder" ? 10 : 5.5 + Math.min(6.5, degree[i] * 1.1),
-      cluster,
+      r:
+        categories[i] === "folder"
+          ? NODE_MAX_RADIUS
+          : NODE_MIN_RADIUS + (NODE_MAX_RADIUS - NODE_MIN_RADIUS) * Math.sqrt(degree[i] / busiest),
       degree: degree[i],
       fx: null,
       fy: null,
     };
   });
 
-  // With a single topic every node is pulled to the same point: pull gently
-  // so repulsion and links shape the layout instead of a tight ball.
-  const simulation = new ForceSimulation(nodes, links, centers, data.clusters.length > 1 ? undefined : 0.006);
+  // Title and quoted passages, folded once: the search reads this instead of
+  // the titles alone, so a word that appears inside a file finds it.
+  const searchText = data.files.map((file, i) => normalize(`${file.title} ${passages[i].join(" ")}`));
+
+  const clusters = findClusters(data.files.length, links, linkCloseness, linkTies);
+  const groups: number[][] = [];
+  clusters.forEach((group, i) => {
+    if (group >= 0) {
+      (groups[group] ??= []).push(i);
+    }
+  });
+  const labels = nameTopics(groups, bags, spelling, data.files, degree);
+  const taken = new Set<number>();
+  const topics = groups.map((files, group) => ({
+    label: labels[group],
+    color: colorOfName(labels[group], taken),
+    files,
+  }));
+
+  // Now that the groups are known, the layout can say so: a pair inside a
+  // group rests closer, a pair across two groups is held further apart, and
+  // the subjects come apart on their own.
+  links.forEach((link) => {
+    const group = clusters[link.source];
+    const same = group >= 0 && group === clusters[link.target];
+    if (link.spacer) {
+      link.length *= same ? 1 : CROSS_GROUP_SPREAD;
+    } else if (same) {
+      link.length *= INSIDE_GROUP_TIGHTEN;
+    }
+  });
+
+  const simulation = new ForceSimulation(nodes, links);
   // Small graphs settle before the first frame, so the initial framing
   // matches the final layout; large ones keep animating into place.
   const warmup = nodes.length <= 150 ? 320 : 40;
@@ -214,7 +593,22 @@ const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   // Emphasis (0 dimmed .. 1 lit) per node, eased frame by frame.
   const emphasis = nodes.map(() => 1);
 
-  return { data, index, nodes, links, linkMeta, surprises, neighbors, categories, clusterOf, simulation, emphasis };
+  return {
+    data,
+    index,
+    nodes,
+    links,
+    linkMeta,
+    linkCloseness,
+    linkTies,
+    neighbors,
+    categories,
+    clusters,
+    topics,
+    searchText,
+    simulation,
+    emphasis,
+  };
 };
 
 type Model = ReturnType<typeof buildModel>;
@@ -245,52 +639,86 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const frameRef = useRef<number | null>(null);
   const patternRef = useRef<CanvasPattern | null>(null);
   const screenRef = useRef<ScreenNode[]>([]);
-  /** Screen rectangles of the topic names drawn on the stage: they are clickable. */
-  const clusterLabelsRef = useRef<{ x: number; y: number; w: number; h: number }[]>([]);
-  const hoverClusterRef = useRef<number | null>(null);
   const introStartRef = useRef<number | null>(null);
   // Mirrors of the React state read by the render loop.
-  const uiRef = useRef<Filters & { theme: "dark" | "light"; colorBy: ColorBy }>({
+  const uiRef = useRef<Filters & { theme: "dark" | "light"; strength: number }>({
     selected: null,
-    category: null,
-    cluster: null,
+    facets: [],
     activeLink: null,
+    isolated: false,
     theme: "dark",
-    colorBy: "type",
+    strength: 0,
   });
 
-  const [filters, setFilters] = useState<Filters>({ selected: null, category: null, cluster: null, activeLink: null });
-  const { selected, category, cluster, activeLink } = filters;
+  const [filters, setFilters] = useState<Filters>({
+    selected: null,
+    facets: [],
+    activeLink: null,
+    isolated: false,
+  });
+  const { selected, facets, activeLink, isolated } = filters;
+  /** 0 draws every tie, 1 keeps only the closest pairs. */
+  const [strength, setStrength] = useState(0);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const [showSurprises, setShowSurprises] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
-  // Color by topic when topics tell files apart; a single topic (uploads have
-  // none yet) or the demo dataset reads better by file type.
-  const [colorBy, setColorBy] = useState<ColorBy>(demo || data.clusters.length < 2 ? "type" : "topic");
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
     setTheme(readStoredTheme());
   }, []);
 
+  /**
+   * Files matching the search, with a score.
+   *
+   * Every word must appear somewhere, in the name or in what the file says;
+   * a word found in the name counts for more than one found in a passage, and
+   * a name starting with it more still. So "télétravail" finds the ministry
+   * agreement that never says it in its title, but a file actually named
+   * after it comes first.
+   */
   const matches = useMemo(() => {
-    const needle = normalize(query.trim());
-    if (!needle) {
+    const words = normalize(query.trim()).split(/\s+/).filter(Boolean);
+    if (!words.length) {
       return null;
     }
-    const set = new Set<number>();
+    const scored = new Map<number, number>();
     model.data.files.forEach((file, i) => {
-      if (normalize(file.title).includes(needle)) {
-        set.add(i);
+      const title = normalize(file.title);
+      const text = model.searchText[i];
+      let score = 0;
+      for (const word of words) {
+        const inTitle = title.includes(word);
+        if (!inTitle && !text.includes(word)) {
+          return;
+        }
+        score += inTitle ? 3 : 1;
+        if (title.startsWith(word)) {
+          score += 2;
+        }
       }
+      scored.set(i, score);
     });
-    return set;
+    return scored;
   }, [model, query]);
-  const matchesRef = useRef(matches);
+  const matchesRef = useRef<Set<number> | null>(matches && new Set(matches.keys()));
   const searchResults = useMemo(
-    () => (matches ? Array.from(matches).sort((a, b) => model.nodes[b].degree - model.nodes[a].degree).slice(0, MAX_SEARCH_RESULTS) : []),
+    () =>
+      matches
+        ? [...matches.keys()]
+            .sort((a, b) => (matches.get(b) ?? 0) - (matches.get(a) ?? 0) || model.nodes[b].degree - model.nodes[a].degree)
+            .slice(0, MAX_SEARCH_RESULTS)
+        : [],
     [matches, model],
+  );
+  /** True when a result owes its match to what the file says, not to its name. */
+  const matchedInContent = useCallback(
+    (i: number) => {
+      const title = normalize(model.data.files[i].title);
+      const words = normalize(query.trim()).split(/\s+/).filter(Boolean);
+      return words.length > 0 && !words.some((word) => title.includes(word));
+    },
+    [model, query],
   );
 
   const categoriesInUse = useMemo(() => {
@@ -305,30 +733,47 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     [model],
   );
 
-  const clusterSizes = useMemo(() => {
-    const counts = model.data.clusters.map(() => 0);
-    model.clusterOf.forEach((c) => counts[c]++);
-    return counts;
-  }, [model]);
-
-  const nodesOfCategory = useCallback(
-    (id: string) => model.categories.map((c, i) => (c === id ? i : -1)).filter((i) => i >= 0),
-    [model],
-  );
-  const nodesOfCluster = useCallback(
-    (ci: number) => model.clusterOf.map((c, i) => (c === ci ? i : -1)).filter((i) => i >= 0),
-    [model],
-  );
-
-  /** Color of a node: its file family, or its topic. */
-  const nodeColor = useCallback(
-    (i: number, mode: ColorBy, themeName: "dark" | "light") => {
-      const theme = THEMES[themeName];
-      if (mode === "topic") {
-        const color = TOPIC_COLORS[model.clusterOf[i] % TOPIC_COLORS.length];
-        return themeName === "dark" ? lighten(color, 0.25) : color;
+  /**
+   * The files left by a set of facets: any subject of the list, and any file
+   * type of the list, and both at once when both are given.
+   */
+  const nodesOfFacets = useCallback(
+    (list: string[]) => {
+      if (!list.length) {
+        return [];
       }
-      return theme.categoryColor(model.categories[i]);
+      const topics = list
+        .filter((f) => f.startsWith(TOPIC_FILTER_PREFIX))
+        .map((f) => Number(f.slice(TOPIC_FILTER_PREFIX.length)));
+      const kinds = list
+        .filter((f) => f.startsWith(CATEGORY_FILTER_PREFIX))
+        .map((f) => f.slice(CATEGORY_FILTER_PREFIX.length));
+      const kept: number[] = [];
+      model.data.files.forEach((_, i) => {
+        if (topics.length && !topics.includes(model.clusters[i])) {
+          return;
+        }
+        if (kinds.length && !kinds.includes(model.categories[i])) {
+          return;
+        }
+        kept.push(i);
+      });
+      return kept;
+    },
+    [model],
+  );
+
+  /** Color of a node: its file family. */
+  const nodeColor = useCallback(
+    (i: number, themeName: "dark" | "light") => THEMES[themeName].categoryColor(model.categories[i]),
+    [model],
+  );
+
+  /** The color of the group a file belongs to, null when it is in none. */
+  const groupColor = useCallback(
+    (i: number, themeName: "dark" | "light") => {
+      const slot = model.clusters[i] >= 0 ? model.topics[model.clusters[i]].color : null;
+      return slot === null ? null : THEMES[themeName].clusterColor(slot);
     },
     [model],
   );
@@ -337,6 +782,15 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const litNodes = useCallback((): Set<number> | null => {
     const ui = uiRef.current;
     const focus = hoverRef.current ?? ui.selected;
+    if (ui.isolated && ui.selected !== null) {
+      // Exploring one file on its own: it and its closest, nobody else.
+      const set = new Set<number>([ui.selected]);
+      [...model.neighbors[ui.selected]]
+        .sort((a, b) => b.link.weight - a.link.weight)
+        .slice(0, NEIGHBOURHOOD)
+        .forEach((n) => set.add(n.node));
+      return set;
+    }
     if (focus !== null) {
       const set = new Set<number>([focus]);
       model.neighbors[focus].forEach((n) => set.add(n.node));
@@ -349,15 +803,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     if (matchesRef.current) {
       return matchesRef.current;
     }
-    const category = previewCategoryRef.current ?? ui.category;
-    if (category) {
-      return new Set(nodesOfCategory(category));
-    }
-    if (ui.cluster !== null) {
-      return new Set(nodesOfCluster(ui.cluster));
+    const preview = previewCategoryRef.current;
+    const list = preview ? [...ui.facets, preview] : ui.facets;
+    if (list.length) {
+      return new Set(nodesOfFacets(list));
     }
     return null;
-  }, [model, nodesOfCategory, nodesOfCluster]);
+  }, [model, nodesOfFacets]);
 
   /** Draws one frame. Returns true while an animation still needs frames. */
   const draw = useCallback((): boolean => {
@@ -398,6 +850,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
     const focus = hoverRef.current ?? uiRef.current.selected;
     const activeLinkIndex = uiRef.current.activeLink;
+    const strengthFloor =
+      LINK_MIN_CLOSENESS + uiRef.current.strength * (STRENGTH_CEILING - LINK_MIN_CLOSENESS);
     const lit = litNodes();
     const nodes = model.nodes;
     const introStart = introStartRef.current ?? now;
@@ -424,95 +878,110 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         intro,
         sx: width / 2 + (node.x * scale + ox) * parallax,
         sy: height / 2 + (node.y * scale + oy) * parallax,
-        sr: node.r * scale * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro) * (0.85 + 0.15 * emphasis),
+        sr:
+          node.r * markScale(scale) * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro) * (0.85 + 0.15 * emphasis),
       };
     });
     screenRef.current = screen;
-    const dimOf = (i: number) => 0.12 + 0.88 * model.emphasis[i];
+    // Isolating a file takes the others off the stage; every other filter
+    // only pushes them back, so the shape of the whole graph is still there.
+    const floor = uiRef.current.isolated && uiRef.current.selected !== null ? 0 : 0.12;
+    const dimOf = (i: number) => floor + (1 - floor) * model.emphasis[i];
 
-    // Soft hull and name behind each cluster.
-    const clusters = model.data.clusters.map(() => ({ x: 0, y: 0, n: 0, spread: 0, intro: 0, emphasis: 0 }));
+    // A cloud of color behind each group, so the topics of the drive read
+    // before its files do. It follows the nodes, so it breathes with the
+    // layout instead of being a shape drawn on top of it.
+    const clouds = new Map<number, { x: number; y: number; lit: number; count: number }>();
     screen.forEach((node, i) => {
-      const c = clusters[node.cluster];
-      c.x += node.sx;
-      c.y += node.sy;
-      c.n++;
-      c.intro = Math.max(c.intro, node.intro);
-      c.emphasis = Math.max(c.emphasis, model.emphasis[i]);
-    });
-    clusters.forEach((c) => {
-      if (c.n) {
-        c.x /= c.n;
-        c.y /= c.n;
-      }
-    });
-    screen.forEach((node) => {
-      const c = clusters[node.cluster];
-      c.spread = Math.max(c.spread, Math.hypot(node.sx - c.x, node.sy - c.y));
-    });
-    clusters.forEach((c, i) => {
-      if (!c.n) {
+      const cluster = model.clusters[i];
+      if (cluster < 0 || node.intro <= 0) {
         return;
       }
-      const radius = c.spread + 40 * scale;
-      const strength = c.intro * (0.3 + 0.7 * c.emphasis);
-      const hull = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, radius);
-      hull.addColorStop(0, `rgba(${theme.clusterHull}, ${0.07 * strength})`);
-      hull.addColorStop(1, `rgba(${theme.clusterHull}, 0)`);
-      ctx.fillStyle = hull;
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      const size = Math.round(12 * Math.min(1.3, Math.max(0.85, Math.sqrt(scale))));
-      const hoveredLabel = i === hoverClusterRef.current;
-      const active = i === uiRef.current.cluster;
-      ctx.font = `600 ${size}px Marianne, system-ui, sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.fillStyle = hoveredLabel || active ? theme.label : theme.clusterLabel;
-      ctx.globalAlpha = hoveredLabel || active ? Math.max(strength, 0.85) : strength;
-      const text = model.data.clusters[i].label.toUpperCase();
-      const labelY = c.y - radius + size * 1.6;
-      ctx.fillText(text, c.x, labelY);
-      const w = ctx.measureText(text).width + 16;
-      clusterLabelsRef.current[i] = { x: c.x - w / 2, y: labelY - size - 6, w, h: size + 12 };
-      ctx.globalAlpha = 1;
+      const cloud = clouds.get(cluster) ?? { x: 0, y: 0, lit: 0, count: 0 };
+      cloud.x += node.sx;
+      cloud.y += node.sy;
+      cloud.lit += model.emphasis[i] * node.intro;
+      cloud.count++;
+      clouds.set(cluster, cloud);
     });
+    const centres = new Map<number, { x: number; y: number; lit: number }>();
+    for (const [cluster, cloud] of clouds) {
+      if (cloud.count < 2) {
+        continue;
+      }
+      const cx = cloud.x / cloud.count;
+      const cy = cloud.y / cloud.count;
+      centres.set(cluster, { x: cx, y: cy, lit: cloud.lit / cloud.count });
+      let radius = 0;
+      screen.forEach((node, i) => {
+        if (model.clusters[i] === cluster) {
+          radius = Math.max(radius, Math.hypot(node.sx - cx, node.sy - cy) + node.sr * 6);
+        }
+      });
+      const slot = model.topics[cluster].color;
+      if (slot === null) {
+        continue;
+      }
+      const rgb = hexToRgb(theme.clusterColor(slot));
+      const peak = (theme.glow ? 0.3 : 0.2) * (cloud.lit / cloud.count);
+      const cloudGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      cloudGradient.addColorStop(0, `rgba(${rgb}, ${peak})`);
+      cloudGradient.addColorStop(0.55, `rgba(${rgb}, ${peak * 0.45})`);
+      cloudGradient.addColorStop(1, `rgba(${rgb}, 0)`);
+      ctx.fillStyle = cloudGradient;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.lineCap = "round";
+    // Every pair is linked: the closeness alone says how much a line shows.
+    // Below LINK_MIN_CLOSENESS nothing is drawn, above it the line fades in,
+    // except around the focused file where even faint ties are worth seeing.
     model.links.forEach((link, li) => {
-      const a = screen[link.source];
-      const b = screen[link.target];
-      const meta = model.linkMeta[li];
-      const surprise = meta.kind === "surprise";
+      const close = model.linkCloseness[li];
       const touchesFocus = focus !== null && (link.source === focus || link.target === focus);
       const isActive = li === activeLinkIndex;
+      // Pointing at a file empties the stage of everything else: its own
+      // links are the only ones left, however faint, which is the one moment
+      // a weak tie is worth seeing.
+      if (focus !== null && !touchesFocus && !isActive) {
+        return;
+      }
+      if (!model.linkTies[li] && !touchesFocus && !isActive) {
+        return;
+      }
+      // The strength slider trims the web from every tie to the closest few.
+      if (close < strengthFloor && !touchesFocus && !isActive) {
+        return;
+      }
+      const a = screen[link.source];
+      const b = screen[link.target];
       const depth = (a.depth + b.depth) / 2;
       const intro = Math.min(a.intro, b.intro);
       const dim = Math.min(dimOf(link.source), dimOf(link.target));
-      let alpha = (0.16 + 0.34 * depth) * dim * intro;
-      let lineWidth = Math.min(2.6, (0.7 + meta.weight * 1.4) * Math.sqrt(scale));
+      // Squared so a close pair stands out among the many faint ones. Only
+      // the ink says it: every line is drawn at the same width, so a dense
+      // corner reads as a web and not as a pile of ribbons.
+      const strength = close * close;
+      let alpha = (0.18 + 0.7 * strength) * (0.55 + 0.45 * depth) * dim * intro;
+      let lineWidth = Math.min(3.2, 1.6 * Math.sqrt(scale));
       if (touchesFocus || isActive) {
-        alpha = 0.95;
-        lineWidth *= isActive ? 2.1 : 1.7;
+        alpha = Math.max(alpha, 0.3 + 0.7 * close);
+        lineWidth *= isActive ? 2.1 : 1.6;
       }
-      if (surprise) {
-        ctx.strokeStyle = theme.surprise;
-        ctx.globalAlpha = Math.min(1, alpha * 1.6);
-        ctx.lineWidth = lineWidth + 0.5;
-        ctx.setLineDash([7, 5]);
-      } else if (touchesFocus) {
-        ctx.strokeStyle = nodeColor(focus, uiRef.current.colorBy, uiRef.current.theme);
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth = lineWidth;
-        ctx.setLineDash([]);
-      } else {
-        ctx.strokeStyle = `rgb(${theme.link})`;
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth = lineWidth;
-        ctx.setLineDash([]);
-      }
+      // Two files of the same group are tied in its color; everything else
+      // stays neutral, so the groups read at a glance.
+      const cluster =
+        model.clusters[link.source] === model.clusters[link.target] ? model.clusters[link.source] : -1;
+      const clusterSlot = cluster >= 0 ? model.topics[cluster].color : null;
+      ctx.strokeStyle = touchesFocus
+        ? nodeColor(focus, uiRef.current.theme)
+        : clusterSlot !== null
+          ? theme.clusterColor(clusterSlot)
+          : `rgb(${theme.link})`;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = lineWidth;
       ctx.beginPath();
       ctx.moveTo(a.sx, a.sy);
       ctx.lineTo(b.sx, b.sy);
@@ -526,6 +995,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     // Labels already placed this frame, so overlapping ones are skipped
     // (the focused node is drawn last and always wins).
     const placed: { x: number; y: number; w: number; h: number }[] = [];
+    /** Files worth naming this frame, drawn in a pass of their own below. */
+    const labelled: number[] = [];
     const overlaps = (x: number, y: number, w: number, h: number) =>
       placed.some((p) => Math.abs(p.x - x) < (p.w + w) / 2 && Math.abs(p.y - y) < (p.h + h) / 2);
     ctx.textBaseline = "middle";
@@ -539,7 +1010,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (node.intro <= 0) {
         continue;
       }
-      const color = nodeColor(i, uiRef.current.colorBy, uiRef.current.theme);
+      const color = nodeColor(i, uiRef.current.theme);
       const isFocus = i === focus;
       const emphasis = model.emphasis[i];
       const alpha = (0.55 + 0.45 * node.depth) * dimOf(i) * node.intro;
@@ -559,8 +1030,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (theme.glow) {
         const glowRadius = node.sr * (isFocus ? 4.5 : 2.6);
         const glow = ctx.createRadialGradient(node.sx, node.sy, node.sr * 0.6, node.sx, node.sy, glowRadius);
-        const rgb = hexToRgb(color);
-        glow.addColorStop(0, `rgba(${rgb}, ${(isFocus ? 0.55 : 0.28) * emphasis * node.intro})`);
+        // The halo carries the group, the dot keeps its file family: a file
+        // then says what it is about and what it is, at the same time.
+        const rgb = hexToRgb(groupColor(i, uiRef.current.theme) ?? color);
+        glow.addColorStop(0, `rgba(${rgb}, ${(isFocus ? 0.7 : 0.42) * emphasis * node.intro})`);
         glow.addColorStop(1, `rgba(${rgb}, 0)`);
         ctx.globalAlpha = 1;
         ctx.fillStyle = glow;
@@ -583,40 +1056,105 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       }
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.lineWidth = isFocus ? 2.5 : 1.5;
-      ctx.strokeStyle = isFocus && theme.glow ? "#ffffff" : theme.ring;
+      const group = groupColor(i, uiRef.current.theme);
+      ctx.lineWidth = isFocus ? 2.5 : !theme.glow && group ? 2 : 1.5;
+      // Without a halo to carry it, the ring shows the group on the light
+      // stage; the focused node keeps its own outline.
+      ctx.strokeStyle = isFocus
+        ? theme.glow
+          ? "#ffffff"
+          : theme.ring
+        : !theme.glow && group
+          ? group
+          : theme.ring;
       ctx.stroke();
 
-      const showLabel =
-        emphasis > 0.5 &&
-        (isFocus || showAllLabels || model.categories[i] === "folder" || (lit !== null && lit.has(i)));
-      if (showLabel) {
-        const file = model.data.files[i];
-        const size = Math.round(11 * Math.min(1.35, Math.max(0.95, Math.sqrt(scale))));
-        ctx.font = `${isFocus ? 600 : 500} ${size}px Marianne, system-ui, sans-serif`;
-        const label = file.title.length > 30 ? `${file.title.slice(0, 29)}…` : file.title;
-        const w = ctx.measureText(label).width + 6;
-        // Zoomed in, labels sit to the right of their node so they stop
-        // crossing the neighbours below; zoomed out they hang underneath.
-        const sideways = showAllLabels;
-        const x = sideways ? node.sx + node.sr + 6 + w / 2 : node.sx;
-        const y = sideways ? node.sy : node.sy + node.sr + size * 0.9;
-        if (!isFocus && overlaps(x, y, w, size + 4)) {
+      if (emphasis > 0.5) {
+        labelled.push(i);
+      }
+    }
+
+    // Labels are a second pass, richest file first: a name is worth more on
+    // the file everything hangs from than on the one nobody points at, and
+    // whoever comes first keeps the room. Drawing them inside the loop above
+    // handed the room to whatever the depth order put first.
+    const size = Math.round(11 * Math.min(1.8, Math.max(0.95, Math.sqrt(scale))));
+
+    // Seen whole, the stage names its subjects and not its files: forty file
+    // names at once is a wall of text nobody reads, while the group is
+    // exactly what one looks for from afar. The names sit on the groups, and
+    // the file names come back as soon as the stage is zoomed into.
+    if (!showAllLabels) {
+      const topicSize = Math.round(size * 1.25);
+      ctx.font = `600 ${topicSize}px Marianne, system-ui, sans-serif`;
+      // Biggest group first, so when two of them sit on top of each other it
+      // is the small one that gives up its name.
+      for (const [cluster, centre] of [...centres].sort((a, b) => a[0] - b[0])) {
+        const topic = model.topics[cluster];
+        const slot = topic.color;
+        const w = ctx.measureText(topic.label).width;
+        const dot = topicSize * 0.42;
+        const total = w + dot + 7;
+        const x = centre.x - total / 2 + dot + 7;
+        const y = centre.y;
+        if (overlaps(centre.x, y, total, topicSize + 8)) {
           continue;
         }
-        placed.push({ x, y, w, h: size + 4 });
-        ctx.globalAlpha = node.intro * emphasis;
-        ctx.lineWidth = 3.5;
+        placed.push({ x: centre.x, y, w: total, h: topicSize + 8 });
+        ctx.globalAlpha = 0.35 + 0.65 * centre.lit;
+        if (slot !== null) {
+          // The color rides a mark next to the name, never the text itself:
+          // a saturated word is harder to read than a black one.
+          ctx.fillStyle = theme.clusterColor(slot);
+          ctx.beginPath();
+          ctx.arc(x - 7 - dot / 2, y, dot / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.lineWidth = 4;
         ctx.strokeStyle = theme.labelHalo;
         ctx.lineJoin = "round";
-        ctx.strokeText(label, x, y);
+        ctx.textAlign = "left";
+        ctx.strokeText(topic.label, x, y);
         ctx.fillStyle = theme.label;
-        ctx.fillText(label, x, y);
+        ctx.fillText(topic.label, x, y);
+        ctx.textAlign = "center";
       }
+      ctx.globalAlpha = 1;
+    }
+    const priority = (i: number) =>
+      (i === focus ? 3 : 0) +
+      (lit !== null && lit.has(i) ? 2 : 0) +
+      (model.categories[i] === "folder" ? 1 : 0);
+    labelled.sort(
+      (a, b) => priority(b) - priority(a) || model.nodes[b].degree - model.nodes[a].degree,
+    );
+    for (const i of showAllLabels ? labelled : labelled.filter((n) => n === focus)) {
+      const node = screen[i];
+      const isFocus = i === focus;
+      const file = model.data.files[i];
+      ctx.font = `${isFocus ? 600 : 500} ${size}px Marianne, system-ui, sans-serif`;
+      const label = file.title.length > 30 ? `${file.title.slice(0, 29)}…` : file.title;
+      const w = ctx.measureText(label).width + 6;
+      // Zoomed in, labels sit to the right of their node so they stop
+      // crossing the neighbours below; zoomed out they hang underneath.
+      const sideways = showAllLabels;
+      const x = sideways ? node.sx + node.sr + 6 + w / 2 : node.sx;
+      const y = sideways ? node.sy : node.sy + node.sr + size * 0.9;
+      if (!isFocus && overlaps(x, y, w, size + 4)) {
+        continue;
+      }
+      placed.push({ x, y, w, h: size + 4 });
+      ctx.globalAlpha = node.intro * model.emphasis[i];
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = theme.labelHalo;
+      ctx.lineJoin = "round";
+      ctx.strokeText(label, x, y);
+      ctx.fillStyle = theme.label;
+      ctx.fillText(label, x, y);
     }
     ctx.globalAlpha = 1;
     return animating;
-  }, [litNodes, model, nodeColor]);
+  }, [groupColor, litNodes, model, nodeColor]);
 
   const frame = useCallback(() => {
     frameRef.current = null;
@@ -669,7 +1207,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const padding = !indices ? 0 : indices.length <= 2 ? 240 : 110;
       const spanX = maxX - minX + padding;
       const spanY = maxY - minY + padding;
-      const cap = indices ? 2.2 : MAX_SCALE;
+      const cap = indices ? 5 : MAX_SCALE;
       const usable = height - TOP_INSET;
       const scale = Math.min(cap, Math.max(MIN_SCALE, Math.min(width / spanX, usable / spanY) * 0.8));
       animateTo({ scale, ox: (-(minX + maxX) / 2) * scale, oy: (-(minY + maxY) / 2) * scale + TOP_INSET / 2 }, immediate);
@@ -707,17 +1245,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const node = screen[i];
       const dx = node.sx - x;
       const dy = node.sy - y;
-      const radius = node.sr + 4;
+      const radius = node.sr + 6;
       if (dx * dx + dy * dy <= radius * radius) {
         return i;
       }
     }
     return null;
-  }, []);
-
-  const clusterHitTest = useCallback((x: number, y: number): number | null => {
-    const index = clusterLabelsRef.current.findIndex((r) => r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h);
-    return index >= 0 ? index : null;
   }, []);
 
   // Canvas sizing, intro and wheel zoom.
@@ -750,7 +1283,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      zoomBy(Math.exp(-event.deltaY * 0.0016), { x: event.clientX - rect.left, y: event.clientY - rect.top }, true);
+      zoomBy(Math.exp(-event.deltaY * 0.0024), { x: event.clientX - rect.left, y: event.clientY - rect.top }, true);
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
@@ -797,50 +1330,45 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
   // Keep the render loop in sync with the React state.
   useEffect(() => {
-    uiRef.current = { ...filters, theme, colorBy };
-    matchesRef.current = matches;
+    uiRef.current = { ...filters, theme, strength };
+    matchesRef.current = matches && new Set(matches.keys());
     requestRender();
-  }, [filters, theme, colorBy, matches, requestRender]);
+  }, [filters, theme, strength, matches, requestRender]);
 
   // --- Filters -------------------------------------------------------------
 
   const clearFilters = useCallback(() => {
-    setFilters({ selected: null, category: null, cluster: null, activeLink: null });
-    setShowSurprises(false);
+    setFilters({ selected: null, facets: [], activeLink: null, isolated: false });
     fitToNodes();
   }, [fitToNodes]);
 
   const selectNode = useCallback((i: number | null) => {
-    setFilters((f) => ({ ...f, selected: i, activeLink: null }));
-    if (i !== null) {
-      setShowSurprises(false);
-    }
+    setFilters((f) => ({ ...f, selected: i, activeLink: null, isolated: f.isolated && i !== null }));
   }, []);
 
-  const toggleCategory = (id: string) => {
-    if (category === id) {
-      clearFilters();
-      return;
+  /** Adds a facet to the stack, or takes it back out. */
+  const toggleFacet = (id: string) => {
+    const next = facets.includes(id) ? facets.filter((f) => f !== id) : [...facets, id];
+    setFilters({ selected: null, facets: next, activeLink: null, isolated: false });
+    if (next.length) {
+      fitToNodes(nodesOfFacets(next));
+    } else {
+      fitToNodes();
     }
-    setFilters({ selected: null, category: id, cluster: null, activeLink: null });
-    setShowSurprises(false);
-    fitToNodes(nodesOfCategory(id));
   };
 
-  const toggleCluster = (ci: number) => {
-    if (cluster === ci) {
-      clearFilters();
-      return;
+  /** Explore the selected file on its own: the rest of the stage steps out. */
+  const toggleIsolate = () => {
+    setFilters((f) => ({ ...f, isolated: !f.isolated }));
+    if (!isolated && selected !== null) {
+      fitToNodes([
+        selected,
+        ...[...model.neighbors[selected]]
+          .sort((a, b) => b.link.weight - a.link.weight)
+          .slice(0, NEIGHBOURHOOD)
+          .map((n) => n.node),
+      ]);
     }
-    setFilters({ selected: null, category: null, cluster: ci, activeLink: null });
-    setShowSurprises(false);
-    fitToNodes(nodesOfCluster(ci));
-  };
-
-  const showLink = (li: number) => {
-    const link = model.links[li];
-    setFilters({ selected: null, category: null, cluster: null, activeLink: li });
-    fitToNodes([link.source, link.target]);
   };
 
   const previewCategory = (id: string | null) => {
@@ -865,7 +1393,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const gestureRef = useRef<{
     mode: "node" | "pan";
     node: number | null;
-    cluster: number | null;
     startX: number;
     startY: number;
     lastX: number;
@@ -878,12 +1405,11 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
 
-  const setHover = (hit: number | null, clusterHit: number | null, canvas: HTMLCanvasElement) => {
-    if (hit !== hoverRef.current || clusterHit !== hoverClusterRef.current) {
+  const setHover = (hit: number | null, canvas: HTMLCanvasElement) => {
+    if (hit !== hoverRef.current) {
       hoverRef.current = hit;
-      hoverClusterRef.current = hit === null ? clusterHit : null;
       setHovered(hit);
-      canvas.style.cursor = hit === null && clusterHit === null ? "grab" : "pointer";
+      canvas.style.cursor = hit === null ? "grab" : "pointer";
       requestRender();
     }
   };
@@ -896,7 +1422,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     gestureRef.current = {
       mode: hit === null ? "pan" : "node",
       node: hit,
-      cluster: hit === null ? clusterHitTest(x, y) : null,
       startX: x,
       startY: y,
       lastX: x,
@@ -914,8 +1439,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     const { x, y } = localPoint(event);
     const gesture = gestureRef.current;
     if (!gesture) {
-      const hit = hitTest(x, y);
-      setHover(hit, hit === null ? clusterHitTest(x, y) : null, event.currentTarget);
+      setHover(hitTest(x, y), event.currentTarget);
       return;
     }
     const dx = x - gesture.lastX;
@@ -956,17 +1480,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         selectNode(gesture.node);
       }
     } else if (!gesture.moved) {
-      if (gesture.cluster !== null) {
-        toggleCluster(gesture.cluster);
-      } else {
-        selectNode(null);
-      }
+      selectNode(null);
     }
     requestRender();
   };
 
   const onPointerLeave = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    setHover(null, null, event.currentTarget);
+    setHover(null, event.currentTarget);
   };
 
   const onDoubleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -991,63 +1511,22 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   // --- Derived data for the panels ----------------------------------------
 
   const selectedFile = selected !== null ? model.data.files[selected] : null;
-  const selectedNeighbors = selected !== null ? [...model.neighbors[selected]].sort((a, b) => b.link.weight - a.link.weight) : [];
-  const clusterLabel = (i: number) => model.data.clusters[model.clusterOf[i]]?.label ?? "";
+  // Every file is linked to every other one: the card lists the closest ones.
+  const selectedNeighbors =
+    selected !== null
+      ? [...model.neighbors[selected]].sort((a, b) => b.link.weight - a.link.weight).slice(0, MAX_LISTED_NEIGHBORS)
+      : [];
   const formatDate = (iso: string) => new Date(iso).toLocaleDateString(i18n.language, { day: "numeric", month: "short", year: "numeric" });
   const hoveredScreen = hovered !== null ? screenRef.current[hovered] : null;
   const activeLinkMeta = activeLink !== null ? model.linkMeta[activeLink] : null;
   const dotColor = THEMES[theme].categoryColor;
-  const colorOf = (i: number) => nodeColor(i, colorBy, theme);
-  const topicColor = (ci: number) => (theme === "dark" ? lighten(TOPIC_COLORS[ci % TOPIC_COLORS.length], 0.25) : TOPIC_COLORS[ci % TOPIC_COLORS.length]);
+  const colorOf = (i: number) => nodeColor(i, theme);
 
-  let filterChip: string | null = null;
-  if (category) {
-    filterChip = `${t(`graph.categories.${category}`)} · ${nodesOfCategory(category).length}`;
-  } else if (cluster !== null) {
-    filterChip = `${model.data.clusters[cluster].label} · ${clusterSizes[cluster]}`;
-  } else if (activeLinkMeta) {
-    filterChip = t("graph.surprise_link");
-  }
-
-  const renderSurprises = () => (
-    <aside className="file-graph__card file-graph__card--list">
-      <button type="button" className="file-graph__close" onClick={() => setShowSurprises(false)} aria-label={t("graph.close")}>
-        ×
-      </button>
-      <h2 className="file-graph__card-title">
-        <span className="file-graph__dash file-graph__dash--inline" />
-        {t("graph.surprises_title")}
-      </h2>
-      <p className="file-graph__card-intro">{t("graph.surprises_intro")}</p>
-      <ul className="file-graph__links">
-        {model.surprises.map((li) => {
-          const link = model.links[li];
-          const meta = model.linkMeta[li];
-          return (
-            <li key={li}>
-              <button
-                type="button"
-                className={`file-graph__pair${activeLink === li ? " file-graph__pair--active" : ""}`}
-                onClick={() => showLink(li)}
-              >
-                <span className="file-graph__pair-files">
-                  <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[link.source]] }} />
-                  <span className="file-graph__link-title">{model.data.files[link.source].title}</span>
-                  <span className="file-graph__weight file-graph__weight--surprise">{Math.round(meta.weight * 100)}%</span>
-                </span>
-                <span className="file-graph__pair-files">
-                  <span className="file-graph__pair-arrow">↔</span>
-                  <span className="file-graph__dot" style={{ background: CATEGORY_COLORS[model.categories[link.target]] }} />
-                  <span className="file-graph__link-title">{model.data.files[link.target].title}</span>
-                </span>
-                <span className="file-graph__reason">{meta.reason}</span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </aside>
-  );
+  const filterName = (id: string) =>
+    id.startsWith(TOPIC_FILTER_PREFIX)
+      ? (model.topics[Number(id.slice(TOPIC_FILTER_PREFIX.length))]?.label ?? "")
+      : t(`graph.categories.${id.replace(CATEGORY_FILTER_PREFIX, "")}`);
+  const filteredCount = facets.length ? nodesOfFacets(facets).length : 0;
 
   const renderCard = (i: number, file: GraphFile) => (
     <aside className="file-graph__card">
@@ -1056,6 +1535,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       </button>
       <span className="file-graph__dot file-graph__dot--large" style={{ background: colorOf(i), color: colorOf(i) }} />
       <h2 className="file-graph__card-title">{file.title}</h2>
+      <Button size="small" variant={isolated ? "primary" : "bordered"} color="neutral" onClick={toggleIsolate}>
+        {t(isolated ? "graph.isolate_off" : "graph.isolate", { count: NEIGHBOURHOOD })}
+      </Button>
       {file.status === "pending" && (
         <p className="file-graph__pending">
           <span className="file-graph__pulse" />
@@ -1071,14 +1553,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       <dl className="file-graph__meta">
         <dt>{t("graph.category")}</dt>
         <dd>
-          <button type="button" className="file-graph__inline-link" onClick={() => toggleCategory(model.categories[i])}>
+          <button type="button" className="file-graph__inline-link" onClick={() => toggleFacet(CATEGORY_FILTER_PREFIX + model.categories[i])}>
             {t(`graph.categories.${model.categories[i]}`)}
-          </button>
-        </dd>
-        <dt>{t("graph.cluster")}</dt>
-        <dd>
-          <button type="button" className="file-graph__inline-link" onClick={() => toggleCluster(model.clusterOf[i])}>
-            {clusterLabel(i)}
           </button>
         </dd>
         {file.size > 0 && (
@@ -1109,9 +1585,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             <button type="button" className="file-graph__link" onClick={() => selectAndCenter(node)}>
               <span className="file-graph__dot" style={{ background: colorOf(node) }} />
               <span className="file-graph__link-title">{model.data.files[node].title}</span>
-              <span className={`file-graph__weight${link.kind === "surprise" ? " file-graph__weight--surprise" : ""}`}>
-                {Math.round(link.weight * 100)}%
-              </span>
+              <span className="file-graph__weight">{Math.round(link.weight * 100)}%</span>
             </button>
             {link.reason && <p className="file-graph__reason">{link.reason}</p>}
           </li>
@@ -1134,24 +1608,47 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           </h1>
           <p className="file-graph__hint">
             <span className="file-graph__stats">
-              {[
-                t("graph.stats_files", { count: model.data.files.length }),
-                t("graph.stats_topics", { count: model.data.clusters.length }),
-                t("graph.stats_surprises", { count: model.surprises.length }),
-              ].join(" · ")}
+              {t("graph.stats_files", { count: model.data.files.length })}
               {". "}
             </span>
             {t("graph.hint")}
           </p>
         </div>
         <div className="file-graph__toolbar">
-          {filterChip && (
-            <Tooltip content={t("graph.filter_clear")}>
-              <Button size="small" variant="secondary" icon={<Icon name="close" />} iconPosition="right" onClick={clearFilters}>
-                {filterChip}
+          {facets.map((id) => (
+            <Tooltip key={id} content={t("graph.filter_remove")}>
+              <Button
+                size="small"
+                variant="secondary"
+                icon={<Icon name="close" />}
+                iconPosition="right"
+                onClick={() => toggleFacet(id)}
+              >
+                {filterName(id)}
               </Button>
             </Tooltip>
+          ))}
+          {facets.length > 0 && (
+            <span className="file-graph__filter-count">
+              {t("graph.stats_files", { count: filteredCount })}
+              {facets.length > 1 && (
+                <button type="button" className="file-graph__inline-link" onClick={clearFilters}>
+                  {t("graph.filter_clear")}
+                </button>
+              )}
+            </span>
           )}
+          <label className="file-graph__strength">
+            {t("graph.strength")}
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(strength * 100)}
+              onChange={(event) => setStrength(Number(event.target.value) / 100)}
+              aria-label={t("graph.strength")}
+            />
+          </label>
           <div className="file-graph__search-wrap">
             <span className="file-graph__search-icon" aria-hidden="true">
               <Icon name="search" size={18} />
@@ -1178,7 +1675,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                     <button type="button" className="file-graph__link" onMouseDown={(event) => event.preventDefault()} onClick={() => selectAndCenter(i)}>
                       <span className="file-graph__dot" style={{ background: colorOf(i) }} />
                       <span className="file-graph__link-title">{model.data.files[i].title}</span>
-                      <span className="file-graph__results-topic">{clusterLabel(i)}</span>
+                      {matchedInContent(i) && <span className="file-graph__weight">{t("graph.in_content")}</span>}
                     </button>
                   </li>
                 ))}
@@ -1189,10 +1686,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             )}
           </div>
           <Tooltip content={t("graph.zoom_in")}>
-            <Button size="small" variant="bordered" color="neutral" icon={<ZoomPlus />} aria-label={t("graph.zoom_in")} onClick={() => zoomBy(1.3)} />
+            <Button size="small" variant="bordered" color="neutral" icon={<ZoomPlus />} aria-label={t("graph.zoom_in")} onClick={() => zoomBy(1.6)} />
           </Tooltip>
           <Tooltip content={t("graph.zoom_out")}>
-            <Button size="small" variant="bordered" color="neutral" icon={<ZoomMinus />} aria-label={t("graph.zoom_out")} onClick={() => zoomBy(1 / 1.3)} />
+            <Button size="small" variant="bordered" color="neutral" icon={<ZoomMinus />} aria-label={t("graph.zoom_out")} onClick={() => zoomBy(1 / 1.6)} />
           </Tooltip>
           <Button size="small" variant="bordered" color="neutral" icon={<Maximize />} onClick={() => fitToNodes()}>
             {t("graph.recenter")}
@@ -1221,72 +1718,48 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           <div className="file-graph__tooltip" style={{ left: hoveredScreen.sx, top: hoveredScreen.sy - hoveredScreen.sr - 10 }}>
             <strong>{model.data.files[hovered].title}</strong>
             <span>
-              {t(`graph.categories.${model.categories[hovered]}`)} · {clusterLabel(hovered)} ·{" "}
+              {t(`graph.categories.${model.categories[hovered]}`)} ·{" "}
               {t("graph.connections", { count: model.nodes[hovered].degree })}
             </span>
           </div>
         )}
 
         <aside className="file-graph__legend" aria-label={t("graph.legend")}>
-          <div className="file-graph__legend-mode" role="group" aria-label={t("graph.color_by")}>
-            <span className="file-graph__section-title">{t("graph.color_by")}</span>
-            <button
-              type="button"
-              className={`file-graph__mode${colorBy === "type" ? " file-graph__mode--active" : ""}`}
-              onClick={() => setColorBy("type")}
-            >
-              {t("graph.by_type")}
-            </button>
-            <button
-              type="button"
-              className={`file-graph__mode${colorBy === "topic" ? " file-graph__mode--active" : ""}`}
-              onClick={() => setColorBy("topic")}
-            >
-              {t("graph.by_topic")}
-            </button>
-          </div>
-          {colorBy === "topic" &&
-            model.data.clusters.map((c, ci) => (
+          {model.topics.map((topic, i) => {
+            const id = `${TOPIC_FILTER_PREFIX}${i}`;
+            const color =
+              topic.color === null ? dotColor("other") : THEMES[theme].clusterColor(topic.color);
+            return (
               <button
-                key={c.id}
+                key={id}
                 type="button"
-                className={`file-graph__legend-item${cluster === ci ? " file-graph__legend-item--active" : ""}`}
-                style={cluster === ci ? { background: `${topicColor(ci)}33` } : undefined}
-                onClick={() => toggleCluster(ci)}
+                className={`file-graph__legend-item${facets.includes(id) ? " file-graph__legend-item--active" : ""}`}
+                style={facets.includes(id) ? { background: `${color}33` } : undefined}
+                onClick={() => toggleFacet(id)}
+                onMouseEnter={() => previewCategory(id)}
+                onMouseLeave={() => previewCategory(null)}
               >
-                <span className="file-graph__dot" style={{ background: topicColor(ci) }} />
-                {c.label}
-                <span className="file-graph__legend-count">{clusterSizes[ci]}</span>
+                <span className="file-graph__dot" style={{ background: color }} />
+                {topic.label}
+                <span className="file-graph__legend-count">{topic.files.length}</span>
               </button>
-            ))}
-          {colorBy === "type" &&
-            categoriesInUse.map(({ id, count }) => (
+            );
+          })}
+          {categoriesInUse.map(({ id, count }) => (
             <button
               key={id}
               type="button"
-              className={`file-graph__legend-item${category === id ? " file-graph__legend-item--active" : ""}`}
-              style={category === id ? { background: `${dotColor(id)}33` } : undefined}
-              onClick={() => toggleCategory(id)}
-              onMouseEnter={() => previewCategory(id)}
+              className={`file-graph__legend-item${facets.includes(CATEGORY_FILTER_PREFIX + id) ? " file-graph__legend-item--active" : ""}`}
+              style={facets.includes(CATEGORY_FILTER_PREFIX + id) ? { background: `${dotColor(id)}33` } : undefined}
+              onClick={() => toggleFacet(CATEGORY_FILTER_PREFIX + id)}
+              onMouseEnter={() => previewCategory(CATEGORY_FILTER_PREFIX + id)}
               onMouseLeave={() => previewCategory(null)}
             >
               <span className="file-graph__dot" style={{ background: dotColor(id) }} />
               {t(`graph.categories.${id}`)}
               <span className="file-graph__legend-count">{count}</span>
             </button>
-            ))}
-          <button
-            type="button"
-            className={`file-graph__legend-item file-graph__legend-item--surprise${showSurprises || activeLink !== null ? " file-graph__legend-item--active" : ""}`}
-            onClick={() => {
-              setShowSurprises(!showSurprises);
-              selectNode(null);
-            }}
-          >
-            <span className="file-graph__dash" />
-            {t("graph.surprise_link")}
-            <span className="file-graph__legend-count">{model.surprises.length}</span>
-          </button>
+          ))}
           {pendingCount > 0 && (
             <span className="file-graph__legend-item file-graph__legend-item--pending">
               <span className="file-graph__pulse" />
@@ -1296,9 +1769,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           )}
         </aside>
 
-        {selectedFile && selected !== null ? renderCard(selected, selectedFile) : showSurprises && renderSurprises()}
+        {selectedFile && selected !== null && renderCard(selected, selectedFile)}
 
-        {activeLinkMeta && !showSurprises && selected === null && (
+        {activeLinkMeta && selected === null && (
           <div className="file-graph__callout">
             <span className="file-graph__dash file-graph__dash--inline" />
             <span>{activeLinkMeta.reason}</span>
