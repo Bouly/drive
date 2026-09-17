@@ -820,7 +820,12 @@
           "none": "Reached through a link"
         },
         "view": "View",
-        "canvas_alt": "Drawing of the drive: {{files}} files placed by what they have in common, across {{subjects}} subjects. The subjects panel and the search below give the same files as text."
+        "canvas_alt": "Drawing of the drive: {{files}} files placed by what they have in common, across {{subjects}} subjects. The subjects panel and the search below give the same files as text.",
+        "subject_from_one": "Make a subject of this file",
+        "subject_from_other": "Make a subject of these {{count}} files",
+        "subject_made_one": "“{{name}}” created with {{count}} file",
+        "subject_made_other": "“{{name}}” created with {{count}} files",
+        "subject_failed": "The subject could not be created. Nothing was changed."
       }
     }
   },
@@ -1645,7 +1650,12 @@
           "none": "Accès par lien"
         },
         "view": "Vue",
-        "canvas_alt": "Dessin du drive : {{files}} fichiers placés selon ce qu'ils ont en commun, répartis sur {{subjects}} sujets. Le panneau des sujets et la recherche donnent les mêmes fichiers sous forme de texte."
+        "canvas_alt": "Dessin du drive : {{files}} fichiers placés selon ce qu'ils ont en commun, répartis sur {{subjects}} sujets. Le panneau des sujets et la recherche donnent les mêmes fichiers sous forme de texte.",
+        "subject_from_one": "Faire un sujet de ce fichier",
+        "subject_from_other": "Faire un sujet de ces {{count}} fichiers",
+        "subject_made_one": "« {{name}} » créé avec {{count}} fichier",
+        "subject_made_other": "« {{name}} » créé avec {{count}} fichiers",
+        "subject_failed": "Le sujet n'a pas pu être créé. Rien n'a été changé."
       }
     }
   },
@@ -2470,7 +2480,12 @@
           "none": "Bereikt via een link"
         },
         "view": "Weergave",
-        "canvas_alt": "Tekening van de drive: {{files}} bestanden geplaatst naar wat ze gemeen hebben, over {{subjects}} onderwerpen. Het onderwerpenpaneel en de zoekfunctie geven dezelfde bestanden als tekst."
+        "canvas_alt": "Tekening van de drive: {{files}} bestanden geplaatst naar wat ze gemeen hebben, over {{subjects}} onderwerpen. Het onderwerpenpaneel en de zoekfunctie geven dezelfde bestanden als tekst.",
+        "subject_from_one": "Maak een onderwerp van dit bestand",
+        "subject_from_other": "Maak een onderwerp van deze {{count}} bestanden",
+        "subject_made_one": "“{{name}}” aangemaakt met {{count}} bestand",
+        "subject_made_other": "“{{name}}” aangemaakt met {{count}} bestanden",
+        "subject_failed": "Het onderwerp kon niet worden aangemaakt. Er is niets gewijzigd."
       }
     }
   }

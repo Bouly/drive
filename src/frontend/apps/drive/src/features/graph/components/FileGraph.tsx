@@ -42,6 +42,14 @@ import { LINK_MIN_CLOSENESS, Model, buildModel } from "../data/model";
 import { useDeleteFile, useFileBrief, useSubjects } from "../api";
 import { DuplicateModal } from "./DuplicateModal";
 import { SubjectModal } from "./SubjectModal";
+import { ToasterItem, addToast } from "@/features/ui/components/toaster/Toaster";
+
+/**
+ * What the subject modal is working on: a subject that exists, or the files a
+ * new one is about to be made of. An empty seed is simply a blank subject.
+ */
+type SubjectDraft = Subject | { seed: string[] };
+const isNewSubject = (draft: SubjectDraft): draft is { seed: string[] } => !("id" in draft);
 
 /**
  * Filters stack: a file must satisfy every family of facets at once, and any
@@ -166,7 +174,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const subjects = useSubjects();
   const router = useRouter();
   /** What the subject modal is on: a subject to edit, "new" to name one. */
-  const [editingSubject, setEditingSubject] = useState<Subject | "new" | null>(null);
+  const [editingSubject, setEditingSubject] = useState<SubjectDraft | null>(null);
   const { t, i18n } = useTranslation();
   /** Where each file sits, so a refetch does not shuffle the whole graph. */
   const placedRef = useRef(new Map<string, SimNode>());
@@ -465,6 +473,22 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const slot = model.clusters[i] >= 0 ? model.topics[model.clusters[i]].color : null;
       return slot === null ? null : THEMES[themeName].clusterColor(slot);
     },
+    [model],
+  );
+
+  /**
+   * A file and its closest neighbours: what "Isolate" puts on stage, and what
+   * a subject made from the card is made of. The same set either way, so the
+   * button names what the reader is already looking at.
+   */
+  const closestOf = useCallback(
+    (i: number) => [
+      model.data.files[i].id,
+      ...[...model.neighbors[i]]
+        .sort((a, b) => b.link.weight - a.link.weight)
+        .slice(0, NEIGHBOURHOOD)
+        .map((n) => model.data.files[n.node].id),
+    ],
     [model],
   );
 
@@ -1737,6 +1761,21 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         <p className="file-graph__reason">{t("graph.summary_missing")}</p>
       )}
       <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
+      {/*
+        Browsing and sorting were two different screens: you could see that
+        nine files belong together and still have to go and write a subject
+        from memory. The files on stage become one, named on the spot.
+      */}
+      {closestOf(i).length > 1 && (
+        <button
+          type="button"
+          className="file-graph__subject-create"
+          onClick={() => setEditingSubject({ seed: closestOf(i) })}
+        >
+          <Plus />
+          {t("graph.subject_from", { count: closestOf(i).length })}
+        </button>
+      )}
       <ul className="file-graph__links">
         {selectedNeighbors.map(({ node, link }) => {
           const neighbour = model.data.files[node];
@@ -2010,7 +2049,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 <button
                   type="button"
                   className="file-graph__subject-create"
-                  onClick={() => setEditingSubject("new")}
+                  onClick={() => setEditingSubject({ seed: [] })}
                 >
                   <Plus />
                   {t("graph.subject_new")}
@@ -2210,16 +2249,39 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
         {editingSubject && (
           <SubjectModal
-            key={editingSubject === "new" ? "new" : editingSubject.id}
-            subject={editingSubject === "new" ? null : editingSubject}
+            key={isNewSubject(editingSubject) ? `new-${editingSubject.seed.length}` : editingSubject.id}
+            subject={isNewSubject(editingSubject) ? null : editingSubject}
             onClose={() => setEditingSubject(null)}
-            onSave={(draft) =>
-              editingSubject === "new"
-                ? subjects.create.mutate(draft)
-                : subjects.rename.mutate({ id: editingSubject.id, ...draft })
-            }
+            onSave={async (draft) => {
+              if (!isNewSubject(editingSubject)) {
+                subjects.rename.mutate({ id: editingSubject.id, ...draft });
+                return;
+              }
+              const { seed } = editingSubject;
+              try {
+                const created = await subjects.create.mutateAsync(draft);
+                const topic = (await created.json()) as { id?: string };
+                if (!topic.id || seed.length === 0) {
+                  return;
+                }
+                // The subject sorts the drive into itself on its own; pinning
+                // says these ones are there because somebody put them there.
+                await Promise.all(
+                  seed.map((item) => subjects.pin.mutateAsync({ topic: topic.id as string, item })),
+                );
+                addToast(
+                  <ToasterItem>
+                    {t("graph.subject_made", { name: draft.name, count: seed.length })}
+                  </ToasterItem>,
+                );
+              } catch {
+                addToast(<ToasterItem type="error">{t("graph.subject_failed")}</ToasterItem>);
+              }
+            }}
             onDelete={
-              editingSubject === "new" ? undefined : () => subjects.remove.mutate(editingSubject.id)
+              isNewSubject(editingSubject)
+                ? undefined
+                : () => subjects.remove.mutate(editingSubject.id)
             }
           />
         )}
