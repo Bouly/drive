@@ -61,6 +61,24 @@ export const LINK_MIN_CLOSENESS = 0.35;
  */
 export const DUPLICATE_WEIGHT = 0.95;
 
+/**
+ * How far below its own best subject a file may sit and still be counted in
+ * another one.
+ *
+ * The backend keeps a file in every subject it answers at a quarter of that
+ * subject's best answer. A quarter is a fair bar against one subject and a
+ * poor one against twelve: a note on social protection during training came
+ * out sitting in "Events" at 0.38 while it sat in "subvention" at 1.00, and
+ * the summary on its own card said ‒ correctly ‒ that it is not about events.
+ * Seven subjects for one file is not seven answers, it is no answer.
+ *
+ * A share is comparable from one subject to the next, the API normalises it
+ * for that, so the question can be asked the only way it makes sense: does
+ * this file belong here nearly as well as it belongs anywhere? A file somebody
+ * pinned is theirs to place and is never weighed.
+ */
+export const SUBJECT_LOYALTY = 0.6;
+
 export type Neighbor = { node: number; link: GraphLink };
 
 const categoryOf = (file: GraphFile) => {
@@ -257,10 +275,16 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   // legend on a count of zero: the drive has that subject, this folder does
   // not. Over the whole drive they all stay, an empty one included ‒ it was
   // just written and its files are on their way.
+  // The subjects each file really belongs to, best first.
+  const belongs = data.files.map((file) => {
+    const floor = (file.topics?.[0]?.score ?? 0) * SUBJECT_LOYALTY;
+    return new Set(
+      (file.topics ?? []).filter((t) => t.pinned || t.score >= floor).map((t) => t.id),
+    );
+  });
+
   const subjects = data.scope
-    ? data.subjects.filter((subject) =>
-        data.files.some((file) => file.topics?.some((t) => t.id === subject.id)),
-      )
+    ? data.subjects.filter((subject) => belongs.some((held) => held.has(subject.id)))
     : data.subjects;
   const rank = new Map(subjects.map((subject, i) => [subject.id, i]));
   // A file can be in several subjects but is drawn in one ‒ the one it fits
@@ -277,9 +301,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     // its filter must say: the two CVs sat in both "cv" and "curriculum
     // vitae", were drawn in the second, and "cv" looked like it had found
     // nothing.
-    members: data.files
-      .map((_, i) => i)
-      .filter((i) => data.files[i].topics?.some((t) => t.id === subject.id)),
+    members: data.files.map((_, i) => i).filter((i) => belongs[i].has(subject.id)),
   }));
 
   // Where the files sit is read off the links themselves, whether or not
@@ -325,6 +347,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     categories,
     ownerships,
     duplicates,
+    belongs,
     clusters,
     topics,
     subjects,

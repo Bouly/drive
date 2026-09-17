@@ -663,12 +663,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       return null;
     }
     return Float64Array.from(
-      model.data.files.map((file) => {
-        const membership = file.topics?.find((topic) => topic.id === subject.id);
-        if (!membership) {
+      model.data.files.map((file, i) => {
+        if (!model.belongs[i].has(subject.id)) {
           return 0;
         }
-        return membership.pinned ? 1 : membership.score;
+        const membership = file.topics?.find((topic) => topic.id === subject.id);
+        return membership?.pinned ? 1 : (membership?.score ?? 0);
       }),
     );
   }, [facets, model]);
@@ -1879,11 +1879,14 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           <div className="file-graph__subjects">
           {model.subjects.map((subject) => {
             const membership = file.topics?.find((t) => t.id === subject.id);
+            // The same rule the panel counts by: a file weakly answering a
+            // subject is not in it, and the chip must not say it is.
+            const inside = membership && model.belongs[i].has(subject.id);
             return (
               <button
                 key={subject.id}
                 type="button"
-                className={`file-graph__subject${membership ? " file-graph__subject--in" : ""}${
+                className={`file-graph__subject${inside ? " file-graph__subject--in" : ""}${
                   membership?.pinned ? " file-graph__subject--pinned" : ""
                 }`}
                 title={
