@@ -237,6 +237,12 @@ class Base(Configuration):
     # scale with the wording ‒ "cv" answers 0.53 where "curriculum vitae"
     # answers 0.07 on the same two files ‒ so only the gap can be read, never
     # the value.
+    # The raw answer a subject's best file must reach for the subject to hold
+    # anybody at all. Below it nothing in the drive is about the subject, and
+    # the shares ‒ which are measured against that best answer ‒ mean nothing.
+    GRAPH_TOPIC_RERANK_FLOOR = values.FloatValue(
+        0.05, environ_name="GRAPH_TOPIC_RERANK_FLOOR", environ_prefix=None
+    )
     GRAPH_TOPIC_RERANK_RATIO = values.FloatValue(
         0.25, environ_name="GRAPH_TOPIC_RERANK_RATIO", environ_prefix=None
     )

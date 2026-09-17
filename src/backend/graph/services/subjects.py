@@ -220,6 +220,17 @@ def relevant_by_reading(topic, items):
     0.03 and below.
     """
     belonging, lead, cut = read_and_lead(topic, items)
+    # A subject the drive does not answer keeps nobody.
+    #
+    # A share is measured against the subject's own best answer, so a subject
+    # nothing here is about still crowns its least bad file at 1.00 and then
+    # admits a quarter of that: a folder of case law came out holding a file
+    # named "ghjgh" under "Public procurement". Measured on that drive, the
+    # subjects it is really about answered between 0.09 and 0.99, and the six
+    # nothing answered between 0.002 and 0.024 ‒ two orders of magnitude, with
+    # no subject anywhere near the line between them.
+    if cut / settings.GRAPH_TOPIC_RERANK_RATIO < settings.GRAPH_TOPIC_RERANK_FLOOR:
+        return {}, lead, cut
     keep = settings.GRAPH_TOPIC_RERANK_RATIO
     return (
         {item_id: share for item_id, share in belonging.items() if share >= keep},

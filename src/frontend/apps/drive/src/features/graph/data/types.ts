@@ -50,6 +50,12 @@ export type Subject = {
   id: string;
   name: string;
   description: string;
+  /**
+   * How well the drive answers this subject at all, in the reranker's own
+   * units. A file's score is a share of this, so this is the only number that
+   * says whether the subject means anything on this drive.
+   */
+  strength?: number;
 };
 
 export type GraphLink = {

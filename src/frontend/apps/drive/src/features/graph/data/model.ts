@@ -79,6 +79,17 @@ export const DUPLICATE_WEIGHT = 0.95;
  */
 export const SUBJECT_LOYALTY = 0.6;
 
+/**
+ * The raw answer a subject's best file must reach for the subject to hold
+ * anybody at all. Mirrors GRAPH_TOPIC_RERANK_FLOOR on the backend, which stops
+ * storing them; this stops drawing the ones already stored.
+ *
+ * Measured on a drive of case law: the subjects it is really about answered
+ * between 0.09 and 0.99, and the six nothing answered between 0.002 and 0.024.
+ * "Public procurement" sat at 0.007 and held a file named "ghjgh".
+ */
+export const SUBJECT_FLOOR = 0.05;
+
 export type Neighbor = { node: number; link: GraphLink };
 
 const categoryOf = (file: GraphFile) => {
@@ -275,12 +286,20 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   // legend on a count of zero: the drive has that subject, this folder does
   // not. Over the whole drive they all stay, an empty one included ‒ it was
   // just written and its files are on their way.
+  // Subjects the drive answers at all. A share is measured against the
+  // subject's own best answer, so a subject nothing is about crowns its least
+  // bad file at 1.00: its shares say nothing and neither does its membership.
+  const answered = new Set(
+    data.subjects
+      .filter((subject) => (subject.strength ?? Infinity) >= SUBJECT_FLOOR)
+      .map((subject) => subject.id),
+  );
+
   // The subjects each file really belongs to, best first.
   const belongs = data.files.map((file) => {
-    const floor = (file.topics?.[0]?.score ?? 0) * SUBJECT_LOYALTY;
-    return new Set(
-      (file.topics ?? []).filter((t) => t.pinned || t.score >= floor).map((t) => t.id),
-    );
+    const held = (file.topics ?? []).filter((t) => t.pinned || answered.has(t.id));
+    const floor = (held[0]?.score ?? 0) * SUBJECT_LOYALTY;
+    return new Set(held.filter((t) => t.pinned || t.score >= floor).map((t) => t.id));
   });
 
   const subjects = data.scope

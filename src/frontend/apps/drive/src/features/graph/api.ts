@@ -27,7 +27,7 @@ type ApiGraph = {
     kind: "semantic" | "lexical" | "copy" | "folder";
     evidence?: string;
   }[];
-  topics: { id: string; name: string; description: string }[];
+  topics: { id: string; name: string; description: string; strength?: number }[];
   scope: { id: string; title: string; path: string[] } | null;
   folders: { id: string; title: string; trail: string[] }[];
 };
