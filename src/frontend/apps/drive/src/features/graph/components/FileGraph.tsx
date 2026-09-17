@@ -9,10 +9,21 @@ import {
   Select,
   Switch,
   Tooltip,
-  ZoomControls,
   headerHeight,
 } from "@gouvfr-lasuite/ui-components";
-import { ChevronDown, ChevronRight, Edit, Filter, Plus, Settings, Trash, XMark } from "@gouvfr-lasuite/ui-components/icons";
+import {
+  ChevronDown,
+  ChevronRight,
+  Edit,
+  Filter,
+  Maximize,
+  Plus,
+  Settings,
+  Trash,
+  XMark,
+  ZoomMinus,
+  ZoomPlus,
+} from "@gouvfr-lasuite/ui-components/icons";
 import prettyBytes from "pretty-bytes";
 import { GraphData, GraphFile, Subject } from "../data/types";
 import { ForceSimulation, SimNode } from "../simulation";
@@ -1793,6 +1804,11 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         <canvas
           ref={canvasRef}
           className={`file-graph__canvas${hovered !== null ? " file-graph__canvas--over" : ""}`}
+          role="img"
+          aria-label={t("graph.canvas_alt", {
+            files: model.data.files.length,
+            subjects: model.data.subjects.length,
+          })}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
@@ -2137,8 +2153,42 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               {t("graph.display")}
             </Button>
           </div>
-          <div className="file-graph__zoomtools">
-            <ZoomControls zoomIn={() => zoomBy(1.6)} zoomOut={() => zoomBy(1 / 1.6)} resetView={() => fitToNodes()} />
+          {/*
+            The kit's ZoomControls ships three buttons with no accessible name,
+            which a public-sector product cannot carry: the same buttons are
+            built here from the same pieces, each one named.
+          */}
+          <div className="file-graph__zoomtools" role="group" aria-label={t("graph.view")}>
+            <Tooltip content={t("graph.zoom_in")}>
+              <Button
+                size="small"
+                variant="bordered"
+                color="neutral"
+                icon={<ZoomPlus />}
+                aria-label={t("graph.zoom_in")}
+                onClick={() => zoomBy(1.6)}
+              />
+            </Tooltip>
+            <Tooltip content={t("graph.zoom_out")}>
+              <Button
+                size="small"
+                variant="bordered"
+                color="neutral"
+                icon={<ZoomMinus />}
+                aria-label={t("graph.zoom_out")}
+                onClick={() => zoomBy(1 / 1.6)}
+              />
+            </Tooltip>
+            <Tooltip content={t("graph.recenter")}>
+              <Button
+                size="small"
+                variant="bordered"
+                color="neutral"
+                icon={<Maximize />}
+                aria-label={t("graph.recenter")}
+                onClick={() => fitToNodes()}
+              />
+            </Tooltip>
           </div>
         </div>
 

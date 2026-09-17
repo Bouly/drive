@@ -290,18 +290,39 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     padding: var(--c--globals--spacings--sm, 12px);
   }
 
-  // The kit's controls are built for the page's own surface; inside the dark
-  // panel they keep their light one, so the label of the switch goes grey on
-  // grey and the select drops a white box onto the stage. They are given the
-  // panel's colours here rather than their own theme.
-  &__display-pop {
-    // The text of the switch sits two wrappers down, and the field around it
-    // carries a slate that vanishes on this panel: all three are told.
+  /**
+   * The kit's controls, on the graph's own surfaces.
+   *
+   * Every control of the ui-kit is drawn for the surface of the page, and the
+   * floating panels of the graph are not it: a switch wrote its label grey on
+   * grey, a select dropped a white box onto a dark stage, and the bordered
+   * buttons came out looking disabled. Each was patched where it broke, three
+   * times over, and a fourth control would have broken the same way.
+   *
+   * They are handed the panel's colours here instead, once, wherever they land
+   * in the floating chrome. The stage keeps a theme of its own because a canvas
+   * has to paint in numbers; everything drawn in HTML over it reads from these.
+   */
+  &__display-pop,
+  &__viewtools,
+  &__card-actions,
+  &__facets {
+    // The text of a switch sits two wrappers down, and the field around it
+    // carries a slate that vanishes on these panels: all three are told.
     .c__switch,
     .c__field,
     .c__checkbox__label {
       color: var(--fg-text);
       font-size: var(--c--globals--font--sizes--xs, 12px);
+    }
+
+    .c__button {
+      border-color: var(--fg-panel-border);
+      color: var(--fg-text);
+
+      &:hover {
+        background: var(--fg-hover);
+      }
     }
 
     .c__select {
@@ -919,17 +940,6 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     flex-wrap: wrap;
     gap: var(--c--globals--spacings--xs, 8px);
     margin-bottom: var(--c--globals--spacings--sm, 12px);
-
-    // The kit draws its bordered buttons for the page's surface; on the card
-    // they come out washed. They read the panel's colours instead.
-    .c__button {
-      border-color: var(--fg-panel-border);
-      color: var(--fg-text);
-
-      &:hover {
-        background: var(--fg-hover);
-      }
-    }
   }
 
   a.file-graph__button {

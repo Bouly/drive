@@ -818,7 +818,9 @@
           "editor": "You can edit it",
           "reader": "You can read it",
           "none": "Reached through a link"
-        }
+        },
+        "view": "View",
+        "canvas_alt": "Drawing of the drive: {{files}} files placed by what they have in common, across {{subjects}} subjects. The subjects panel and the search below give the same files as text."
       }
     }
   },
@@ -1641,7 +1643,9 @@
           "editor": "Vous pouvez modifier",
           "reader": "Vous pouvez lire",
           "none": "Accès par lien"
-        }
+        },
+        "view": "Vue",
+        "canvas_alt": "Dessin du drive : {{files}} fichiers placés selon ce qu'ils ont en commun, répartis sur {{subjects}} sujets. Le panneau des sujets et la recherche donnent les mêmes fichiers sous forme de texte."
       }
     }
   },
@@ -2464,7 +2468,9 @@
           "editor": "U kunt bewerken",
           "reader": "U kunt lezen",
           "none": "Bereikt via een link"
-        }
+        },
+        "view": "Weergave",
+        "canvas_alt": "Tekening van de drive: {{files}} bestanden geplaatst naar wat ze gemeen hebben, over {{subjects}} onderwerpen. Het onderwerpenpaneel en de zoekfunctie geven dezelfde bestanden als tekst."
       }
     }
   }
