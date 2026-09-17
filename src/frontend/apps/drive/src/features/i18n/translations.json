@@ -825,7 +825,11 @@
         "subject_from_other": "Make a subject of these {{count}} files",
         "subject_made_one": "“{{name}}” created with {{count}} file",
         "subject_made_other": "“{{name}}” created with {{count}} files",
-        "subject_failed": "The subject could not be created. Nothing was changed."
+        "subject_failed": "The subject could not be created. Nothing was changed.",
+        "rights_key": "What the shapes mean",
+        "rights_own": "Yours",
+        "rights_edit": "You can edit",
+        "rights_read": "Read only"
       }
     }
   },
@@ -1655,7 +1659,11 @@
         "subject_from_other": "Faire un sujet de ces {{count}} fichiers",
         "subject_made_one": "« {{name}} » créé avec {{count}} fichier",
         "subject_made_other": "« {{name}} » créé avec {{count}} fichiers",
-        "subject_failed": "Le sujet n'a pas pu être créé. Rien n'a été changé."
+        "subject_failed": "Le sujet n'a pas pu être créé. Rien n'a été changé.",
+        "rights_key": "Ce que les formes veulent dire",
+        "rights_own": "À vous",
+        "rights_edit": "Vous pouvez modifier",
+        "rights_read": "Lecture seule"
       }
     }
   },
@@ -2485,7 +2493,11 @@
         "subject_from_other": "Maak een onderwerp van deze {{count}} bestanden",
         "subject_made_one": "“{{name}}” aangemaakt met {{count}} bestand",
         "subject_made_other": "“{{name}}” aangemaakt met {{count}} bestanden",
-        "subject_failed": "Het onderwerp kon niet worden aangemaakt. Er is niets gewijzigd."
+        "subject_failed": "Het onderwerp kon niet worden aangemaakt. Er is niets gewijzigd.",
+        "rights_key": "Wat de vormen betekenen",
+        "rights_own": "Van jou",
+        "rights_edit": "Je kunt bewerken",
+        "rights_read": "Alleen lezen"
       }
     }
   }

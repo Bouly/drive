@@ -253,6 +253,40 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   }
 
   // Zoom, recentring and the settings that are set once and left alone.
+  // The key to the shapes, where a map keeps its legend: under the drawing,
+  // clear of the panel on one side and the view controls on the other.
+  &__shapekey {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    bottom: var(--c--globals--spacings--md, 16px);
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--md, 16px);
+    padding: 7px 14px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 999px;
+    background: var(--fg-panel);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 8px 24px var(--fg-panel-shadow);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+
+  &__shapekey-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    color: var(--fg-muted);
+    white-space: nowrap;
+
+    svg {
+      flex: none;
+      fill: var(--fg-faint);
+    }
+  }
+
   &__viewtools {
     position: absolute;
     // An open card takes the right edge: the controls step aside rather than

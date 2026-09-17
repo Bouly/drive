@@ -163,6 +163,42 @@ type Filters = {
 
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 
+/** The three shapes a file can take, by what the reader may do with it. */
+export type MarkShape = "circle" | "square" | "triangle";
+
+/**
+ * Draws the outline of one file.
+ *
+ * The three are drawn to the same area rather than the same width, so a
+ * square does not read as bigger than a circle beside it and the size of a
+ * mark keeps meaning what it means: how recent the file is.
+ */
+export const traceMark = (
+  ctx: CanvasRenderingContext2D | Path2D,
+  shape: MarkShape,
+  x: number,
+  y: number,
+  r: number,
+) => {
+  if (shape === "circle") {
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    return;
+  }
+  if (shape === "square") {
+    const half = r * Math.sqrt(Math.PI) * 0.5;
+    ctx.roundRect(x - half, y - half, half * 2, half * 2, half * 0.34);
+    return;
+  }
+  // Equilateral, sitting on its base so it reads as a triangle, not an arrow.
+  const side = r * Math.sqrt((4 * Math.PI) / Math.sqrt(3));
+  const height = (side * Math.sqrt(3)) / 2;
+  const top = y - (height * 2) / 3;
+  ctx.moveTo(x, top);
+  ctx.lineTo(x + side / 2, top + height);
+  ctx.lineTo(x - side / 2, top + height);
+  ctx.closePath();
+};
+
 type FileGraphProps = {
   data: GraphData;
   /** True when the dataset is the built-in sample, not the user's files. */
@@ -461,9 +497,63 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
    * document somebody points you at. The family is still drawn, as the square
    * of a folder, and is still a filter.
    */
+  /**
+   * What the reader may do with a file, as a shape.
+   *
+   * Rights used to be the colour of a dot, which spent the one channel the
+   * eye reads first on something nobody looks up: what a drive is *about* is
+   * the question the graph exists to answer, so colour says the subject now
+   * and the outline says the right. Three shapes, because a reader counts
+   * three and recognises three ‒ owning and administering are the same
+   * sentence for someone looking at a drawing.
+   */
+  const shapeOf = useCallback(
+    (i: number): MarkShape => {
+      if (model.categories[i] === "folder") {
+        return "square";
+      }
+      const role = model.ownerships[i];
+      if (role === "owner" || role === "administrator") {
+        return "circle";
+      }
+      return role === "editor" ? "square" : "triangle";
+    },
+    [model],
+  );
+
+  /**
+   * The shapes this drive actually uses, named. A drive nobody shares holds a
+   * single shape, and a key with one entry teaches nothing, so it is not drawn.
+   */
+  const shapesInUse = useMemo(() => {
+    const names: Record<MarkShape, string> = {
+      circle: t("graph.rights_own"),
+      square: t("graph.rights_edit"),
+      triangle: t("graph.rights_read"),
+    };
+    const seen = new Set<MarkShape>();
+    model.data.files.forEach((_, i) => seen.add(shapeOf(i)));
+    return (["circle", "square", "triangle"] as MarkShape[])
+      .filter((shape) => seen.has(shape))
+      .map((shape) => ({ shape, label: names[shape] }));
+  }, [model, shapeOf, t]);
+
+  /**
+   * The colour of a dot: the subject it belongs to, or the right the reader
+   * holds on it when it belongs to none.
+   *
+   * Colour is the channel the eye reads first, and it used to spend it on
+   * rights ‒ a fact nobody looks up while scanning a drive. What a drive is
+   * *about* is the question this screen exists to answer, so colour answers
+   * that one and the shape of the dot says the right.
+   */
   const nodeColor = useCallback(
-    (i: number, themeName: "dark" | "light") =>
-      THEMES[themeName].ownershipColor(model.ownerships[i]),
+    (i: number, themeName: "dark" | "light") => {
+      const slot = model.clusters[i] >= 0 ? model.topics[model.clusters[i]].color : null;
+      return slot === null
+        ? THEMES[themeName].ownershipColor(model.ownerships[i])
+        : THEMES[themeName].clusterColor(slot);
+    },
     [model],
   );
 
@@ -877,12 +967,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
       ctx.beginPath();
-      if (model.categories[i] === "folder") {
-        const s = node.sr * 1.7;
-        ctx.roundRect(node.sx - s / 2, node.sy - s / 2, s, s, s * 0.28);
-      } else {
-        ctx.arc(node.sx, node.sy, node.sr, 0, Math.PI * 2);
-      }
+      traceMark(ctx, shapeOf(i), node.sx, node.sy, node.sr);
       ctx.fill();
       ctx.shadowBlur = 0;
       const group = groupColor(i, uiRef.current.theme);
@@ -2058,6 +2143,26 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             </>
           )}
         </aside>
+
+        {/*
+          A shape that means something and is never explained means nothing.
+          The key sits under the drawing, where a map keeps its legend, and
+          only names the rights this drive actually holds.
+        */}
+        {shapesInUse.length > 1 && (
+          <div className="file-graph__shapekey" aria-label={t("graph.rights_key")}>
+            {shapesInUse.map(({ shape, label }) => (
+              <span key={shape} className="file-graph__shapekey-item">
+                <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+                  {shape === "circle" && <circle cx="6.5" cy="6.5" r="5" />}
+                  {shape === "square" && <rect x="1.8" y="1.8" width="9.4" height="9.4" rx="2" />}
+                  {shape === "triangle" && <polygon points="6.5,1 12,11.4 1,11.4" />}
+                </svg>
+                {label}
+              </span>
+            ))}
+          </div>
+        )}
 
         <div
           className={`file-graph__viewtools${selectedFile ? " file-graph__viewtools--aside" : ""}`}
