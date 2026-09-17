@@ -221,6 +221,12 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
    */
   const [welcoming, setWelcoming] = useState(false);
   useEffect(() => {
+    // ``?welcome=1`` asks for it again: someone showing the screen to a room
+    // should not have to find an untouched drive to show how it starts.
+    if (router.query.welcome) {
+      setWelcoming(true);
+      return;
+    }
     if (data.subjects.length > 0) {
       return;
     }
@@ -229,7 +235,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     } catch {
       setWelcoming(true);
     }
-  }, [data.subjects.length]);
+  }, [data.subjects.length, router.query.welcome]);
 
   const closeWelcome = useCallback(() => {
     setWelcoming(false);
