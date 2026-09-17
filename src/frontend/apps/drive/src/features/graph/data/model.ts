@@ -8,6 +8,24 @@ import { colorOfName, normalize } from "./naming";
 /** Smallest and largest dot, in world units: the range recency is mapped to. */
 const NODE_MIN_RADIUS = 3;
 const NODE_MAX_RADIUS = 7;
+/**
+ * How much bigger a dot is drawn on a drive that has room to spare.
+ *
+ * The forces hold two files a fixed distance apart whatever the drive holds,
+ * so a small drive lays its files out over the same kind of space as a large
+ * one and the camera has to zoom out just as far: measured on a drive of
+ * thirty-three, a dot landed on four pixels ‒ a void with dust in it. Marks
+ * are not part of the physics here (the layout came out the same size at four
+ * times the radius), so they are free to answer to how many share the stage.
+ *
+ * Measured: at 2.2 a drive of thirty-three draws eight-pixel dots with
+ * twenty-two pixels between them; past six hundred files the gaps close and
+ * the range goes back to what it was.
+ */
+const MARK_ROOM_PIVOT = 500;
+const MARK_ROOM_MAX = 2.2;
+const markRoom = (count: number) =>
+  Math.min(MARK_ROOM_MAX, Math.max(1, Math.sqrt(MARK_ROOM_PIVOT / Math.max(1, count))));
 /** How much further apart two files of two different packets are held. */
 const CROSS_GROUP_SPREAD = 2.2;
 /** How much closer two files of the same packet rest. */
@@ -165,6 +183,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   const span = Math.max(1, newest - oldest);
   // Square root, so recency follows the area of a dot rather than its width.
   const freshness = (i: number) => Math.sqrt(Math.max(0, times[i] - oldest) / span);
+  const room = markRoom(data.files.length);
   const nodes: SimNode[] = data.files.map((file, i) => {
     // A file already on screen keeps its place when the graph is refetched,
     // so a new file simply appears instead of everything moving.
@@ -177,9 +196,10 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
       vx: 0,
       vy: 0,
       r:
-        categories[i] === "folder"
+        room *
+        (categories[i] === "folder"
           ? NODE_MAX_RADIUS
-          : NODE_MIN_RADIUS + (NODE_MAX_RADIUS - NODE_MIN_RADIUS) * freshness(i),
+          : NODE_MIN_RADIUS + (NODE_MAX_RADIUS - NODE_MIN_RADIUS) * freshness(i)),
       degree: degree[i],
       // Filled in below, once the packets are known.
       group: -1,
