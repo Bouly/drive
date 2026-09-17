@@ -699,6 +699,17 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
       font-weight: var(--c--globals--font--weights--bold, 600);
     }
 
+    // A subject nothing in the drive is about: listed, because its owner wrote
+    // it and only its owner can decide to drop it, but not pretending to hold
+    // anything.
+    &--silent {
+      opacity: 0.45;
+
+      .file-graph__dot {
+        box-shadow: none;
+      }
+    }
+
     &--static {
       cursor: default;
       color: var(--fg-muted);

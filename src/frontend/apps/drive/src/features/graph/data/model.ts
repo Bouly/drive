@@ -314,6 +314,10 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   });
   const topics = subjects.map((subject, group) => ({
     label: subject.name,
+    // Whether the drive answers this subject at all. A subject it does not is
+    // not broken and not empty by accident: nothing here is about it, and the
+    // reader is the only one who can decide whether to keep or drop it.
+    answered: answered.has(subject.id),
     color: colorOfName(subject.name, taken),
     files: data.files.map((_, i) => i).filter((i) => clusters[i] === group),
     // `members` is everything the subject holds, which is what its count and

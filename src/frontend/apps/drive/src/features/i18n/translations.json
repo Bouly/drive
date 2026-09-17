@@ -936,7 +936,8 @@
           }
         },
         "subjects_seeded_one": "{{count}} subject created. The drive is sorting itself into it.",
-        "subjects_seeded_other": "{{count}} subjects created. The drive is sorting itself into them."
+        "subjects_seeded_other": "{{count}} subjects created. The drive is sorting itself into them.",
+        "subject_silent": "Nothing in this drive is about this subject. Rename it, describe it differently, or delete it."
       }
     }
   },
@@ -1877,7 +1878,8 @@
           }
         },
         "subjects_seeded_one": "{{count}} sujet créé. Le drive se range dedans.",
-        "subjects_seeded_other": "{{count}} sujets créés. Le drive se range dedans."
+        "subjects_seeded_other": "{{count}} sujets créés. Le drive se range dedans.",
+        "subject_silent": "Rien dans ce drive ne parle de ce sujet. Renommez-le, décrivez-le autrement, ou supprimez-le."
       }
     }
   },
@@ -2818,7 +2820,8 @@
           }
         },
         "subjects_seeded_one": "{{count}} onderwerp aangemaakt. De drive sorteert zichzelf erin.",
-        "subjects_seeded_other": "{{count}} onderwerpen aangemaakt. De drive sorteert zichzelf erin."
+        "subjects_seeded_other": "{{count}} onderwerpen aangemaakt. De drive sorteert zichzelf erin.",
+        "subject_silent": "Niets in deze drive gaat over dit onderwerp. Hernoem het, beschrijf het anders, of verwijder het."
       }
     }
   }

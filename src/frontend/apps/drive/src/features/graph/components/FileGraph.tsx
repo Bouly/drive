@@ -2229,7 +2229,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                   <div key={id} className="file-graph__legend-line">
                     <button
                       type="button"
-                      className={`file-graph__legend-item${facets.includes(id) ? " file-graph__legend-item--active" : ""}`}
+                      className={`file-graph__legend-item${facets.includes(id) ? " file-graph__legend-item--active" : ""}${
+                        topic.answered ? "" : " file-graph__legend-item--silent"
+                      }`}
+                      title={topic.answered ? undefined : t("graph.subject_silent")}
                       style={facets.includes(id) ? { background: `${color}33` } : undefined}
                       onClick={() => toggleFacet(id)}
                       onMouseEnter={() => previewCategory(id)}
