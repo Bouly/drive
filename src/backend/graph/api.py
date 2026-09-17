@@ -20,6 +20,7 @@ from collections import Counter
 from datetime import timedelta
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.conf import settings
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
 
@@ -335,7 +336,19 @@ class GraphView(views.APIView):
                 # different one without sending the reader back to the explorer.
                 "folders": graph_folders(request.user),
                 "topics": [
-                    {"id": str(topic.id), "name": topic.name, "description": topic.description}
+                    {
+                        "id": str(topic.id),
+                        "name": topic.name,
+                        "description": topic.description,
+                        # How well the drive answers this subject at all, in the
+                        # reranker's own units. A file's score is a share of its
+                        # subject's best answer, so it says nothing about whether
+                        # that best answer was any good: a subject nobody's drive
+                        # is about still crowns its least bad file at 1.00. These
+                        # compare between subjects, which is the only way to tell
+                        # "Events" on a drive of case law from "droit" on it.
+                        "strength": (topic.cut or 0) / settings.GRAPH_TOPIC_RERANK_RATIO,
+                    }
                     for topic in topics
                 ],
                 # What the page puts in its title, and what it offers to leave.
