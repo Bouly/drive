@@ -105,21 +105,6 @@ const MAX_SCALE = 14;
  */
 const MARK_ZOOM_EXPONENT = 0.55;
 const markScale = (scale: number) => (scale <= 1 ? scale : scale ** MARK_ZOOM_EXPONENT);
-/**
- * How big a dot is drawn for the room it has.
- *
- * The stage is the same size whatever the drive holds, so the marks have to
- * answer to how many of them share it: a radius that reads well on nine
- * hundred files is a speck on thirty-six, and a drive of thirty-six came out
- * as a void with dust in it ‒ a quarter of one percent of the canvas carried
- * any ink at all. Held between these two so neither end becomes confetti nor
- * beach balls.
- */
-const MARK_ROOM_PIVOT = 420;
-const MARK_ROOM_MIN = 0.85;
-const MARK_ROOM_MAX = 2.4;
-const markRoom = (count: number) =>
-  Math.min(MARK_ROOM_MAX, Math.max(MARK_ROOM_MIN, Math.sqrt(MARK_ROOM_PIVOT / Math.max(1, count))));
 const INTRO_DURATION = 700;
 /**
  * How the files arrive: one after another, but the whole sweep is held to
@@ -596,7 +581,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     const nodes = model.nodes;
     const introStart = introStartRef.current ?? now;
     const stagger = Math.min(INTRO_STAGGER, INTRO_SWEEP / Math.max(1, nodes.length));
-    const room = markRoom(nodes.length);
     const screen: ScreenNode[] = nodes.map((node, i) => {
       const depth = (node.z + 1) / 2;
       const parallax = 1 + PARALLAX * node.z;
@@ -621,7 +605,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         sx: width / 2 + (node.x * scale + ox) * parallax,
         sy: height / 2 + (node.y * scale + oy) * parallax,
         sr:
-          node.r * room * markScale(scale) * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro) * (0.85 + 0.15 * emphasis),
+          node.r * markScale(scale) * (0.72 + 0.5 * depth) * (0.4 + 0.6 * intro) * (0.85 + 0.15 * emphasis),
       };
     });
     screenRef.current = screen;
