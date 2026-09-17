@@ -119,7 +119,7 @@ export type Theme = {
 export const THEMES: Record<"dark" | "light", Theme> = {
   dark: {
     bg: "#1B1B23", // gray-900
-    dot: "rgba(117, 117, 138, 0.28)", // gray-500
+    dot: "rgba(117, 117, 138, 0.16)", // gray-500
     link: "169, 169, 191", // gray-300
     label: "#F0F0F3", // gray-050
     labelHalo: "rgba(27, 27, 35, 0.85)",
@@ -131,7 +131,7 @@ export const THEMES: Record<"dark" | "light", Theme> = {
   },
   light: {
     bg: "#F0F0F3", // gray-050
-    dot: "rgba(117, 117, 138, 0.25)",
+    dot: "rgba(117, 117, 138, 0.14)",
     link: "105, 105, 125", // gray-550
     label: "#25252F", // gray-850
     labelHalo: "rgba(240, 240, 243, 0.92)",
