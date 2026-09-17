@@ -866,6 +866,20 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     }
   }
 
+  // A card taller than the stage is scrolled, and says so: without this the
+  // summary is cut mid-sentence and reads as broken rather than as continuing.
+  &__card::after {
+    content: "";
+    position: sticky;
+    bottom: calc(-1 * var(--c--globals--spacings--md, 16px));
+    display: block;
+    height: 32px;
+    margin: 0 calc(-1 * var(--c--globals--spacings--md, 16px))
+      calc(-1 * var(--c--globals--spacings--md, 16px));
+    background: linear-gradient(to bottom, transparent, var(--fg-panel));
+    pointer-events: none;
+  }
+
   &__card {
     top: var(--c--globals--spacings--md, 16px);
     right: var(--c--globals--spacings--md, 16px);
