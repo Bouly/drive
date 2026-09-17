@@ -80,6 +80,27 @@ Le classement reste une estimation du modèle : les scores de sujets différents
 ne sont pas des probabilités comparables. Pour la démonstration, choisir des
 sujets précis correspondant au corpus et vérifier les documents proposés.
 
+## Parcours de démonstration
+
+1. Ouvrir le graphe : les couleurs représentent les sujets et les formes les
+   droits sur les fichiers. Le bouton **Vue d’ensemble** restaure le cadrage et
+   retire la recherche et les filtres.
+2. Cliquer sur un sujet puis chercher un mot : recherche et filtres se combinent,
+   avec un compteur des fichiers correspondants. Ouvrir un résultat pour lire son
+   résumé et l’explication de ses liens, puis suivre un document voisin.
+3. Utiliser **Sans sujet** pour retrouver les documents à organiser et
+   **Doublons possibles** pour examiner les copies candidates. Un score de
+   similarité ne suffit pas à décider d’une suppression.
+4. Ouvrir **Guide**, choisir une activité et examiner les sujets proposés avant
+   de les créer. Les sujets déjà présents sont reconnus sans tenir compte de la
+   casse. Les créations réussies ne sont pas répétées après une erreur.
+5. Créer un sujet précis avec sa description, puis montrer les documents retenus.
+   Les sujets sans résultat sont accessibles dans une liste repliée.
+
+Le thème clair est utilisé à la première visite ; le choix de thème enregistré
+reste prioritaire. Les formulaires attendent la réponse du serveur et conservent
+leur saisie en cas d’échec.
+
 ## API
 
 - `GET /api/v1.0/graph/` : fichiers accessibles, liens, sujets et dossiers.

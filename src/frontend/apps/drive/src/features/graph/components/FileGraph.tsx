@@ -52,8 +52,9 @@ import { Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
  * What the subject modal is working on: a subject that exists, or the files a
  * new one is about to be made of. An empty seed is simply a blank subject.
  */
-type SubjectDraft = Subject | { seed: string[] };
-const isNewSubject = (draft: SubjectDraft): draft is { seed: string[] } => !("id" in draft);
+type NewSubjectDraft = { seed: string[]; createdId?: string };
+type SubjectDraft = Subject | NewSubjectDraft;
+const isNewSubject = (draft: SubjectDraft): draft is NewSubjectDraft => !("id" in draft);
 
 /**
  * Filters stack: a file must satisfy every family of facets at once, and any
@@ -65,6 +66,7 @@ const CATEGORY_FILTER_PREFIX = "cat:";
 const AUTHOR_FILTER_PREFIX = "author:";
 const DATE_FILTER_PREFIX = "date:";
 const RIGHT_FILTER_PREFIX = "right:";
+const VIEW_FILTER_PREFIX = "view:";
 
 /**
  * The ages a file can be filtered on, counted from the day it was added.
@@ -275,7 +277,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     facets: [],
     activeLink: null,
     isolated: false,
-    theme: "dark",
+    theme: "light",
     strength: 0,
   });
 
@@ -294,7 +296,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [theme, setTheme] = useState<"dark" | "light">("light");
+  const [showEmptySubjects, setShowEmptySubjects] = useState(false);
   /** The subjects panel, folded down to its dots when closed. */
   const [panelOpen, setPanelOpen] = useState(true);
   /** Settings that are read once and left alone: folder, threads, background. */
@@ -318,7 +321,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
    * agreement that never says it in its title, but a file actually named
    * after it comes first.
    */
-  const matches = useMemo(() => {
+  const rawMatches = useMemo(() => {
     const words = normalize(query.trim()).split(/\s+/).filter(Boolean);
     if (!words.length) {
       return null;
@@ -342,35 +345,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     });
     return scored;
   }, [model, query]);
-  const matchesRef = useRef<Set<number> | null>(matches && new Set(matches.keys()));
-  /**
-   * How well each file answers the search, 0..1, against the best answer.
-   *
-   * A search used to light every file that held the word, all at the same
-   * brightness: forty equal answers is not an answer. The strongest burns at
-   * full colour and the weakest sits at a third of it, so the eye lands on
-   * the file that actually matches before it reads a single name.
-   */
-  const matchStrengthRef = useRef<Map<number, number> | null>(null);
-  const searchResults = useMemo(
-    () =>
-      matches
-        ? [...matches.keys()]
-            .sort((a, b) => (matches.get(b) ?? 0) - (matches.get(a) ?? 0) || model.nodes[b].degree - model.nodes[a].degree)
-            .slice(0, MAX_SEARCH_RESULTS)
-        : [],
-    [matches, model],
-  );
-  /** True when a result owes its match to what the file says, not to its name. */
-  const matchedInContent = useCallback(
-    (i: number) => {
-      const title = normalize(model.data.files[i].title);
-      const words = normalize(query.trim()).split(/\s+/).filter(Boolean);
-      return words.length > 0 && !words.some((word) => title.includes(word));
-    },
-    [model, query],
-  );
-
   const categoriesInUse = useMemo(() => {
     const counts = new Map<string, number>();
     model.categories.forEach((c) => counts.set(c, (counts.get(c) ?? 0) + 1));
@@ -447,6 +421,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const authors = of(AUTHOR_FILTER_PREFIX);
       const ages = of(DATE_FILTER_PREFIX);
       const rights = of(RIGHT_FILTER_PREFIX);
+      const views = of(VIEW_FILTER_PREFIX);
       // Subjects select what they hold, not only what is drawn in their
       // colour: a file in two subjects answers to both.
       const held = new Set<number>();
@@ -455,6 +430,11 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       });
       const kept: number[] = [];
       model.data.files.forEach((file, i) => {
+        if (views.length && !views.some((view) =>
+          view === "unassigned" ? model.belongs[i].size === 0 : model.duplicates[i].length > 0
+        )) {
+          return;
+        }
         if (topics.length && !held.has(i)) {
           return;
         }
@@ -475,6 +455,40 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       return kept;
     },
     [buckets, model],
+  );
+
+  const matches = useMemo(() => {
+    if (!rawMatches || !facets.length) return rawMatches;
+    const allowed = new Set(nodesOfFacets(facets));
+    return new Map([...rawMatches].filter(([i]) => allowed.has(i)));
+  }, [rawMatches, facets, nodesOfFacets]);
+  const matchesRef = useRef<Set<number> | null>(matches && new Set(matches.keys()));
+  /**
+   * How well each file answers the search, 0..1, against the best answer.
+   *
+   * A search used to light every file that held the word, all at the same
+   * brightness: forty equal answers is not an answer. The strongest burns at
+   * full colour and the weakest sits at a third of it, so the eye lands on
+   * the file that actually matches before it reads a single name.
+   */
+  const matchStrengthRef = useRef<Map<number, number> | null>(null);
+  const searchResults = useMemo(
+    () =>
+      matches
+        ? [...matches.keys()]
+            .sort((a, b) => (matches.get(b) ?? 0) - (matches.get(a) ?? 0) || model.nodes[b].degree - model.nodes[a].degree)
+            .slice(0, MAX_SEARCH_RESULTS)
+        : [],
+    [matches, model],
+  );
+  /** True when a result owes its match to what the file says, not to its name. */
+  const matchedInContent = useCallback(
+    (i: number) => {
+      const title = normalize(model.data.files[i].title);
+      const words = normalize(query.trim()).split(/\s+/).filter(Boolean);
+      return words.length > 0 && !words.some((word) => title.includes(word));
+    },
+    [model, query],
   );
 
   /**
@@ -639,7 +653,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
    * removing ‒ narrowing to "PDF" is a question about the whole drive.
    */
   const stagedNodes = useMemo(() => {
-    const chosen = facets.filter((f) => f.startsWith(TOPIC_FILTER_PREFIX));
+    const chosen = facets.filter((f) => f.startsWith(TOPIC_FILTER_PREFIX) || f.startsWith(VIEW_FILTER_PREFIX));
     return chosen.length ? nodesOfFacets(chosen) : null;
   }, [facets, nodesOfFacets]);
   const stagedRef = useRef<Set<number> | null>(null);
@@ -1460,6 +1474,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   // --- Filters -------------------------------------------------------------
 
   const clearFilters = useCallback(() => {
+    selectedIdRef.current = null;
     setFilters({ selected: null, facets: [], activeLink: null, isolated: false });
     fitToNodes();
   }, [fitToNodes]);
@@ -1504,7 +1519,13 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
   /** Adds a facet to the stack, or takes it back out. */
   const toggleFacet = (id: string) => {
-    const next = facets.includes(id) ? facets.filter((f) => f !== id) : [...facets, id];
+    // Subjects and quick views are alternative starting points. In particular,
+    // a subject cannot intersect the view of files without any subject.
+    const current = id.startsWith(TOPIC_FILTER_PREFIX)
+      ? facets.filter((facet) => !facet.startsWith(VIEW_FILTER_PREFIX))
+      : facets;
+    const next = current.includes(id) ? current.filter((f) => f !== id) : [...current, id];
+    selectedIdRef.current = null;
     setFilters({ selected: null, facets: next, activeLink: null, isolated: false });
     if (next.length) {
       fitToNodes(nodesOfFacets(next));
@@ -1759,6 +1780,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const colorOf = (i: number) => nodeColor(i, theme);
 
   const filterName = (id: string) => {
+    if (id.startsWith(VIEW_FILTER_PREFIX)) {
+      return t(`graph.quick_${id.slice(VIEW_FILTER_PREFIX.length)}`);
+    }
     const value = id.slice(id.indexOf(":") + 1);
     if (id.startsWith(TOPIC_FILTER_PREFIX)) {
       return model.topics[Number(value)]?.label ?? "";
@@ -1774,7 +1798,27 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     }
     return t(`graph.categories.${value}`);
   };
-  const filteredCount = facets.length ? nodesOfFacets(facets).length : 0;
+  const visibleCount = useMemo(() => {
+    const candidates = facets.length ? nodesOfFacets(facets) : model.nodes.map((_, i) => i);
+    return matches ? candidates.filter((i) => matches.has(i)).length : candidates.length;
+  }, [facets, matches, model, nodesOfFacets]);
+  const duplicateCount = model.duplicates.filter((copies) => copies.length > 0).length;
+  const emptySubjectCount = model.topics.filter((topic) => topic.members.length === 0).length;
+  const resetView = () => {
+    selectedIdRef.current = null;
+    setQuery("");
+    setSearchOpen(false);
+    clearFilters();
+  };
+  const chooseView = (view: string) => {
+    const id = VIEW_FILTER_PREFIX + view;
+    const next = facets.includes(id) ? [] : [id];
+    setQuery("");
+    setSearchOpen(false);
+    selectedIdRef.current = null;
+    setFilters({ selected: null, facets: next, activeLink: null, isolated: false });
+    fitToNodes(next.length ? nodesOfFacets(next) : undefined);
+  };
 
   /**
    * One line of a filter list: the facet, how many files answer to it, and
@@ -2049,8 +2093,24 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       className={`file-graph file-graph--${theme}`}
       style={{ "--fg-header-height": `${headerHeight}px` } as React.CSSProperties}
     >
+      <header className="file-graph__header">
+        <div className="file-graph__heading">
+          <span className="file-graph__heading-icon" aria-hidden="true"><Icon name="hub" size={22} /></span>
+          <div>
+            <h1>{t("graph.workspace_title")}</h1>
+            <p>{t("graph.workspace_caption")}</p>
+          </div>
+        </div>
+        <div className="file-graph__header-actions">
+          <Button size="small" variant="tertiary" icon={<Maximize />} onClick={resetView}>
+            {t("graph.overview")}
+          </Button>
+          <Button size="small" variant="bordered" icon={<Icon name="help_outline" size={18} />} onClick={() => setWelcoming(true)}>
+            {t("graph.guide")}
+          </Button>
+        </div>
+      </header>
       {/*
-        No band above the stage: the graph is a map, so its controls sit on it.
         Everyday reach (find a file, read how many) floats top left, the view
         controls bottom right, and the settings behind them.
       */}
@@ -2083,6 +2143,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               placeholder={t("graph.search_placeholder")}
               onChange={(event) => {
                 setQuery(event.target.value);
+                selectNode(null);
                 setSearchOpen(true);
               }}
               onFocus={() => setSearchOpen(true)}
@@ -2110,7 +2171,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           </div>
           <Tooltip content={t("graph.hint")}>
             <span className="file-graph__counter">
-              {t("graph.stats_files", { count: model.data.files.length })}
+              {facets.length > 0 || matches
+                ? t("graph.visible_files", { count: visibleCount, total: model.data.files.length })
+                : t("graph.stats_files", { count: model.data.files.length })}
               {pendingCount > 0 && (
                 <>
                   <span className="file-graph__pulse" />
@@ -2146,6 +2209,15 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
           )}
         </div>
 
+        {(facets.length > 0 || matches) && visibleCount === 0 && selected === null && (
+          <section className="file-graph__no-results" role="status">
+            <span className="file-graph__no-results-icon" aria-hidden="true"><Icon name="search_off" size={28} /></span>
+            <h2>{t("graph.empty_view_title")}</h2>
+            <p>{t("graph.empty_view_hint")}</p>
+            <Button size="small" onClick={resetView}>{t("graph.reset_view")}</Button>
+          </section>
+        )}
+
         {/* Filters in force describe the stage, so they sit on it, not in a toolbar. */}
         {facets.length > 0 && (
           <div className="file-graph__facets">
@@ -2163,7 +2235,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               </Tooltip>
             ))}
             <span className="file-graph__filter-count">
-              {t("graph.stats_files", { count: filteredCount })}
+              {t("graph.stats_files", { count: visibleCount })}
               {facets.length > 1 && (
                 <button type="button" className="file-graph__inline-link" onClick={clearFilters}>
                   {t("graph.filter_clear")}
@@ -2219,8 +2291,19 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
           {panelOpen && (
             <>
+              <div className="file-graph__quickviews">
+                <button type="button" aria-pressed={facets.includes("view:unassigned")} onClick={() => chooseView("unassigned")}>
+                  <Icon name="filter_none" size={16} /><span>{t("graph.quick_unassigned")}</span><b>{unsorted}</b>
+                </button>
+                <button type="button" aria-pressed={facets.includes("view:duplicates")} onClick={() => chooseView("duplicates")}>
+                  <Icon name="content_copy" size={16} /><span>{t("graph.quick_duplicates")}</span><b>{duplicateCount}</b>
+                </button>
+              </div>
               <div className="file-graph__legend-body">
-              {model.topics.map((topic, i) => {
+              {model.topics.map((topic, i) => ({ topic, i }))
+                .sort((a, b) => Number(b.topic.members.length > 0) - Number(a.topic.members.length > 0))
+                .filter(({ topic, i }) => showEmptySubjects || topic.members.length > 0 || facets.includes(`${TOPIC_FILTER_PREFIX}${i}`))
+                .map(({ topic, i }) => {
                 const id = `${TOPIC_FILTER_PREFIX}${i}`;
                 const color =
                   THEMES[theme].clusterColor(topic.color);
@@ -2258,10 +2341,11 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
 
               </div>
               <div className="file-graph__legend-foot">
-                {unsorted > 0 && (
-                  <p className="file-graph__legend-note">
-                    {t("graph.no_subject", { count: unsorted })}
-                  </p>
+                {emptySubjectCount > 0 && (
+                  <button type="button" className="file-graph__empty-subjects" aria-expanded={showEmptySubjects} onClick={() => setShowEmptySubjects(!showEmptySubjects)}>
+                    {showEmptySubjects ? <ChevronDown /> : <ChevronRight />}
+                    {t("graph.empty_subjects", { count: emptySubjectCount })}
+                  </button>
                 )}
                 {/* Naming a subject is done a handful of times: it earns a button, not a field. */}
                 <button
@@ -2488,24 +2572,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         {welcoming && (
           <GraphWelcome
             onClose={closeWelcome}
-            onPick={(seeds) => {
-              // One after another rather than all at once: each new subject
-              // reads the drive to sort it, and the backend is happier asked
-              // in turn than asked six times at the same instant.
-              void seeds
-                .reduce(
-                  (chain, seed) => chain.then(() => subjects.create.mutateAsync(seed)).then(() => undefined),
-                  Promise.resolve(),
-                )
-                .then(() =>
-                  addToast(
-                    <ToasterItem>{t("graph.subjects_seeded", { count: seeds.length })}</ToasterItem>,
-                  ),
-                )
-                .catch(() =>
-                  addToast(<ToasterItem type="error">{t("graph.subject_failed")}</ToasterItem>),
-                );
-            }}
+            existingSubjects={data.subjects}
+            onCreate={async (seed) => { await subjects.create.mutateAsync(seed); }}
+            onComplete={(count) => addToast(<ToasterItem>{t("graph.subjects_seeded", { count })}</ToasterItem>)}
           />
         )}
 
@@ -2546,34 +2615,39 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
             onClose={() => setEditingSubject(null)}
             onSave={async (draft) => {
               if (!isNewSubject(editingSubject)) {
-                subjects.rename.mutate({ id: editingSubject.id, ...draft });
+                await subjects.rename.mutateAsync({ id: editingSubject.id, ...draft });
                 return;
               }
-              const { seed } = editingSubject;
-              try {
+              const { seed, createdId } = editingSubject;
+              let topicId = createdId;
+              if (!topicId) {
                 const created = await subjects.create.mutateAsync(draft);
                 const topic = (await created.json()) as { id?: string };
-                if (!topic.id || seed.length === 0) {
-                  return;
+                topicId = topic.id;
+                if (topicId && seed.length) {
+                  // If a pin fails, retry that operation against the subject
+                  // already created instead of attempting to create it again.
+                  setEditingSubject({ seed, createdId: topicId });
                 }
-                // The subject sorts the drive into itself on its own; pinning
-                // says these ones are there because somebody put them there.
-                await Promise.all(
-                  seed.map((item) => subjects.pin.mutateAsync({ topic: topic.id as string, item })),
-                );
-                addToast(
-                  <ToasterItem>
-                    {t("graph.subject_made", { name: draft.name, count: seed.length })}
-                  </ToasterItem>,
-                );
-              } catch {
-                addToast(<ToasterItem type="error">{t("graph.subject_failed")}</ToasterItem>);
+              } else {
+                await subjects.rename.mutateAsync({ id: topicId, ...draft });
               }
+              if (!topicId || seed.length === 0) return;
+              // The subject sorts the drive into itself on its own; pinning
+              // says these ones are there because somebody put them there.
+              await Promise.all(
+                seed.map((item) => subjects.pin.mutateAsync({ topic: topicId as string, item })),
+              );
+              addToast(
+                <ToasterItem>
+                  {t("graph.subject_made", { name: draft.name, count: seed.length })}
+                </ToasterItem>,
+              );
             }}
             onDelete={
               isNewSubject(editingSubject)
                 ? undefined
-                : () => subjects.remove.mutate(editingSubject.id)
+                : async () => { await subjects.remove.mutateAsync(editingSubject.id); }
             }
           />
         )}

@@ -156,9 +156,9 @@ export const hexToRgb = (hex: string) => {
 
 export const readStoredTheme = (): "dark" | "light" => {
   try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 };
 

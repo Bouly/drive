@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Modal, ModalSize, useResponsive } from "@gouvfr-lasuite/ui-components";
+import { errorToString } from "@/features/api/APIError";
+import { Subject } from "../data/types";
 
 /**
  * The first time someone opens the graph.
@@ -30,41 +32,74 @@ export const WELCOME_STORAGE_KEY = "drive-graph-welcomed";
 
 type GraphWelcomeProps = {
   onClose: () => void;
-  /** Creates the subjects, in the order given. */
-  onPick: (subjects: { name: string; description: string }[]) => void;
+  existingSubjects: Pick<Subject, "name">[];
+  onCreate: (subject: { name: string; description: string }) => Promise<void>;
+  onComplete: (count: number) => void;
 };
 
-export const GraphWelcome = ({ onClose, onPick }: GraphWelcomeProps) => {
+export const GraphWelcome = ({ onClose, existingSubjects, onCreate, onComplete }: GraphWelcomeProps) => {
   const { t } = useTranslation();
   const { isDesktop } = useResponsive();
+  const [role, setRole] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [created, setCreated] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const nameKey = (name: string) => name.trim().toLocaleLowerCase();
+  const existing = new Set([...existingSubjects.map(({ name }) => nameKey(name)), ...created]);
+  const alreadyExists = (key: string) => existing.has(nameKey(t(`graph.presets.${key}.name`)));
+  const pending = selected.filter((key) => !alreadyExists(key));
 
   const pick = (role: string) => {
+    setRole(role);
+    setSelected(ROLE_PRESETS[role].filter((key) => !alreadyExists(key)));
+    setError("");
+  };
+
+  const create = async () => {
+    if (busy || !pending.length) return;
     setBusy(true);
-    onPick(
-      ROLE_PRESETS[role].map((key) => ({
-        name: t(`graph.presets.${key}.name`),
-        description: t(`graph.presets.${key}.description`),
-      })),
-    );
-    onClose();
+    setError("");
+    try {
+      // Keep successful creations even if a later request fails. Retrying
+      // submits only the remaining choices, including across role changes.
+      for (const key of pending) {
+        const name = t(`graph.presets.${key}.name`);
+        await onCreate({ name, description: t(`graph.presets.${key}.description`) });
+        setCreated((previous) => [...previous, nameKey(name)]);
+      }
+      onComplete(pending.length);
+      onClose();
+    } catch (cause) {
+      setError(errorToString(cause));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <Modal
       isOpen
-      closeOnClickOutside
-      onClose={onClose}
+      closeOnClickOutside={!busy}
+      onClose={() => { if (!busy) onClose(); }}
       size={isDesktop ? ModalSize.MEDIUM : ModalSize.FULL}
       title={t("graph.welcome_title")}
       aria-label={t("graph.welcome_title")}
       rightActions={
-        <Button variant="tertiary" onClick={onClose}>
-          {t("graph.welcome_skip")}
-        </Button>
+        <>
+          <Button variant="tertiary" onClick={onClose} disabled={busy}>
+            {t("graph.close")}
+          </Button>
+          {role && (
+            <Button onClick={() => void create()} disabled={busy || !pending.length}>
+              {t(busy ? "graph.welcome_creating" : "graph.welcome_create", { count: pending.length })}
+            </Button>
+          )}
+        </>
       }
     >
       <div className="file-graph__welcome">
+        {!role && <>
         <ul className="file-graph__welcome-how">
           <li>
             <span className="file-graph__welcome-mark" aria-hidden="true">
@@ -105,6 +140,7 @@ export const GraphWelcome = ({ onClose, onPick }: GraphWelcomeProps) => {
             {t("graph.welcome_links")}
           </li>
         </ul>
+        <p className="file-graph__welcome-navigation">{t("graph.welcome_navigation")}</p>
 
         <p className="file-graph__welcome-ask">{t("graph.welcome_ask")}</p>
         <div className="file-graph__welcome-roles">
@@ -123,6 +159,34 @@ export const GraphWelcome = ({ onClose, onPick }: GraphWelcomeProps) => {
             </button>
           ))}
         </div>
+        </>}
+        {role && <>
+          <Button variant="tertiary" size="small" disabled={busy} onClick={() => { setRole(null); setError(""); }}>
+            {t("graph.welcome_back")}
+          </Button>
+          <h3 className="file-graph__welcome-preview-title">{t(`graph.roles.${role}`)}</h3>
+          <p className="file-graph__welcome-preview-hint">{t("graph.welcome_choose")}</p>
+          <div className="file-graph__welcome-choices">
+            {ROLE_PRESETS[role].map((key) => {
+              const exists = alreadyExists(key);
+              return (
+                <label className={`file-graph__welcome-choice${exists ? " file-graph__welcome-choice--existing" : ""}`} key={key}>
+                  <input
+                    type="checkbox"
+                    checked={exists || selected.includes(key)}
+                    disabled={busy || exists}
+                    onChange={(event) => setSelected((previous) => event.target.checked ? [...previous, key] : previous.filter((item) => item !== key))}
+                  />
+                  <span>
+                    <b>{t(`graph.presets.${key}.name`)}</b>
+                    <span>{exists ? t("graph.welcome_existing") : t(`graph.presets.${key}.description`)}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </>}
+        {error && <p className="file-graph__form-error" role="alert">{error}</p>}
       </div>
     </Modal>
   );
