@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ChevronRight,
   Edit,
+  Checkmark,
   Filter,
   Maximize,
   Plus,
@@ -310,6 +311,15 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     return scored;
   }, [model, query]);
   const matchesRef = useRef<Set<number> | null>(matches && new Set(matches.keys()));
+  /**
+   * How well each file answers the search, 0..1, against the best answer.
+   *
+   * A search used to light every file that held the word, all at the same
+   * brightness: forty equal answers is not an answer. The strongest burns at
+   * full colour and the weakest sits at a third of it, so the eye lands on
+   * the file that actually matches before it reads a single name.
+   */
+  const matchStrengthRef = useRef<Map<number, number> | null>(null);
   const searchResults = useMemo(
     () =>
       matches
@@ -719,7 +729,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
         animating = true;
       }
       // Emphasis eases towards 1 (lit or nothing lit) or 0 (dimmed).
-      const wanted = lit === null || lit.has(i) ? 1 : 0;
+      // A lit file burns at full colour, unless a search is on: then it burns
+      // by how well it answers it.
+      const wanted =
+        lit === null || lit.has(i) ? (matchStrengthRef.current?.get(i) ?? 1) : 0;
       const current = model.emphasis[i];
       if (Math.abs(wanted - current) > 0.01) {
         model.emphasis[i] = current + (wanted - current) * EASE;
@@ -1355,6 +1368,14 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   useEffect(() => {
     uiRef.current = { ...filters, theme, strength };
     matchesRef.current = matches && new Set(matches.keys());
+    if (matches && matches.size) {
+      const best = Math.max(...matches.values());
+      matchStrengthRef.current = new Map(
+        [...matches].map(([i, score]) => [i, 0.35 + 0.65 * (score / best)]),
+      );
+    } else {
+      matchStrengthRef.current = null;
+    }
     requestRender();
   }, [filters, theme, strength, matches, requestRender]);
 
@@ -1727,19 +1748,29 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
    * One line of a filter list: the facet, how many files answer to it, and
    * for the rights, the colour those files are drawn in.
    */
+  /**
+   * One line of the filter panel.
+   *
+   * The box on the left is the whole point: a row that only changes colour
+   * when it is on asks the reader to learn what the colour means, while a
+   * checkbox is a control everyone has already learned. The row stays
+   * clickable as a whole, so the box is a sign as much as a target.
+   */
   const renderFacet = (id: string, label: string, count: number, dot?: string) => {
     const on = facets.includes(id);
     return (
       <button
         key={id}
         type="button"
-        className={`file-graph__legend-item${on ? " file-graph__legend-item--active" : ""}`}
-        style={on && dot ? { background: `${dot}33` } : undefined}
+        className={`file-graph__facet${on ? " file-graph__facet--on" : ""}`}
         aria-pressed={on}
         onClick={() => toggleFacet(id)}
         onMouseEnter={() => previewCategory(id)}
         onMouseLeave={() => previewCategory(null)}
       >
+        <span className="file-graph__facet-box" aria-hidden="true">
+          {on && <Checkmark />}
+        </span>
         {dot && <span className="file-graph__dot" style={{ background: dot }} />}
         <span className="file-graph__facet-label">{label}</span>
         <span className="file-graph__legend-count">{count}</span>

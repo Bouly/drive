@@ -709,6 +709,54 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     }
   }
 
+  // A line of the filter panel: a box that says on or off, then what it is.
+  &__facet {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--xs, 8px);
+    width: 100%;
+    padding: 4px 6px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-text);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--fg-hover);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--fg-link);
+      outline-offset: 1px;
+    }
+  }
+
+  &__facet-box {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    border: 1px solid var(--fg-panel-border);
+    border-radius: 3px;
+    color: #fff;
+
+    svg {
+      width: 11px;
+      height: 11px;
+    }
+  }
+
+  &__facet--on &__facet-box,
+  &__facet--on .file-graph__facet-box {
+    border-color: var(--fg-link);
+    background: var(--fg-link);
+  }
+
   &__legend-count {
     margin-left: auto;
     padding-left: var(--c--globals--spacings--sm, 12px);
