@@ -797,13 +797,30 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       const cy = cloud.y / cloud.count;
       let spread = 0;
       let held = 0;
+      // The member nearest the middle of its subject, which is where the name
+      // goes: the average of scattered files is empty space, and four subjects
+      // spread over the same drive average to the same empty middle. A name
+      // written on a file is a name the reader can follow.
+      let nearest = Infinity;
+      let mx = cx;
+      let my = cy;
       screen.forEach((node, i) => {
         if (model.clusters[i] === cluster && node.intro > 0 && onStage(i)) {
-          spread += Math.hypot(node.sx - cx, node.sy - cy);
+          const away = Math.hypot(node.sx - cx, node.sy - cy);
+          spread += away;
           held++;
+          if (away < nearest) {
+            nearest = away;
+            mx = node.sx;
+            my = node.sy;
+          }
         }
       });
       spread = held ? spread / held : 0;
+      // The name is written whatever the shape of the subject: what a drive
+      // holds is the first thing the screen owes its reader. Only the colour
+      // behind it waits for the subject to be somewhere.
+      centres.set(cluster, { x: mx, y: my, lit: cloud.lit / cloud.count });
       /**
        * Four subjects whose files are scattered used to paint four clouds
        * the size of the stage, one over the other: the drive came out a wash
@@ -818,7 +835,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       if (tight < 0.08) {
         continue;
       }
-      centres.set(cluster, { x: cx, y: cy, lit: cloud.lit / cloud.count });
       const radius = Math.max(60, spread * 2.2);
       const rgb = hexToRgb(theme.clusterColor(model.topics[cluster].color));
       const peak = (theme.glow ? 0.3 : 0.2) * (cloud.lit / cloud.count) * tight;
@@ -1042,7 +1058,10 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       ctx.font = `600 ${topicSize}px Marianne, system-ui, sans-serif`;
       // Biggest group first, so when two of them sit on top of each other it
       // is the small one that gives up its name.
-      for (const [cluster, centre] of [...centres].sort((a, b) => a[0] - b[0])) {
+      const bySize = [...centres].sort(
+        (a, b) => model.topics[b[0]].members.length - model.topics[a[0]].members.length,
+      );
+      for (const [cluster, centre] of bySize) {
         const topic = model.topics[cluster];
         const slot = topic.color;
         const w = ctx.measureText(topic.label).width;
