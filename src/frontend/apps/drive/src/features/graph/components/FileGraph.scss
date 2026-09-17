@@ -83,6 +83,8 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     flex: none;
     align-items: center;
     gap: 8px;
+
+    .c__button { color: var(--fg-link); }
   }
 
   &__no-results {
@@ -1669,7 +1671,7 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     // The panel stays reachable: it just starts folded down to its dots.
     &__legend {
       left: 8px;
-      bottom: 8px;
+      bottom: 56px;
       max-width: calc(100% - 16px);
       max-height: 40%;
     }
