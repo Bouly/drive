@@ -308,6 +308,37 @@ def sort_files_into(topic, candidates=None):
     return topic.memberships.count()
 
 
+def place_by_reading(item, topic, text):
+    """Judge one upload against an existing subject, returning 1 if it belongs."""
+    score = None
+    if text:
+        try:
+            score = AlbertClient().rerank(topic.question, [text])[0]
+        except AlbertError as exc:
+            logger.warning("Albert could not judge item %s: %s", item.id, exc)
+            return 0
+
+    peak = topic.cut / settings.GRAPH_TOPIC_RERANK_RATIO
+    if peak < settings.GRAPH_TOPIC_RERANK_FLOOR:
+        # The old best answer was irrelevant. Its small cut must not
+        # admit every new upload. A real answer can revive the subject;
+        # sort it again to update its strength and all relative scores.
+        if score is not None and score >= settings.GRAPH_TOPIC_RERANK_FLOOR:
+            sort_files_into(topic)
+            return int(topic.memberships.filter(item=item).exists())
+        ItemTopic.objects.filter(item=item, topic=topic, pinned=False).delete()
+        return 0
+
+    if score is not None and score >= topic.cut:
+        share = min(1.0, score / peak)
+        ItemTopic.objects.update_or_create(
+            item=item, topic=topic, defaults={"score": round(share, 4)}
+        )
+        return 1
+    ItemTopic.objects.filter(item=item, topic=topic, pinned=False).delete()
+    return 0
+
+
 def sort_into_subjects(item, topics):
     """
     Place one file in the subjects it belongs to, when it has just changed.
@@ -322,7 +353,14 @@ def sort_into_subjects(item, topics):
         ItemTopic.objects.filter(item=item, pinned=False).delete()
         return 0
     placed = 0
+    pinned = set(
+        ItemTopic.objects.filter(item=item, pinned=True).values_list("topic_id", flat=True)
+    )
+    text = beginnings_of([item]).get(item.id)
     for topic in topics:
+        if topic.id in pinned:
+            placed += 1
+            continue
         if topic.vector is None:
             continue
         similarity = sum(a * b for a, b in zip(vector, list(topic.vector), strict=True))
@@ -336,21 +374,5 @@ def sort_into_subjects(item, topics):
             if cache.add(f"graph-topic-sorted-{topic.id}", "1", timeout=RESORT_DELAY):
                 sort_files_into(topic)
             continue
-        text = beginnings_of([item]).get(item.id)
-        score = None
-        if text:
-            try:
-                score = AlbertClient().rerank(topic.question, [text])[0]
-            except AlbertError as exc:
-                logger.warning("Albert could not judge item %s: %s", item.id, exc)
-                continue
-        if score is not None and score >= topic.cut:
-            peak = topic.cut / settings.GRAPH_TOPIC_RERANK_RATIO
-            share = min(1.0, score / peak) if peak else 1.0
-            ItemTopic.objects.update_or_create(
-                item=item, topic=topic, defaults={"score": round(share, 4)}
-            )
-            placed += 1
-        else:
-            ItemTopic.objects.filter(item=item, topic=topic, pinned=False).delete()
+        placed += place_by_reading(item, topic, text)
     return placed

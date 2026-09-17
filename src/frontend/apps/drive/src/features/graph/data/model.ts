@@ -308,8 +308,10 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
   const rank = new Map(subjects.map((subject, i) => [subject.id, i]));
   // A file can be in several subjects but is drawn in one ‒ the one it fits
   // best, which the API sends first.
-  const clusters = data.files.map((file) => {
-    const closest = file.topics?.[0];
+  const clusters = data.files.map((file, i) => {
+    // Use the same accepted memberships as the subject filters. Old rows
+    // can still put a rejected subject first in the API response.
+    const closest = file.topics?.find((topic) => belongs[i].has(topic.id));
     return closest ? (rank.get(closest.id) ?? -1) : -1;
   });
   const topics = subjects.map((subject, group) => ({

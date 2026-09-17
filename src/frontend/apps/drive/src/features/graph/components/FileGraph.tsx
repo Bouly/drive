@@ -505,7 +505,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
    * lists what exists and one that says what is left to do.
    */
   const unsorted = useMemo(
-    () => model.data.files.filter((file) => !file.topics?.length).length,
+    () => model.belongs.filter((held) => held.size === 0).length,
     [model],
   );
 
@@ -1735,9 +1735,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     if (typed && !normalize(selectedFile?.title ?? "").includes(normalize(typed))) {
       return typed;
     }
-    const own = selectedFile?.topics?.[0];
-    return own ? (model.subjects.find((subject) => subject.id === own.id)?.name ?? "") : "";
-  }, [facets, model, query, selectedFile]);
+    const group = selected === null ? -1 : model.clusters[selected];
+    return group >= 0 ? model.topics[group].label : "";
+  }, [facets, model, query, selected, selectedFile]);
 
   // The neighbours the card explains in words: the closest ones, as many as
   // the backend answers for. The rest keep the passage the storage holds.
@@ -1892,7 +1892,7 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 title={
                   membership?.pinned
                     ? t("graph.subject_pinned")
-                    : membership
+                    : inside
                       ? t("graph.subject_matched", { score: Math.round(membership.score * 100) })
                       : t("graph.subject_put")
                 }

@@ -11,7 +11,7 @@ from core import factories, models
 from graph.models import ItemTopic, Topic
 from graph.services import storage
 from graph.services.chunking import Chunk, hash_text
-from graph.services.subjects import sort_files_into, topic_vector
+from graph.services.subjects import sort_files_into, sort_into_subjects, topic_vector
 
 pytestmark = pytest.mark.django_db
 
@@ -338,3 +338,106 @@ def test_a_subject_never_sorts_someone_elses_files():
         text for call in client.return_value.rerank.call_args_list for text in call.args[1]
     )
     assert "leur copie" not in read
+
+
+def test_a_weak_best_answer_does_not_fill_a_subject():
+    """Winning a batch of irrelevant files is still not a relevant answer."""
+    user = factories.UserFactory()
+    weak = indexed_file("Protection sociale", mix({0: 1.0}), user)
+    pinned = indexed_file("Note choisie", mix({0: 1.0}), user)
+    topic = Topic.objects.create(name="Subvention", creator=user)
+    ItemTopic.objects.create(item=weak, topic=topic, score=1)
+    ItemTopic.objects.create(item=pinned, topic=topic, pinned=True, score=1)
+
+    with albert(mix({0: 1.0}), rerank={"Protection sociale": 0.02}):
+        sort_files_into(topic)
+
+    assert list(topic.memberships.values_list("item_id", flat=True)) == [pinned.id]
+
+
+def test_an_upload_does_not_use_an_unanswered_subjects_tiny_cut():
+    """Incremental indexing applies the same relevance floor as a full sort."""
+    user = factories.UserFactory()
+    item = indexed_file("Protection sociale", mix({0: 1.0}), user)
+    topic = Topic.objects.create(
+        name="Subvention",
+        creator=user,
+        vector=mix({0: 1.0}),
+        question="Subvention",
+        cut=0.007 * 0.25,
+    )
+    ItemTopic.objects.create(item=item, topic=topic, score=1)
+
+    with albert(mix({0: 1.0}), rerank={"Protection sociale": 0.01}):
+        assert sort_into_subjects(item, [topic]) == 0
+
+    assert not topic.memberships.exists()
+
+
+def test_a_relevant_upload_revives_an_unanswered_subject():
+    """The first real answer updates the strength so it is visible in the UI."""
+    user = factories.UserFactory()
+    old = indexed_file("Protection sociale", mix({0: 1.0}), user)
+    item = indexed_file("Demande de subvention", mix({0: 1.0}), user)
+    topic = Topic.objects.create(
+        name="Subvention",
+        creator=user,
+        vector=mix({0: 1.0}),
+        question="Subvention",
+        cut=0.007 * 0.25,
+    )
+    ItemTopic.objects.create(item=old, topic=topic, score=1)
+
+    with albert(mix({0: 1.0}), rerank={"Demande de subvention": 0.8}):
+        assert sort_into_subjects(item, [topic]) == 1
+
+    topic.refresh_from_db()
+    assert topic.cut == pytest.approx(0.8 * 0.25)
+    assert list(topic.memberships.values_list("item_id", flat=True)) == [item.id]
+
+
+def test_reindexing_keeps_a_manual_pins_score():
+    """An automatic reading cannot demote an explicit choice by the user."""
+    user = factories.UserFactory()
+    item = indexed_file("Note choisie", mix({0: 1.0}), user)
+    topic = Topic.objects.create(
+        name="Subvention",
+        creator=user,
+        vector=mix({0: 1.0}),
+        question="Subvention",
+        cut=0.8 * 0.25,
+    )
+    membership = ItemTopic.objects.create(item=item, topic=topic, pinned=True, score=1)
+
+    with albert(mix({0: 1.0}), rerank={"Note choisie": 0.3}):
+        assert sort_into_subjects(item, [topic]) == 1
+
+    membership.refresh_from_db()
+    assert membership.pinned
+    assert membership.score == 1
+
+
+def test_the_graph_omits_old_weak_memberships_but_keeps_manual_pins(settings):
+    """Existing database rows respect the configured floor without reindexing."""
+    settings.GRAPH_TOPIC_RERANK_FLOOR = 0.1
+    user = factories.UserFactory()
+    item = indexed_file("Protection sociale", mix({0: 1.0}), user)
+    weak = Topic.objects.create(name="Subvention", creator=user, cut=0.08 * 0.25)
+    good = Topic.objects.create(name="Droit", creator=user, cut=0.8 * 0.25)
+    manual = Topic.objects.create(name="À présenter", creator=user)
+    for topic, score, pinned in [(weak, 1, False), (good, 0.8, False), (manual, 1, True)]:
+        ItemTopic.objects.create(item=item, topic=topic, score=score, pinned=pinned)
+    client = APIClient()
+    client.force_login(user)
+
+    result = client.get("/api/v1.0/graph/").json()
+
+    assert {topic["id"] for topic in result["topics"]} == {
+        str(weak.id),
+        str(good.id),
+        str(manual.id),
+    }
+    assert {topic["id"] for topic in result["files"][0]["topics"]} == {
+        str(good.id),
+        str(manual.id),
+    }

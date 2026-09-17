@@ -19,8 +19,8 @@ import hashlib
 from collections import Counter
 from datetime import timedelta
 
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Exists, OuterRef, Q, Subquery
 from django.utils import timezone
 
@@ -189,9 +189,7 @@ def content_keys(items):
     two names is the duplicate a reader actually has, and with the name left
     in, the two came out as different documents.
     """
-    heads = dict(
-        ItemChunk.objects.filter(item__in=items, index=0).values_list("item_id", "text")
-    )
+    heads = dict(ItemChunk.objects.filter(item__in=items, index=0).values_list("item_id", "text"))
     tails = {}
     for item_id, text_hash in (
         ItemChunk.objects.filter(item__in=items, index__gt=0)
@@ -314,9 +312,16 @@ class GraphView(views.APIView):
         # The score is a share of the best answer of its subject, so the
         # scores of two subjects compare: a file in several is drawn in the
         # one it belongs to most.
-        for membership in ItemTopic.objects.filter(item_id__in=item_ids, topic__in=topics).order_by(
-            "-score"
-        ):
+        memberships = ItemTopic.objects.filter(item_id__in=item_ids, topic__in=topics).filter(
+            Q(pinned=True)
+            | Q(
+                topic__cut__gte=settings.GRAPH_TOPIC_RERANK_FLOOR
+                * settings.GRAPH_TOPIC_RERANK_RATIO
+            )
+        )
+        # Rows written before the relevance floor was introduced must not
+        # come back through the API. A manual pin remains the user's choice.
+        for membership in memberships.order_by("-score"):
             topics_by_item.setdefault(membership.item_id, []).append(
                 {
                     "id": str(membership.topic_id),

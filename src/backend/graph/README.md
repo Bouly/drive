@@ -1,107 +1,120 @@
-# Graphe des fichiers (app `graph`)
+# Graphe des fichiers
 
-Chaîne backend qui relie les fichiers d'un Drive par leur contenu, en six étapes :
+La feature complète est sur `main` : extraction, embeddings, stockage, liens,
+sujets choisis par l’utilisateur et interface. La branche historique
+`graph-extraction` n’est plus nécessaire. Les anciens sujets automatiques ont
+été retirés ; les groupes visuels ne créent pas de sujets dans la base.
 
-| Étape | Rôle | Qui / où |
-| --- | --- | --- |
-| 1. Extraire | texte brut du fichier (docx, odt, pdf, images OCR…) | branche `graph-extraction` |
-| 2. Découper | passages de quelques centaines de mots | branche `graph-extraction` |
-| 3. Représenter | un vecteur par passage (modèle d'embedding) | branche `graph-extraction` |
-| **4. Stocker** | passages + vecteurs (pgvector), liens, sujets | **ici** : `models.py`, `services/storage.py` |
-| 5. Relier | plus proches voisins, termes partagés | à venir |
-| 6. Structurer | sujets, rapprochements inattendus | à venir |
+## Parcours d’un fichier
 
-Sur `main`, l'app ne contient que le stockage. Une version complète des étapes 1 à 3
-(Apache Tika, découpage, embeddings `bge-m3` via TEI ou Ollama, commande `graph_prepare`)
-est disponible sur la branche `graph-extraction` pour qui reprend ces étapes.
-
-## Le contrat : ce que le stockage accepte
-
-Un passage est un `graph.services.chunking.Chunk` :
-
-```python
-Chunk(index=0, text="…", text_hash=hash_text("…"), embedding=[...])  # 1024 floats
+```mermaid
+flowchart LR
+    A[Upload dans MinIO] --> B[Validation du fichier]
+    B --> C[Tâche Celery index_item]
+    C --> D[Extraction Tika / OCR / audio / vision]
+    D --> E[Passages de texte]
+    E --> F[Embeddings Albert]
+    F --> G[PostgreSQL + pgvector]
+    G --> H[Voisins sémantiques]
+    G --> I[Classement dans les sujets]
+    H --> J[API filtrée par droits]
+    I --> J
+    J --> K[Graphe interactif]
 ```
 
-- **Dimension : 1024** (`GRAPH_EMBEDDING_DIM`), choisie pour le modèle `bge-m3`.
-  Changer de modèle = changer ce réglage, une migration `AlterField`, et recalculer tous
-  les vecteurs. À décider avant de remplir la base.
-- Les vecteurs doivent être **normalisés** (norme 1) : la distance cosinus devient un
-  simple produit scalaire et l'index HNSW est configuré pour ça (`vector_cosine_ops`).
-- `text_hash` = sha256 du texte (`hash_text`) : deux passages identiques ont le même hash.
+Le fichier apparaît avant la fin de son analyse. Le frontend recharge les données
+toutes les quatre secondes tant qu’un fichier est en attente. Le traitement est
+asynchrone : « apparaît immédiatement » ne veut pas dire « déjà vectorisé ».
+Les états `pending`, `indexed`, `empty`, `failed`, `skipped` et `idle` permettent de
+suivre le résultat sans afficher un chargement permanent.
 
-## Comment c'est stocké
+## Repères dans le code
 
-Postgres 16 avec l'extension **pgvector** (image `pgvector/pgvector:0.8.6-pg16-trixie`,
-mêmes données que `postgres:16`). La migration `0001_initial` crée l'extension puis :
-
-| Table | Rôle |
+| Partie | Fichiers |
 | --- | --- |
-| `drive_graph_chunk` | un passage : `item`, `index`, `text`, `text_hash`, `embedding vector(1024)`, `signature` (MinHash, libre pour l'étape 5). Index HNSW cosinus. Supprimé avec son item. |
-| `drive_graph_link` | un lien `source → target` : `weight` (0..1), `kind` (semantic, lexical, copy, folder), `surprising`, `reason`, `evidence`. Pas de lien vers soi-même. |
-| `drive_graph_topic` / `drive_graph_item_topic` | un sujet (`label`, `keywords`) et l'appartenance d'un item (un seul sujet par item) |
+| Orchestration, reprises, actualisation des voisins | `tasks.py`, `signals.py` |
+| Texte, OCR, transcription et description d’images | `services/extraction.py`, `tasks.py` |
+| Découpage, appels à Albert | `services/chunking.py`, `services/albert.py` |
+| Passages, vecteurs, liens, sujets, états | `models.py`, `services/storage.py` |
+| Liens et passages justifiant un rapprochement | `services/linking.py` |
+| Sujets et reclassement des nouveaux fichiers | `services/subjects.py` |
+| Droits et périmètre de chaque utilisateur | `services/scope.py` |
+| Résumé contextuel et explication des liens | `services/brief.py` |
+| API du graphe et des sujets | `api.py`, `viewsets.py`, `serializers.py` |
+| Corpus de démonstration | `services/seed.py`, `services/documents.py` |
+| Interface, filtres et simulation | `../../frontend/apps/drive/src/features/graph/` |
 
-Une base vectorielle répond à une question : « quels sont les k vecteurs les plus proches
-de celui-ci ? ». L'index HNSW (un graphe de voisinage à plusieurs niveaux) répond en
-quelques millisecondes avec ~99 % de précision, au lieu de comparer à tout. Le garder
-dans Postgres permet de filtrer par droits d'accès dans la même requête et d'avoir des
-suppressions cohérentes (cascade), ce qu'une base vectorielle séparée ne donne pas.
+## Vecteurs et liens
 
-## L'interface pour les autres étapes
+Chaque passage porte un embedding normalisé de **1 024 dimensions**. Les passages
+sont stockés dans PostgreSQL avec pgvector et un index HNSW cosinus. Changer la
+dimension nécessite une migration et un recalcul des embeddings.
 
-Aucun SQL vectoriel ailleurs : tout passe par `graph.services.storage`.
+Le vecteur d’un fichier est la moyenne normalisée de ses passages. Les liens
+comparent ce vecteur aux passages des autres fichiers : le poids indique une
+similarité, pas une probabilité de pertinence ni une preuve de doublon. Le backend
+conserve jusqu’à `GRAPH_LINKS_PER_FILE` voisins (24 par défaut) et l’API en transmet
+jusqu’à dix par fichier. Les droits sont appliqués avant de transmettre les nœuds
+et leurs liens au navigateur.
 
-```python
-from core.models import Item
-from graph.services import storage
+Les empreintes du contenu identifient les copies ayant les mêmes passages. Une
+similarité supérieure ou égale à 95 % signale aussi un doublon potentiel dans
+l’interface ; elle ne prouve pas que les fichiers sont identiques. Une suppression
+passe par confirmation et envoie le fichier à la corbeille.
 
-storage.save_chunks(item, chunks)             # remplace les passages d'un item, rend le nombre stocké
-vector = storage.item_vector(item)            # moyenne normalisée des passages, None si aucun
+## Sujets
 
-readable = Item.objects.readable_per_se(user) # les droits s'appliquent ici, dans la même requête
-storage.nearest_items(vector, readable, k=6, min_similarity=0.55, exclude_item=item)
-# -> [Neighbour(item_id, similarity)] du plus proche au plus lointain, similarity = 1 - distance cosinus
+Un sujet appartient à un utilisateur : nom, description et fichiers épinglés.
+Les embeddings présélectionnent jusqu’à 60 fichiers ; le reranker Albert lit leur
+texte face au nom et aux lignes de description du sujet. Les scores sont rapportés
+à la meilleure réponse du sujet. Un plancher absolu
+(`GRAPH_TOPIC_RERANK_FLOOR`, 0,05 par défaut) évite qu’un sujet sans réponse accepte
+son fichier le moins mauvais. Les fichiers épinglés restent un choix explicite.
 
-storage.nearest_chunks(vector, readable, k=10)  # pareil au niveau passage, avec le texte (la preuve)
+La même règle s’applique aux nouveaux uploads et aux anciennes appartenances
+renvoyées par l’API. Un upload réellement pertinent peut réactiver un sujet vide.
+Dans le frontend, les appartenances retenues servent aux filtres, aux couleurs,
+aux libellés, au compteur des fichiers sans sujet et au thème du résumé.
 
-storage.replace_links(item, [
-    {"target": other, "weight": 0.82, "kind": "copy", "reason": "Passage repris", "evidence": "…", "surprising": True},
-])
-storage.delete_chunks(item)
-```
+Le classement reste une estimation du modèle : les scores de sujets différents
+ne sont pas des probabilités comparables. Pour la démonstration, choisir des
+sujets précis correspondant au corpus et vérifier les documents proposés.
 
-Les liens sémantiques d'un item (étape 5 minimale) sont dans `graph.services.linking` :
-`link_item(item, candidats)` garde les 4 voisins les plus proches (≥ 0,62 même sujet,
-≥ 0,70 sujets différents = « rapprochement inattendu ») et écrit via `replace_links`.
-C'est ce qu'appellent la tâche `graph.tasks.index_item` (à l'upload) et le seed Albert.
-Le plus proche voisin est gardé dès 0,50 (pas de fichier isolé) et les voisins d'un nouveau
-fichier recalculent leurs liens (`relink_neighbours`). `graph_relink` refait tous les liens
-sans appeler Albert.
+## API
 
-## Les sujets (étape 6)
+- `GET /api/v1.0/graph/` : fichiers accessibles, liens, sujets et dossiers.
+- `GET /api/v1.0/graph/?folder=<uuid>` : même graphe limité à un dossier.
+- `GET /api/v1.0/graph/files/<uuid>/brief/?subject=<texte>&with=<uuid>,<uuid>` :
+  résumé du document et explication de ses voisins, avec contrôle des droits.
+- `/api/v1.0/graph/topics/` : création, lecture, modification et suppression des
+  sujets ; sous-routes `files/` pour épingler ou détacher un fichier.
 
-`graph.services.topics.assign_topics()` regroupe les fichiers indexés par détection de
-communautés (Louvain) sur leur graphe de voisins, puis nomme chaque nouveau groupe avec le
-modèle de chat d'Albert (`GRAPH_ALBERT_CHAT_MODEL`, mots des titres en secours). Un groupe
-qui partage au moins la moitié de ses fichiers avec un ancien sujet garde son nom. Les
-sujets trouvés ainsi ont `Topic.automatic = True` ; les thèmes Albert du seed ne sont pas
-touchés. La tâche `refresh_topics` tourne 10 s après chaque indexation (une à la fois,
-verrou Redis) ; `graph_topics` la lance à la main.
+Les résumés sont calculés à l’ouverture de la carte et mis en cache. Ils lisent
+un extrait du contenu et peuvent signaler qu’un fichier ne répond pas au sujet.
 
-## Vérifier en local
+## Vérifier et déployer
+
+Depuis la racine du dépôt :
 
 ```bash
-make migrate                      # applique 0001_initial (extension + tables)
-bin/pytest graph                  # 7 tests sur une vraie base pgvector
+bin/pytest graph
+# Avec la pile de développement déjà démarrée :
+docker compose exec -T -e DJANGO_CONFIGURATION=Test app-dev pytest graph --no-cov
 ```
 
-Dans un shell Django (`docker compose exec app-dev python manage.py shell`) :
+Depuis `src/frontend/apps/drive` :
 
-```python
-from core.models import Item
-from graph.services import storage
-from graph.services.chunking import Chunk, hash_text
-item = Item.objects.filter(type="file", upload_state="ready").first()
-storage.save_chunks(item, [Chunk(0, "test", hash_text("test"), [1.0] + [0.0] * 1023)])
-storage.nearest_items([1.0] + [0.0] * 1023, Item.objects.all())
+```bash
+yarn test --runInBand src/features/graph/data/__tests__/model.test.ts
+yarn build
 ```
+
+Un push sur `main` déclenche **Deploy production** (`.github/workflows/deploy-prod.yml`).
+Après succès, vérifier dans le navigateur les sujets, la recherche, les filtres,
+l’ouverture d’un document et l’arrivée d’un upload. Le workflow manuel **Seed demo
+bank** alimente un compte avec le corpus Albert ; il évite de recréer les fichiers
+déjà présents.
+
+La documentation visuelle est servie sur `/doc/` depuis `deploy/doc/`. Le graphe
+existant reste consultable si Albert est indisponible, mais l’analyse de nouveaux
+fichiers, le classement et les nouveaux résumés dépendent de son API.
