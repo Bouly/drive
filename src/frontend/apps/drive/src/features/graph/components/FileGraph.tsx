@@ -43,6 +43,7 @@ import { LINK_MIN_CLOSENESS, Model, buildModel } from "../data/model";
 import { useDeleteFile, useFileBrief, useSubjects } from "../api";
 import { DuplicateModal } from "./DuplicateModal";
 import { SubjectModal } from "./SubjectModal";
+import { GraphWelcome, WELCOME_STORAGE_KEY } from "./GraphWelcome";
 import { ToasterItem, addToast } from "@/features/ui/components/toaster/Toaster";
 import { useDeleteItem } from "@/features/explorer/hooks/useDeleteItem";
 import { Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
@@ -214,6 +215,31 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const router = useRouter();
   /** What the subject modal is on: a subject to edit, "new" to name one. */
   const [editingSubject, setEditingSubject] = useState<SubjectDraft | null>(null);
+  /**
+   * Whether to greet the reader. Only a drive holding no subject asks: someone
+   * who has written one has already answered the question it would ask.
+   */
+  const [welcoming, setWelcoming] = useState(false);
+  useEffect(() => {
+    if (data.subjects.length > 0) {
+      return;
+    }
+    try {
+      setWelcoming(window.localStorage.getItem(WELCOME_STORAGE_KEY) !== "done");
+    } catch {
+      setWelcoming(true);
+    }
+  }, [data.subjects.length]);
+
+  const closeWelcome = useCallback(() => {
+    setWelcoming(false);
+    try {
+      window.localStorage.setItem(WELCOME_STORAGE_KEY, "done");
+    } catch {
+      // Storage may be unavailable: it will simply greet again next time.
+    }
+  }, []);
+
   /** The copy waiting for a yes before it goes to the trash. */
   const [trashing, setTrashing] = useState<GraphFile | null>(null);
   const { deleteItems } = useDeleteItem();
@@ -2444,6 +2470,30 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                 onSettled: () => setDuplicate(null),
               })
             }
+          />
+        )}
+
+        {welcoming && (
+          <GraphWelcome
+            onClose={closeWelcome}
+            onPick={(seeds) => {
+              // One after another rather than all at once: each new subject
+              // reads the drive to sort it, and the backend is happier asked
+              // in turn than asked six times at the same instant.
+              void seeds
+                .reduce(
+                  (chain, seed) => chain.then(() => subjects.create.mutateAsync(seed)).then(() => undefined),
+                  Promise.resolve(),
+                )
+                .then(() =>
+                  addToast(
+                    <ToasterItem>{t("graph.subjects_seeded", { count: seeds.length })}</ToasterItem>,
+                  ),
+                )
+                .catch(() =>
+                  addToast(<ToasterItem type="error">{t("graph.subject_failed")}</ToasterItem>),
+                );
+            }}
           />
         )}
 

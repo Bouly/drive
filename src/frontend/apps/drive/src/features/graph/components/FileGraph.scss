@@ -1033,6 +1033,97 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     color: var(--fg-faint);
   }
 
+  // The first visit: what the marks mean, then what the drive is about.
+  &__welcome {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--md, 16px);
+  }
+
+  &__welcome-how {
+    display: flex;
+    flex-direction: column;
+    gap: var(--c--globals--spacings--sm, 12px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+
+    li {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--c--globals--spacings--sm, 12px);
+      font-size: var(--c--globals--font--sizes--sm, 14px);
+      line-height: 1.45;
+      color: var(--c--contextuals--content--semantic--neutral--secondary, #5d5d70);
+    }
+  }
+
+  &__welcome-mark {
+    flex: none;
+    display: flex;
+    gap: 3px;
+    width: 56px;
+    padding-top: 1px;
+
+    svg {
+      fill: var(--c--contextuals--content--semantic--neutral--tertiary, #69697d);
+      stroke: var(--c--contextuals--content--semantic--neutral--tertiary, #69697d);
+    }
+  }
+
+  &__welcome-ask {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
+  }
+
+  &__welcome-roles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: var(--c--globals--spacings--xs, 8px);
+  }
+
+  &__welcome-role {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border: 1px solid var(--c--contextuals--border--surface--primary, #d3d4e0);
+    border-radius: 6px;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    b {
+      font-size: var(--c--globals--font--sizes--sm, 14px);
+      font-weight: var(--c--globals--font--weights--bold, 600);
+      color: var(--c--contextuals--content--semantic--neutral--primary, #25252f);
+    }
+
+    span {
+      font-size: var(--c--globals--font--sizes--t, 11px);
+      line-height: 1.4;
+      color: var(--c--contextuals--content--semantic--neutral--tertiary, #69697d);
+    }
+
+    &:hover {
+      border-color: var(--c--contextuals--border--semantic--brand--primary, #5e5cd0);
+      background: var(--c--contextuals--background--semantic--brand--tertiary, #f2f4fb);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--c--contextuals--border--semantic--brand--primary, #5e5cd0);
+      outline-offset: 1px;
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+  }
+
   // The copies of a file, and the way out of them.
   &__dupes {
     display: flex;

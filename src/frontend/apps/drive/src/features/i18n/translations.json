@@ -834,7 +834,109 @@
         "duplicate_of_other": "The drive already holds this file {{count}} more times",
         "duplicate_trash_hint": "Move this copy to the trash",
         "duplicate_trash_do": "Move to the trash",
-        "duplicate_trash_body": "The file goes to the trash, where it can be restored. The one you are looking at stays."
+        "duplicate_trash_body": "The file goes to the trash, where it can be restored. The one you are looking at stays.",
+        "welcome_title": "Your drive, seen from above",
+        "welcome_shapes": "The shape says what you may do with a file: yours, editable, or read only.",
+        "welcome_colors": "The colour says the subject. Files about the same thing gather together.",
+        "welcome_links": "A thread joins two close files. Click one to read what it says and what resembles it.",
+        "welcome_ask": "What do you work on? The drive sorts itself into the subjects you pick.",
+        "welcome_skip": "Later",
+        "roles": {
+          "hr": "Human resources",
+          "legal": "Legal",
+          "finance": "Finance",
+          "comms": "Communication",
+          "tech": "Engineering",
+          "lead": "Leadership"
+        },
+        "presets": {
+          "recruitment": {
+            "name": "Recruitment",
+            "description": "Job descriptions, applications, interviews and hiring panels."
+          },
+          "contracts": {
+            "name": "Contracts and pay",
+            "description": "Employment contracts, amendments, pay and payslips."
+          },
+          "leave": {
+            "name": "Leave and absence",
+            "description": "Paid leave, public holidays, sick leave and absences."
+          },
+          "training": {
+            "name": "Training",
+            "description": "Training plans, enrolments, skill reviews and mentoring."
+          },
+          "labour_law": {
+            "name": "Employment law",
+            "description": "Dismissals, terminations, procedures and employee rights."
+          },
+          "procurement": {
+            "name": "Public procurement",
+            "description": "Tenders, specifications, bids and awards."
+          },
+          "privacy": {
+            "name": "Data protection",
+            "description": "Processing records, impact assessments, retention periods."
+          },
+          "disputes": {
+            "name": "Disputes",
+            "description": "Litigation, referrals, rulings and what followed them."
+          },
+          "budget": {
+            "name": "Budget",
+            "description": "Forecasts, trade-offs, spending and financial reports."
+          },
+          "grants": {
+            "name": "Grants",
+            "description": "Grant applications, agreements, evidence and reviews."
+          },
+          "invoices": {
+            "name": "Purchases and invoices",
+            "description": "Purchase orders, quotes, invoices and spend tracking."
+          },
+          "publications": {
+            "name": "Artwork and materials",
+            "description": "Posters, leaflets, visuals and communication templates."
+          },
+          "events": {
+            "name": "Events",
+            "description": "Seminars, workshops, programmes, logistics and invitations."
+          },
+          "press": {
+            "name": "Press",
+            "description": "Releases, press kits, coverage and interviews."
+          },
+          "web": {
+            "name": "Web and social",
+            "description": "Site content, social posts, audiences and analytics."
+          },
+          "infrastructure": {
+            "name": "Infrastructure",
+            "description": "Servers, hosting, network, backups and operations."
+          },
+          "security": {
+            "name": "Security",
+            "description": "Security policy, incidents, audits and access management."
+          },
+          "development": {
+            "name": "Development",
+            "description": "Code, specifications, reviews, tests and releases."
+          },
+          "documentation": {
+            "name": "Documentation",
+            "description": "Guides, procedures, technical notes and onboarding paths."
+          },
+          "strategy": {
+            "name": "Strategy",
+            "description": "Roadmaps, position papers and multi-year plans."
+          },
+          "committees": {
+            "name": "Committees and decisions",
+            "description": "Agendas, minutes, decision records and trade-offs."
+          }
+        },
+        "subjects_seeded_one": "{{count}} subject created. The drive is sorting itself into it.",
+        "subjects_seeded_other": "{{count}} subjects created. The drive is sorting itself into them."
       }
     }
   },
@@ -1673,7 +1775,109 @@
         "duplicate_of_other": "Le drive contient déjà {{count}} autres fois ce fichier",
         "duplicate_trash_hint": "Mettre cette copie à la corbeille",
         "duplicate_trash_do": "Mettre à la corbeille",
-        "duplicate_trash_body": "Le fichier part à la corbeille, d'où il peut être restauré. Celui que vous regardez reste en place."
+        "duplicate_trash_body": "Le fichier part à la corbeille, d'où il peut être restauré. Celui que vous regardez reste en place.",
+        "welcome_title": "Votre drive, vu d'en haut",
+        "welcome_shapes": "La forme dit ce que vous pouvez faire du fichier : à vous, modifiable, ou en lecture seule.",
+        "welcome_colors": "La couleur dit le sujet. Les fichiers qui parlent de la même chose se rassemblent.",
+        "welcome_links": "Un trait relie deux fichiers proches. Cliquez un fichier pour lire ce qu'il dit et ce qui lui ressemble.",
+        "welcome_ask": "Sur quoi travaillez-vous ? Le drive se range tout seul dans les sujets choisis.",
+        "welcome_skip": "Plus tard",
+        "roles": {
+          "hr": "Ressources humaines",
+          "legal": "Juridique",
+          "finance": "Finances",
+          "comms": "Communication",
+          "tech": "Technique et numérique",
+          "lead": "Direction"
+        },
+        "presets": {
+          "recruitment": {
+            "name": "Recrutement",
+            "description": "Fiches de poste, candidatures, entretiens et comités de recrutement."
+          },
+          "contracts": {
+            "name": "Contrats et paie",
+            "description": "Contrats de travail, avenants, rémunérations et bulletins de paie."
+          },
+          "leave": {
+            "name": "Congés et absences",
+            "description": "Congés payés, jours fériés, ponts, arrêts et absences des agents."
+          },
+          "training": {
+            "name": "Formation",
+            "description": "Plans de formation, inscriptions, bilans de compétences et tutorat."
+          },
+          "labour_law": {
+            "name": "Droit du travail",
+            "description": "Licenciements, ruptures de contrat, procédures et droits des salariés."
+          },
+          "procurement": {
+            "name": "Marchés publics",
+            "description": "Appels d'offres, cahiers des charges, candidatures et attributions."
+          },
+          "privacy": {
+            "name": "RGPD et données",
+            "description": "Registre des traitements, analyses d'impact, durées de conservation."
+          },
+          "disputes": {
+            "name": "Contentieux",
+            "description": "Litiges, saisines, décisions de justice et suites données."
+          },
+          "budget": {
+            "name": "Budget",
+            "description": "Budgets prévisionnels, arbitrages, exécution et rapports financiers."
+          },
+          "grants": {
+            "name": "Subventions",
+            "description": "Demandes de subvention, conventions, justificatifs et bilans."
+          },
+          "invoices": {
+            "name": "Achats et factures",
+            "description": "Bons de commande, devis, factures et suivi des dépenses."
+          },
+          "publications": {
+            "name": "Supports et visuels",
+            "description": "Affiches, plaquettes, visuels et gabarits de communication."
+          },
+          "events": {
+            "name": "Événements",
+            "description": "Séminaires, ateliers, programmes, logistique et invitations."
+          },
+          "press": {
+            "name": "Presse",
+            "description": "Communiqués, dossiers de presse, revues de presse et interviews."
+          },
+          "web": {
+            "name": "Web et réseaux",
+            "description": "Contenus du site, publications sociales, audiences et analytics."
+          },
+          "infrastructure": {
+            "name": "Infrastructure",
+            "description": "Serveurs, hébergement, réseau, sauvegardes et exploitation."
+          },
+          "security": {
+            "name": "Sécurité",
+            "description": "Politiques de sécurité, incidents, audits et gestion des accès."
+          },
+          "development": {
+            "name": "Développement",
+            "description": "Code, spécifications, revues, tests et mises en production."
+          },
+          "documentation": {
+            "name": "Documentation",
+            "description": "Guides, procédures, comptes rendus techniques et parcours d'accueil."
+          },
+          "strategy": {
+            "name": "Stratégie",
+            "description": "Feuilles de route, notes d'orientation, plans pluriannuels."
+          },
+          "committees": {
+            "name": "Comités et décisions",
+            "description": "Ordres du jour, comptes rendus, relevés de décisions et arbitrages."
+          }
+        },
+        "subjects_seeded_one": "{{count}} sujet créé. Le drive se range dedans.",
+        "subjects_seeded_other": "{{count}} sujets créés. Le drive se range dedans."
       }
     }
   },
@@ -2512,7 +2716,109 @@
         "duplicate_of_other": "De drive bevat dit bestand nog {{count}} keer",
         "duplicate_trash_hint": "Deze kopie naar de prullenbak",
         "duplicate_trash_do": "Naar de prullenbak",
-        "duplicate_trash_body": "Het bestand gaat naar de prullenbak en kan worden hersteld. Het bestand dat je bekijkt blijft staan."
+        "duplicate_trash_body": "Het bestand gaat naar de prullenbak en kan worden hersteld. Het bestand dat je bekijkt blijft staan.",
+        "welcome_title": "Your drive, seen from above",
+        "welcome_shapes": "The shape says what you may do with a file: yours, editable, or read only.",
+        "welcome_colors": "The colour says the subject. Files about the same thing gather together.",
+        "welcome_links": "A thread joins two close files. Click one to read what it says and what resembles it.",
+        "welcome_ask": "What do you work on? The drive sorts itself into the subjects you pick.",
+        "welcome_skip": "Later",
+        "roles": {
+          "hr": "Human resources",
+          "legal": "Legal",
+          "finance": "Finance",
+          "comms": "Communication",
+          "tech": "Engineering",
+          "lead": "Leadership"
+        },
+        "presets": {
+          "recruitment": {
+            "name": "Recruitment",
+            "description": "Job descriptions, applications, interviews and hiring panels."
+          },
+          "contracts": {
+            "name": "Contracts and pay",
+            "description": "Employment contracts, amendments, pay and payslips."
+          },
+          "leave": {
+            "name": "Leave and absence",
+            "description": "Paid leave, public holidays, sick leave and absences."
+          },
+          "training": {
+            "name": "Training",
+            "description": "Training plans, enrolments, skill reviews and mentoring."
+          },
+          "labour_law": {
+            "name": "Employment law",
+            "description": "Dismissals, terminations, procedures and employee rights."
+          },
+          "procurement": {
+            "name": "Public procurement",
+            "description": "Tenders, specifications, bids and awards."
+          },
+          "privacy": {
+            "name": "Data protection",
+            "description": "Processing records, impact assessments, retention periods."
+          },
+          "disputes": {
+            "name": "Disputes",
+            "description": "Litigation, referrals, rulings and what followed them."
+          },
+          "budget": {
+            "name": "Budget",
+            "description": "Forecasts, trade-offs, spending and financial reports."
+          },
+          "grants": {
+            "name": "Grants",
+            "description": "Grant applications, agreements, evidence and reviews."
+          },
+          "invoices": {
+            "name": "Purchases and invoices",
+            "description": "Purchase orders, quotes, invoices and spend tracking."
+          },
+          "publications": {
+            "name": "Artwork and materials",
+            "description": "Posters, leaflets, visuals and communication templates."
+          },
+          "events": {
+            "name": "Events",
+            "description": "Seminars, workshops, programmes, logistics and invitations."
+          },
+          "press": {
+            "name": "Press",
+            "description": "Releases, press kits, coverage and interviews."
+          },
+          "web": {
+            "name": "Web and social",
+            "description": "Site content, social posts, audiences and analytics."
+          },
+          "infrastructure": {
+            "name": "Infrastructure",
+            "description": "Servers, hosting, network, backups and operations."
+          },
+          "security": {
+            "name": "Security",
+            "description": "Security policy, incidents, audits and access management."
+          },
+          "development": {
+            "name": "Development",
+            "description": "Code, specifications, reviews, tests and releases."
+          },
+          "documentation": {
+            "name": "Documentation",
+            "description": "Guides, procedures, technical notes and onboarding paths."
+          },
+          "strategy": {
+            "name": "Strategy",
+            "description": "Roadmaps, position papers and multi-year plans."
+          },
+          "committees": {
+            "name": "Committees and decisions",
+            "description": "Agendas, minutes, decision records and trade-offs."
+          }
+        },
+        "subjects_seeded_one": "{{count}} onderwerp aangemaakt. De drive sorteert zichzelf erin.",
+        "subjects_seeded_other": "{{count}} onderwerpen aangemaakt. De drive sorteert zichzelf erin."
       }
     }
   }
