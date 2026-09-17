@@ -809,7 +809,7 @@
         "duplicate_title": "Delete a duplicate?",
         "duplicate_explain": "This file holds exactly the same text as the one you are reading:",
         "duplicate_keeps": "The file that stays:",
-        "duplicate_trash": "The duplicate goes to the trash: it can be restored.",
+        "duplicate_trash": "Move “{{name}}” to the trash",
         "duplicate_cancel": "Cancel",
         "duplicate_confirm": "Delete the duplicate",
         "rights_of": {
@@ -829,7 +829,12 @@
         "rights_key": "What the shapes mean",
         "rights_own": "Yours",
         "rights_edit": "You can edit",
-        "rights_read": "Read only"
+        "rights_read": "Read only",
+        "duplicate_of_one": "The drive already holds this file once more",
+        "duplicate_of_other": "The drive already holds this file {{count}} more times",
+        "duplicate_trash_hint": "Move this copy to the trash",
+        "duplicate_trash_do": "Move to the trash",
+        "duplicate_trash_body": "The file goes to the trash, where it can be restored. The one you are looking at stays."
       }
     }
   },
@@ -1643,7 +1648,7 @@
         "duplicate_title": "Supprimer un doublon ?",
         "duplicate_explain": "Ce fichier contient exactement le même texte que celui que vous consultez :",
         "duplicate_keeps": "Le fichier conservé :",
-        "duplicate_trash": "Le doublon part à la corbeille : il peut être restauré.",
+        "duplicate_trash": "Mettre « {{name}} » à la corbeille",
         "duplicate_cancel": "Annuler",
         "duplicate_confirm": "Supprimer le doublon",
         "rights_of": {
@@ -1663,7 +1668,12 @@
         "rights_key": "Ce que les formes veulent dire",
         "rights_own": "À vous",
         "rights_edit": "Vous pouvez modifier",
-        "rights_read": "Lecture seule"
+        "rights_read": "Lecture seule",
+        "duplicate_of_one": "Le drive contient déjà une autre fois ce fichier",
+        "duplicate_of_other": "Le drive contient déjà {{count}} autres fois ce fichier",
+        "duplicate_trash_hint": "Mettre cette copie à la corbeille",
+        "duplicate_trash_do": "Mettre à la corbeille",
+        "duplicate_trash_body": "Le fichier part à la corbeille, d'où il peut être restauré. Celui que vous regardez reste en place."
       }
     }
   },
@@ -2477,7 +2487,7 @@
         "duplicate_title": "Een duplicaat verwijderen?",
         "duplicate_explain": "Dit bestand bevat exact dezelfde tekst als het bestand dat u bekijkt:",
         "duplicate_keeps": "Het bestand dat blijft:",
-        "duplicate_trash": "Het duplicaat gaat naar de prullenbak en kan worden hersteld.",
+        "duplicate_trash": "“{{name}}” naar de prullenbak",
         "duplicate_cancel": "Annuleren",
         "duplicate_confirm": "Duplicaat verwijderen",
         "rights_of": {
@@ -2497,7 +2507,12 @@
         "rights_key": "Wat de vormen betekenen",
         "rights_own": "Van jou",
         "rights_edit": "Je kunt bewerken",
-        "rights_read": "Alleen lezen"
+        "rights_read": "Alleen lezen",
+        "duplicate_of_one": "De drive bevat dit bestand nog een keer",
+        "duplicate_of_other": "De drive bevat dit bestand nog {{count}} keer",
+        "duplicate_trash_hint": "Deze kopie naar de prullenbak",
+        "duplicate_trash_do": "Naar de prullenbak",
+        "duplicate_trash_body": "Het bestand gaat naar de prullenbak en kan worden hersteld. Het bestand dat je bekijkt blijft staan."
       }
     }
   }

@@ -114,6 +114,8 @@ export type Theme = {
   categoryColor: (category: string) => string;
   /** Colour of a dot: what the reader may do with that file. */
   ownershipColor: (role: string) => string;
+  /** The ring around a file the drive already holds a copy of. */
+  duplicate: string;
 };
 // Values are DSFR palette tokens (cunningham-tokens.css): gray-*, brand-*, warning-*.
 export const THEMES: Record<"dark" | "light", Theme> = {
@@ -128,6 +130,7 @@ export const THEMES: Record<"dark" | "light", Theme> = {
     clusterColor: (slot) => CLUSTER_COLORS.dark[slot],
     categoryColor: (category) => lighten(CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other, 0.3),
     ownershipColor: (role) => OWNERSHIP_COLORS.dark[role] ?? OWNERSHIP_COLORS.dark.none,
+    duplicate: "#FF6B6B",
   },
   light: {
     bg: "#F0F0F3", // gray-050
@@ -140,6 +143,7 @@ export const THEMES: Record<"dark" | "light", Theme> = {
     clusterColor: (slot) => CLUSTER_COLORS.light[slot],
     categoryColor: (category) => CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other,
     ownershipColor: (role) => OWNERSHIP_COLORS.light[role] ?? OWNERSHIP_COLORS.light.none,
+    duplicate: "#CE0500",
   },
 };
 export const THEME_STORAGE_KEY = "drive-graph-theme";

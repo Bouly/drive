@@ -50,6 +50,17 @@ const SEARCH_PASSAGES = 8;
  */
 export const LINK_MIN_CLOSENESS = 0.35;
 
+/**
+ * Above this weight two files are the same document twice, not two documents
+ * about the same thing.
+ *
+ * A drive fills up with copies nobody meant to keep: a file downloaded twice,
+ * a version saved under a new name, the same attachment from two colleagues.
+ * The graph is the one screen that can see them, because it is the only one
+ * that reads what is inside.
+ */
+export const DUPLICATE_WEIGHT = 0.95;
+
 export type Neighbor = { node: number; link: GraphLink };
 
 const categoryOf = (file: GraphFile) => {
@@ -149,6 +160,30 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     return seed / 4294967296;
   };
   const categories = data.files.map(categoryOf);
+
+  // Copies of one another: the same fingerprint, or a pair so close that
+  // nothing but sameness explains it.
+  const duplicates: number[][] = data.files.map(() => []);
+  const twin = (a: number, b: number) => {
+    if (a !== b && !duplicates[a].includes(b)) {
+      duplicates[a].push(b);
+    }
+  };
+  const byFingerprint = new Map<string, number[]>();
+  data.files.forEach((file, i) => {
+    if (file.content) {
+      byFingerprint.set(file.content, [...(byFingerprint.get(file.content) ?? []), i]);
+    }
+  });
+  for (const same of byFingerprint.values()) {
+    same.forEach((a) => same.forEach((b) => twin(a, b)));
+  }
+  pairs.forEach(({ source, target, link }) => {
+    if (link.weight >= DUPLICATE_WEIGHT) {
+      twin(source, target);
+      twin(target, source);
+    }
+  });
   // What the reader may do with each file, which is the colour of its dot.
   // An empty right ‒ a file reached through a link alone ‒ is a value of its
   // own and not a missing one, so it is named rather than left blank.
@@ -289,6 +324,7 @@ export const buildModel = (data: GraphData, placed?: Map<string, SimNode>) => {
     neighbors,
     categories,
     ownerships,
+    duplicates,
     clusters,
     topics,
     subjects,

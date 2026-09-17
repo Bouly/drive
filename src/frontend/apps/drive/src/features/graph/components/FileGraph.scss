@@ -23,6 +23,7 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
   --fg-dot-ring: #fff;
   --fg-danger: var(--c--globals--colors--danger-600, #b8324f);
   --fg-stage: var(--c--globals--colors--gray-050, #f0f0f3);
+  --fg-duplicate: #ce0500;
 
   display: flex;
   flex-direction: column;
@@ -45,6 +46,7 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     --fg-dot-ring: var(--c--globals--colors--gray-900, #1b1b23);
     --fg-danger: var(--c--globals--colors--danger-300, #f7a3ae);
     --fg-stage: var(--c--globals--colors--gray-900, #1b1b23);
+    --fg-duplicate: #ff6b6b;
   }
 
   // Finding a file and reading how many there are: the two everyday needs,
@@ -981,6 +983,58 @@ $mobile: map.get($themes, "default", "globals", "breakpoints", "mobile");
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--fg-faint);
+  }
+
+  // The copies of a file, and the way out of them.
+  &__dupes {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: var(--c--globals--spacings--sm, 12px);
+    padding: var(--c--globals--spacings--xs, 8px);
+    border: 1px solid var(--fg-duplicate);
+    border-radius: 6px;
+  }
+
+  &__dupes-head {
+    margin: 0 0 2px;
+    font-size: var(--c--globals--font--sizes--t, 11px);
+    font-weight: var(--c--globals--font--weights--bold, 600);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-duplicate);
+  }
+
+  &__dupes-row {
+    display: flex;
+    align-items: center;
+    gap: var(--c--globals--spacings--2xs, 6px);
+  }
+
+  &__dupes-name {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: var(--c--globals--font--sizes--xs, 12px);
+    color: var(--fg-text);
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    cursor: pointer;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__dupes-warn {
+    margin: 0;
+    font-size: var(--c--globals--font--sizes--sm, 14px);
+    color: var(--c--contextuals--content--semantic--neutral--secondary, #5d5d70);
   }
 
   &__card-actions {

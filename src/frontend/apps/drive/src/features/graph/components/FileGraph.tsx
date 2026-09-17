@@ -43,6 +43,8 @@ import { useDeleteFile, useFileBrief, useSubjects } from "../api";
 import { DuplicateModal } from "./DuplicateModal";
 import { SubjectModal } from "./SubjectModal";
 import { ToasterItem, addToast } from "@/features/ui/components/toaster/Toaster";
+import { useDeleteItem } from "@/features/explorer/hooks/useDeleteItem";
+import { Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
 
 /**
  * What the subject modal is working on: a subject that exists, or the files a
@@ -211,6 +213,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const router = useRouter();
   /** What the subject modal is on: a subject to edit, "new" to name one. */
   const [editingSubject, setEditingSubject] = useState<SubjectDraft | null>(null);
+  /** The copy waiting for a yes before it goes to the trash. */
+  const [trashing, setTrashing] = useState<GraphFile | null>(null);
+  const { deleteItems } = useDeleteItem();
   const { t, i18n } = useTranslation();
   /** Where each file sits, so a refetch does not shuffle the whole graph. */
   const placedRef = useRef(new Map<string, SimNode>());
@@ -986,6 +991,16 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       traceMark(ctx, shapeOf(i), node.sx, node.sy, node.sr);
       ctx.fill();
       ctx.shadowBlur = 0;
+      // The same document twice: a ring the eye catches without being told,
+      // because this is the one thing on the stage the reader can act on.
+      if (model.duplicates[i].length > 0) {
+        ctx.globalAlpha = alpha;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = theme.duplicate;
+        ctx.beginPath();
+        traceMark(ctx, shapeOf(i), node.sx, node.sy, node.sr * 1.85);
+        ctx.stroke();
+      }
       const group = groupColor(i, uiRef.current.theme);
       ctx.lineWidth = isFocus ? 2.5 : !theme.glow && group ? 2 : 1.5;
       // Without a halo to carry it, the ring shows the group on the light
@@ -1864,6 +1879,36 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       ) : (
         <p className="file-graph__reason">{t("graph.summary_missing")}</p>
       )}
+      {model.duplicates[i].length > 0 && (
+        <div className="file-graph__dupes">
+          <p className="file-graph__dupes-head">
+            {t("graph.duplicate_of", { count: model.duplicates[i].length })}
+          </p>
+          {model.duplicates[i].map((other) => (
+            <div key={other} className="file-graph__dupes-row">
+              <button
+                type="button"
+                className="file-graph__dupes-name"
+                onClick={() => selectAndCenter(other)}
+              >
+                {model.data.files[other].title}
+              </button>
+              <Tooltip content={t("graph.duplicate_trash_hint")}>
+                <Button
+                  size="small"
+                  variant="tertiary"
+                  color="error"
+                  icon={<Trash />}
+                  aria-label={t("graph.duplicate_trash", {
+                    name: model.data.files[other].title,
+                  })}
+                  onClick={() => setTrashing(model.data.files[other])}
+                />
+              </Tooltip>
+            </div>
+          ))}
+        </div>
+      )}
       <h3 className="file-graph__card-subtitle">{t("graph.connections", { count: selectedNeighbors.length })}</h3>
       {/*
         Browsing and sorting were two different screens: you could see that
@@ -2369,6 +2414,36 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
               })
             }
           />
+        )}
+
+        {trashing && (
+          <Modal
+            isOpen
+            closeOnClickOutside
+            onClose={() => setTrashing(null)}
+            size={ModalSize.SMALL}
+            title={t("graph.duplicate_trash", { name: trashing.title })}
+            aria-label={t("graph.duplicate_trash", { name: trashing.title })}
+            rightActions={
+              <>
+                <Button variant="tertiary" onClick={() => setTrashing(null)}>
+                  {t("graph.close")}
+                </Button>
+                <Button
+                  color="error"
+                  onClick={() => {
+                    void deleteItems([trashing.id]);
+                    setTrashing(null);
+                    selectNode(null);
+                  }}
+                >
+                  {t("graph.duplicate_trash_do")}
+                </Button>
+              </>
+            }
+          >
+            <p className="file-graph__dupes-warn">{t("graph.duplicate_trash_body")}</p>
+          </Modal>
         )}
 
         {editingSubject && (
