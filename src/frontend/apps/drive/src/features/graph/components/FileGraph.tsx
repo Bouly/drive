@@ -2095,11 +2095,8 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
     >
       <header className="file-graph__header">
         <div className="file-graph__heading">
-          <span className="file-graph__heading-icon" aria-hidden="true"><Icon name="hub" size={22} /></span>
-          <div>
-            <h1>{t("graph.workspace_title")}</h1>
-            <p>{t("graph.workspace_caption")}</p>
-          </div>
+          <h1>{t("graph.workspace_title")}</h1>
+          <p>{t("graph.workspace_caption")}</p>
         </div>
         <div className="file-graph__header-actions">
           <Button size="small" variant="tertiary" icon={<Maximize />} onClick={resetView}>
