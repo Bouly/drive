@@ -110,8 +110,6 @@ def pdf(text, field=None):
     ``field`` adds a filled form field, the way a fillable sheet carries its
     text: in the field, not in the page.
     """
-    form = b""
-    page_extra = b""
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
