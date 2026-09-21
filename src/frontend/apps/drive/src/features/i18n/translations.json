@@ -759,7 +759,6 @@
           "archive": "Archive",
           "other": "Other"
         },
-        "theme_dark": "Dark background",
         "theme_light": "Light background",
         "stats_files_one": "{{count}} file",
         "stats_files_other": "{{count}} files",
@@ -958,6 +957,15 @@
         "welcome_create_one": "Create {{count}} subject",
         "welcome_create_other": "Create {{count}} subjects",
         "welcome_creating": "Creating subjects…"
+      },
+      "theme": {
+        "label": "Appearance: {{mode}}",
+        "title": "Appearance",
+        "modes": {
+          "system": "System",
+          "light": "Light",
+          "dark": "Dark"
+        }
       }
     }
   },
@@ -1721,7 +1729,6 @@
           "archive": "Archive",
           "other": "Autre"
         },
-        "theme_dark": "Fond sombre",
         "theme_light": "Fond clair",
         "stats_files_one": "{{count}} fichier",
         "stats_files_other": "{{count}} fichiers",
@@ -1920,6 +1927,15 @@
         "welcome_create_one": "Créer {{count}} sujet",
         "welcome_create_other": "Créer {{count}} sujets",
         "welcome_creating": "Création des sujets…"
+      },
+      "theme": {
+        "label": "Apparence : {{mode}}",
+        "title": "Apparence",
+        "modes": {
+          "system": "Système",
+          "light": "Clair",
+          "dark": "Sombre"
+        }
       }
     }
   },
@@ -2683,7 +2699,6 @@
           "archive": "Archief",
           "other": "Overig"
         },
-        "theme_dark": "Donkere achtergrond",
         "theme_light": "Lichte achtergrond",
         "stats_files_one": "{{count}} bestand",
         "stats_files_other": "{{count}} bestanden",
@@ -2882,6 +2897,15 @@
         "welcome_create_one": "{{count}} onderwerp aanmaken",
         "welcome_create_other": "{{count}} onderwerpen aanmaken",
         "welcome_creating": "Onderwerpen aanmaken…"
+      },
+      "theme": {
+        "label": "Weergave: {{mode}}",
+        "title": "Weergave",
+        "modes": {
+          "system": "Systeem",
+          "light": "Licht",
+          "dark": "Donker"
+        }
       }
     }
   }

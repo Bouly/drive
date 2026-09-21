@@ -11,6 +11,8 @@ import {
 import { login, useAuth } from "@/features/auth/Auth";
 import { useEffect, useState } from "react";
 import logoGouv from "@/assets/logo-gouv.svg";
+import logoGouvDark from "@/assets/logo-gouv-dark.svg";
+import { useAppContext } from "@/pages/_app";
 import banner from "@/assets/home/banner.png";
 import { HeaderRight } from "@/features/layouts/components/header/Header";
 import {
@@ -152,6 +154,8 @@ const HomePageContent = () => {
 };
 
 const HomePageLayout = ({ children }: { children: React.ReactNode }) => {
+  const { appearance } = useAppContext();
+
   return (
     <MainLayout
       enableResize
@@ -159,7 +163,10 @@ const HomePageLayout = ({ children }: { children: React.ReactNode }) => {
       leftPanelFooter={<LeftPanelFooter />}
       icon={
         <div className="drive__header__left">
-          <img src={logoGouv.src} alt="" />
+          {/* The block is drawn in ink on white and in white on dark, as the
+              State's design system prescribes: the light one is unreadable on
+              a dark header. */}
+          <img src={appearance === "dark" ? logoGouvDark.src : logoGouv.src} alt="" />
           <div className="drive__header__logo" />
           <Feedback />
         </div>

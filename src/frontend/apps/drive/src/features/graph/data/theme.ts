@@ -146,20 +146,11 @@ export const THEMES: Record<"dark" | "light", Theme> = {
     duplicate: "#CE0500",
   },
 };
-export const THEME_STORAGE_KEY = "drive-graph-theme";
 export const PANEL_STORAGE_KEY = "drive-graph-subjects";
 
 export const hexToRgb = (hex: string) => {
   const value = parseInt(hex.slice(1), 16);
   return `${(value >> 16) & 255}, ${(value >> 8) & 255}, ${value & 255}`;
-};
-
-export const readStoredTheme = (): "dark" | "light" => {
-  try {
-    return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
-  } catch {
-    return "light";
-  }
 };
 
 /** The subjects panel opens by default; whoever closed it gets it closed back. */

@@ -7,7 +7,6 @@ import {
   Button,
   Icon,
   Select,
-  Switch,
   Tooltip,
   headerHeight,
 } from "@gouvfr-lasuite/ui-components";
@@ -33,10 +32,8 @@ import {
   OWNERSHIP_ORDER,
   PANEL_STORAGE_KEY,
   THEMES,
-  THEME_STORAGE_KEY,
   hexToRgb,
   readStoredPanel,
-  readStoredTheme,
 } from "../data/theme";
 import { normalize } from "../data/naming";
 import { LINK_MIN_CLOSENESS, Model, buildModel } from "../data/model";
@@ -47,6 +44,7 @@ import { GraphWelcome, WELCOME_STORAGE_KEY } from "./GraphWelcome";
 import { ToasterItem, addToast } from "@/features/ui/components/toaster/Toaster";
 import { useDeleteItem } from "@/features/explorer/hooks/useDeleteItem";
 import { Modal, ModalSize } from "@gouvfr-lasuite/ui-components";
+import { useAppContext } from "@/pages/_app";
 
 /**
  * What the subject modal is working on: a subject that exists, or the files a
@@ -296,7 +294,9 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
-  const [theme, setTheme] = useState<"dark" | "light">("light");
+  // The stage is drawn the way the application is: the choice belongs to the
+  // drive as a whole, not to this page.
+  const { appearance: theme } = useAppContext();
   const [showEmptySubjects, setShowEmptySubjects] = useState(false);
   /** The subjects panel, folded down to its dots when closed. */
   const [panelOpen, setPanelOpen] = useState(true);
@@ -308,7 +308,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
   const filtersRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setTheme(readStoredTheme());
     setPanelOpen(readStoredPanel());
   }, []);
 
@@ -1384,11 +1383,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
       dctx.arc(13, 13, 1, 0, Math.PI * 2);
       dctx.fill();
       patternRef.current = canvas.getContext("2d")?.createPattern(dots, "repeat") ?? null;
-    }
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
-    } catch {
-      // Storage may be unavailable (private mode): the theme just won't persist.
     }
   }, [theme]);
 
@@ -2489,11 +2483,6 @@ export const FileGraph = ({ data, demo = false }: FileGraphProps) => {
                     aria-label={t("graph.strength")}
                   />
                 </label>
-                <Switch
-                  label={t("graph.theme_dark")}
-                  checked={theme === "dark"}
-                  onChange={(event) => setTheme(event.target.checked ? "dark" : "light")}
-                />
               </div>
             )}
             <Button

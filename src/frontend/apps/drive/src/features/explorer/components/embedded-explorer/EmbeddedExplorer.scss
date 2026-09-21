@@ -273,7 +273,10 @@ $xl: map.get($themes, "default", "globals", "breakpoints", "xl");
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(255, 255, 255, 0.7);
+    // A veil over what is being replaced, in the colour of the surface it
+    // covers: a white one lights up a dark drive.
+    background-color: var(--c--contextuals--background--surface--primary, #fff);
+    opacity: 0.7;
     display: flex;
     justify-content: center;
     padding-top: 100px;

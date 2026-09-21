@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactElement,
@@ -37,7 +38,9 @@ import {
   removeQuotes,
   useCunninghamTheme,
 } from "@/features/ui/cunningham/useCunninghamTheme";
+import type { Appearance, ThemeMode } from "@/features/ui/theme/useThemeMode";
 import { ResponsiveDivs } from "@/features/ui/components/responsive/ResponsiveDivs";
+import { themeFor, useThemeMode } from "@/features/ui/theme/useThemeMode";
 import { FeedbackFooterMobile } from "@/features/feedback/Feedback";
 import { useRouter } from "next/router";
 
@@ -89,8 +92,13 @@ const queryClient = new QueryClient({
 });
 
 export interface AppContextType {
+  /** The theme the deployment configured, light or dark left aside. */
   theme: string;
   setTheme: (theme: string) => void;
+  /** What the reader chose to see, and what it resolves to. */
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  appearance: Appearance;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -109,9 +117,12 @@ export default function MyApp({
   router,
 }: AppPropsWithLayout) {
   const [theme, setTheme] = useState<string>("anct-light");
+  const { mode: themeMode, setMode: setThemeMode, appearance } = useThemeMode();
 
   return (
-    <AppContext.Provider value={{ theme, setTheme }}>
+    <AppContext.Provider
+      value={{ theme, setTheme, themeMode, setThemeMode, appearance }}
+    >
       <MyAppInner Component={Component} pageProps={pageProps} router={router} />
     </AppContext.Provider>
   );
@@ -121,9 +132,15 @@ const MyAppInner = ({ Component, pageProps }: AppPropsWithLayout) => {
   // Use the layout defined at the page level, if available
   const getLayout = Component.getLayout ?? ((page) => page);
   const { t, i18n } = useTranslation();
-  const { theme } = useAppContext();
+  const { theme, appearance } = useAppContext();
   const router = useRouter();
   const themeTokens = useCunninghamTheme();
+  // The theme the deployment configured, drawn the way the reader asked.
+  const currentTheme = themeFor(theme, appearance);
+
+  useEffect(() => {
+    document.documentElement.dataset.appearance = appearance;
+  }, [appearance]);
 
   const isSdk = useMemo(
     () => router.pathname.startsWith("/sdk"),
@@ -143,7 +160,7 @@ const MyAppInner = ({ Component, pageProps }: AppPropsWithLayout) => {
       <QueryClientProvider client={queryClient}>
         <CunninghamProvider
           currentLocale={capitalizeRegion(i18n.language)}
-          theme={theme}
+          theme={currentTheme}
         >
           <ConfigProvider>
             <AnalyticsProvider>

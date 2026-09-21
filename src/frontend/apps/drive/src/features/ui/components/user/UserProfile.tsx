@@ -13,6 +13,9 @@ import { LANGUAGES } from "@/features/i18n/conf";
 import { AnonymousCTA } from "../anonymous-cta/AnonymousCTA";
 import { useTranslation } from "react-i18next";
 import { useClipboard } from "@/hooks/useCopyToClipboard";
+import { ThemePicker } from "@/features/ui/theme/ThemePicker";
+import { THEME_MODES } from "@/features/ui/theme/useThemeMode";
+import { useAppContext } from "@/pages/_app";
 
 export const UserProfile = () => {
   const { user } = useAuth();
@@ -23,7 +26,12 @@ export const UserProfile = () => {
           user={user}
           logout={logout}
           termOfServiceUrl="https://docs.numerique.gouv.fr/docs/8e298e03-c95f-44c7-be4a-ffb618af1854/"
-          actions={<LanguagePickerUserMenu />}
+          actions={
+            <>
+              <ThemePicker />
+              <LanguagePickerUserMenu />
+            </>
+          }
         />
       ) : (
         <>
@@ -39,6 +47,7 @@ const AnonymousDropdownMenu = () => {
   const { isOpen, setIsOpen } = useDropdownMenu();
   const { t, i18n } = useTranslation();
   const copyToClipboard = useClipboard();
+  const { themeMode, setThemeMode } = useAppContext();
 
   return (
     <DropdownMenu
@@ -60,6 +69,15 @@ const AnonymousDropdownMenu = () => {
             callback: () => {
               i18n.changeLanguage(language.value);
             },
+          })),
+        },
+        {
+          icon: <Icon name="contrast" size={IconSize.SMALL} />,
+          label: t("theme.title"),
+          children: THEME_MODES.map((mode) => ({
+            label: t(`theme.modes.${mode}`),
+            isChecked: mode === themeMode,
+            callback: () => setThemeMode(mode),
           })),
         },
       ]}
