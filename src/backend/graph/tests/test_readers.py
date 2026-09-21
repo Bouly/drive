@@ -103,8 +103,15 @@ def test_a_workbook_reads_the_words_of_its_cells():
     assert "Marché public" in text
 
 
-def pdf(text):
-    """A one-page PDF holding that line, written by hand rather than mocked."""
+def pdf(text, field=None):
+    """
+    A one-page PDF holding that line, written by hand rather than mocked.
+
+    ``field`` adds a filled form field, the way a fillable sheet carries its
+    text: in the field, not in the page.
+    """
+    form = b""
+    page_extra = b""
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -113,6 +120,20 @@ def pdf(text):
         None,
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
+    if field:
+        label, value = field
+        objects[0] = b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [6 0 R] >> >>"
+        objects[2] = (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Contents 4 0 R "
+            b"/Annots [6 0 R] /Resources << /Font << /F1 5 0 R >> >> >>"
+        )
+        objects.append(
+            b"<< /Type /Annot /Subtype /Widget /FT /Tx /T ("
+            + label.encode()
+            + b") /V ("
+            + value.encode()
+            + b") /Rect [20 20 200 40] >>"
+        )
     stream = f"BT /F1 12 Tf 20 100 Td ({text}) Tj ET".encode()
     objects[3] = (
         b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
@@ -138,6 +159,20 @@ def test_a_pdf_reads_its_text_layer():
     text = read_document(pdf("Le preavis depend de la convention"), "application/pdf")
 
     assert text == "Le preavis depend de la convention"
+
+
+def test_a_pdf_form_gives_what_was_written_in_its_fields():
+    """A fillable sheet carries its text in its fields, not in the page.
+
+    Measured on a real drive: a role-playing character sheet came back with
+    eight words out of eight hundred until the fields were read too.
+    """
+    document = pdf("Fiche de personnage", field=("Metier", "Ranger"))
+
+    text = read_document(document, "application/pdf")
+
+    assert "Fiche de personnage" in text
+    assert "Metier: Ranger" in text
 
 
 def test_a_pdf_without_a_text_layer_comes_back_empty():

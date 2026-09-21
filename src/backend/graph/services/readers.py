@@ -121,17 +121,45 @@ def read_office(stream, family):
 
 def read_pdf(stream):
     """
-    The text layer of a PDF, one block per page.
+    The text layer of a PDF, one block per page, and what its fields hold.
 
-    A scanned PDF has none: it comes back empty, and the caller sends it to be
-    looked at rather than read.
+    A form carries its text in its fields, not in the page: the character
+    sheets of a role-playing drive came back with eight words out of eight
+    hundred until they were read too.
+
+    A scanned PDF has neither: it comes back empty, and the caller sends it to
+    be looked at rather than read.
     """
     try:
         reader = PdfReader(stream)
         pages = [page.extract_text() or "" for page in reader.pages]
-    except (PyPdfError, ValueError, OSError) as exc:
+        blocks = [page for page in pages if page.strip()]
+        blocks.extend(filled_fields(reader))
+    except (PyPdfError, ValueError, OSError, RecursionError) as exc:
         raise UnsupportedDocument(f"unreadable PDF: {exc}") from exc
-    return "\n\n".join(page for page in pages if page.strip())
+    return "\n\n".join(blocks)
+
+
+def filled_fields(reader):
+    """What someone wrote in the fields of a form: "label: value", one per line."""
+    try:
+        fields = reader.get_fields() or {}
+    except (PyPdfError, ValueError, KeyError, AttributeError) as exc:
+        logger.info("Could not read the fields of a PDF: %s", exc)
+        return []
+
+    lines = []
+    for name, field in fields.items():
+        value = field.get("/V") if hasattr(field, "get") else None
+        if value is None:
+            continue
+        # A checkbox says /Off when nobody ticked it; a text field says "".
+        written = str(value).strip().lstrip("/")
+        if not written or written.lower() == "off":
+            continue
+        label = str(name).strip()
+        lines.append(f"{label}: {written}" if label else written)
+    return ["\n".join(lines)] if lines else []
 
 
 def read_document(stream, mimetype):
