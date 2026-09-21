@@ -2,6 +2,7 @@
 
 import shutil
 import subprocess
+import zipfile
 from io import BytesIO
 from pathlib import Path
 from unittest import mock
@@ -16,6 +17,7 @@ from graph.services import extraction
 from graph.services.albert import AlbertClient
 from graph.services.extraction import (
     ExtractionError,
+    ExtractionSkipped,
     Transcriber,
     extract_text,
     is_extractable,
@@ -81,26 +83,32 @@ def test_is_extractable_rejects_files_over_the_limit(settings):
 
 
 def test_extract_text_video_combines_metadata_and_speech():
-    """A video gives its Tika metadata then its transcribed speech, from a local copy."""
+    """A video gives what its container says, then its transcribed speech."""
     item = make_file("video/mp4", b"fake video bytes", filename="reunion.mp4")
-    tika = FakeTika("Réunion préavis\nCompte rendu\n")
-    transcriber = FakeTranscriber(" Bonjour à tous. ")
+    transcriber = FakeTranscriber(" Bonjour à tous, voici le compte rendu de la réunion. ")
 
-    text = extract_text(item, extractor=tika, transcriber=transcriber)
+    with mock.patch(
+        "graph.services.extraction.subprocess.run",
+        side_effect=ffprobe(tags="Réunion préavis\nCompte rendu\n"),
+    ):
+        text = extract_text(item, transcriber=transcriber)
 
-    assert text == "Réunion préavis\nCompte rendu\n\nBonjour à tous."
-    assert tika.received == b"fake video bytes"
+    assert text == (
+        "Réunion préavis\nCompte rendu\n\nBonjour à tous, voici le compte rendu de la réunion."
+    )
     assert transcriber.received == b"fake video bytes"
 
 
-def test_extract_text_video_keeps_the_speech_when_tika_fails():
-    """Metadata are a bonus: a Tika error does not lose the transcription."""
+def test_extract_text_video_keeps_the_speech_when_the_container_says_nothing():
+    """Metadata are a bonus: an ffprobe failure does not lose the transcription."""
     item = make_file("video/mp4")
-    tika = FakeTika(error=ExtractionError("Tika answered 500"))
+    speech = "Bonjour à tous, voici le compte rendu de la réunion de préavis."
 
-    text = extract_text(item, extractor=tika, transcriber=FakeTranscriber("Bonjour."))
+    # ffprobe missing from the image: the speech must still come through.
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=FileNotFoundError):
+        text = extract_text(item, transcriber=FakeTranscriber(speech))
 
-    assert text == "Bonjour."
+    assert text == speech
 
 
 def test_extract_text_video_transcription_errors_are_raised():
@@ -119,18 +127,12 @@ def test_a_silent_video_is_described_from_one_of_its_frames():
     client = mock.Mock()
     client.describe_image.return_value = "Un essaim d'abeilles sur un cadre de ruche."
 
-    def run(command, **kwargs):  # pylint: disable=unused-argument
-        if command[0] == "ffprobe":
-            return completed("12.0\n")
-        Path(command[-1]).write_bytes(b"jpeg bytes")
-        return completed()
+    with mock.patch(
+        "graph.services.extraction.subprocess.run", side_effect=ffprobe(tags="abeilles.mp4")
+    ):
+        text = extract_text(item, transcriber=FakeTranscriber("", client=client))
 
-    with mock.patch("graph.services.extraction.subprocess.run", side_effect=run):
-        text = extract_text(
-            item, extractor=FakeTika("abeilles"), transcriber=FakeTranscriber("", client=client)
-        )
-
-    assert text == "Un essaim d'abeilles sur un cadre de ruche.\n\nabeilles"
+    assert text == "Un essaim d'abeilles sur un cadre de ruche.\n\nabeilles.mp4"
     assert client.describe_image.call_args[0][0] == b"jpeg bytes"
 
 
@@ -154,20 +156,41 @@ def test_a_video_the_model_only_heard_credits_in_is_looked_at():
     client = mock.Mock()
     client.describe_image.return_value = "Un essaim d'abeilles."
 
-    def run(command, **kwargs):  # pylint: disable=unused-argument
-        if command[0] == "ffprobe":
-            return completed("8.0\n")
-        Path(command[-1]).write_bytes(b"jpeg bytes")
-        return completed()
-
-    with mock.patch("graph.services.extraction.subprocess.run", side_effect=run):
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=ffprobe()):
         text = extract_text(
-            item,
-            extractor=FakeTika(""),
-            transcriber=FakeTranscriber("Sous-titrage ST' 501", client=client),
+            item, transcriber=FakeTranscriber("Sous-titrage ST' 501", client=client)
         )
 
     assert text == "Un essaim d'abeilles.\n\nSous-titrage ST' 501"
+
+
+def test_a_document_is_read_here_rather_than_served(settings):
+    """With the switch on, an office file never reaches Tika."""
+    settings.GRAPH_READ_HERE = True
+    content = BytesIO()
+    with zipfile.ZipFile(content, "w") as archive:
+        archive.writestr(
+            "content.xml",
+            '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:'
+            'xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+            "<text:p>Le préavis dépend de la convention.</text:p>"
+            "</office:document-content>",
+        )
+    item = make_file(
+        "application/vnd.oasis.opendocument.text", content.getvalue(), filename="note.odt"
+    )
+
+    assert "Le préavis dépend de la convention." in extract_text(item)
+
+
+def test_a_format_nobody_reads_is_skipped_without_a_server(settings):
+    """No Tika, no reader: the file is left out rather than failing the task."""
+    settings.GRAPH_READ_HERE = True
+    settings.GRAPH_TIKA_URL = ""
+    item = make_file("application/msword", b"\xd0\xcf\x11\xe0", filename="vieux.doc")
+
+    with pytest.raises(ExtractionSkipped):
+        extract_text(item)
 
 
 def test_extract_text_document_streams_the_file_to_tika():
@@ -190,6 +213,26 @@ def test_extract_text_caps_long_texts(settings):
 def completed(stdout=""):
     """A successful subprocess result."""
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
+
+
+def ffprobe(tags="", duration="12.0", frame=True):
+    """
+    A stand-in for the two ffprobe calls a video goes through and for ffmpeg.
+
+    The tags are what an editor wrote in the container; the duration places
+    the frame that is looked at when nobody speaks.
+    """
+
+    def run(command, **kwargs):  # pylint: disable=unused-argument
+        if "format_tags" in command:
+            return completed(tags)
+        if command[0] == "ffprobe":
+            return completed(f"{duration}\n")
+        if frame:
+            Path(command[-1]).write_bytes(b"jpeg bytes")
+        return completed()
+
+    return run
 
 
 def test_transcriber_skips_files_without_audio():

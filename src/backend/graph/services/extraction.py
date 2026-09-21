@@ -26,6 +26,7 @@ import requests
 from core import models
 
 from graph.services.albert import AlbertClient, AlbertError
+from graph.services.readers import UnsupportedDocument, read_document
 
 logger = logging.getLogger(__name__)
 
@@ -204,14 +205,33 @@ def local_copy(item):
         yield copy.name
 
 
-def _media_metadata(path, item, extractor):
-    """Title, comment... found by Tika; a failure here must not lose the speech."""
+def _media_metadata(path, item):
+    """
+    Title, comment... written in the file's container, read with ffprobe.
+
+    ffprobe is already there for the audio track, and it answers the one thing
+    a document reader cannot: what the camera or the editor wrote in the file.
+    A failure here must not lose the speech.
+    """
     try:
-        with open(path, "rb") as content:
-            return extractor.extract(content, mimetype=item.mimetype, filename=item.filename)
+        output = _run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format_tags",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                path,
+            ]
+        )
     except ExtractionError as exc:
-        logger.warning("Tika could not read the metadata of item %s: %s", item.id, exc)
+        logger.warning("ffprobe could not read the metadata of item %s: %s", item.id, exc)
         return ""
+    # The same words are often written in several tags: keep the order, once.
+    seen = dict.fromkeys(line.strip() for line in output.splitlines() if line.strip())
+    return "\n".join(seen)
 
 
 def _seconds_in(path):
@@ -266,10 +286,10 @@ def describe_frame(path, item, client=None):
             return ""
 
 
-def _extract_media(path, item, extractor, transcriber):
-    """Metadata from Tika and speech from Albert, obtained side by side."""
+def _extract_media(path, item, transcriber):
+    """Metadata from the container and speech from Albert, obtained side by side."""
     with ThreadPoolExecutor(max_workers=2) as pool:
-        metadata = pool.submit(_media_metadata, path, item, extractor)
+        metadata = pool.submit(_media_metadata, path, item)
         speech = pool.submit(transcriber.transcribe, path)
         parts = [metadata.result().strip(), speech.result().strip()]
     if len(parts[1].split()) < SPEECH_WORDS and (item.mimetype or "").startswith("video/"):
@@ -305,12 +325,43 @@ def extract_text(item, extractor=None, transcriber=None):
             content = source.read(settings.GRAPH_MAX_TEXT_CHARS * 4)
         return _cap(content.decode("utf-8", errors="replace"), item)
 
-    extractor = extractor or TikaExtractor()
     with local_copy(item) as path:
         if is_media(mimetype):
-            text = _extract_media(path, item, extractor, transcriber or Transcriber())
+            text = _extract_media(path, item, transcriber or Transcriber())
         else:
-            with open(path, "rb") as content:
-                text = extractor.extract(content, mimetype=mimetype, filename=item.filename)
+            text = _extract_document(path, item, extractor)
     logger.info("Extracted %d characters from item %s (%s)", len(text), item.id, mimetype)
     return _cap(text, item)
+
+
+def _extract_document(path, item, extractor=None):
+    """
+    The text of a document: read here when the format is one we read.
+
+    Office files and PDFs are opened in this process. What is left ‒ images to
+    run OCR on, the binary formats of twenty years ago ‒ goes to Tika when a
+    server is configured, and is skipped when there is none.
+    """
+    mimetype = item.mimetype or ""
+    if extractor is None and settings.GRAPH_READ_HERE:
+        try:
+            with open(path, "rb") as content:
+                return read_document(content, mimetype)
+        except UnsupportedDocument as exc:
+            logger.info("Item %s is not read here (%s)", item.id, exc)
+
+    extractor = extractor or tika_extractor()
+    if extractor is None:
+        raise ExtractionSkipped(f"no reader for {mimetype or 'an unknown type'}")
+    with open(path, "rb") as content:
+        return extractor.extract(content, mimetype=mimetype, filename=item.filename)
+
+
+def tika_extractor():
+    """
+    The Tika client, or None when no server is configured.
+
+    Tika is on its way out: it stays for the formats not read here yet, and a
+    deployment that sets no URL simply does without them.
+    """
+    return TikaExtractor() if settings.GRAPH_TIKA_URL else None

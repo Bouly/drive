@@ -158,6 +158,12 @@ class Base(Configuration):
         environ_name="GRAPH_ALLOWED_MIMETYPES",
         environ_prefix=None,
     )
+    # Read office files and PDFs in this process rather than through Tika.
+    # A transition switch: it is turned on once the two have been compared on
+    # a real drive, and it goes away with the Tika server it replaces.
+    GRAPH_READ_HERE = values.BooleanValue(
+        False, environ_name="GRAPH_READ_HERE", environ_prefix=None
+    )
     GRAPH_TIKA_URL = values.Value(
         "http://tika:9998", environ_name="GRAPH_TIKA_URL", environ_prefix=None
     )

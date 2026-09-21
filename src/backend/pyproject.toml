@@ -58,6 +58,9 @@ dependencies = [
     "psycopg[binary]==3.3.3",
     "pydantic==2.13.2",
     "PyJWT==2.13.0",
+    # Reads the text layer of a PDF, in this process: pure Python, no
+    # transitive dependency, and no server to keep alive next to the app.
+    "pypdf==6.19.0",
     "python-magic==0.4.27",
     "redis<6.0.0",
     "requests==2.33.1",
