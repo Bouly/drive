@@ -1,0 +1,185 @@
+/*
+ * Habillage de la page de connexion de la démo Drive.
+ *
+ * Keycloak sert son gabarit PatternFly ; on ne touche qu'à l'apparence, pour
+ * que la page ressemble à l'application qui l'appelle : la Marianne, les
+ * champs de la DSFR (fond gris, trait épais sous la ligne de saisie) et le
+ * bleu du thème dsfr-light de Cunningham.
+ */
+
+@font-face {
+  font-family: Marianne;
+  src: url("../fonts/Marianne-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: Marianne;
+  src: url("../fonts/Marianne-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: Marianne;
+  src: url("../fonts/Marianne-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --drive-blue: #4c6cef;
+  --drive-blue-dark: #304ddf;
+  --drive-ink: #161616;
+  --drive-ink-soft: #3a3a3a;
+  --drive-page: #f6f6f6;
+  --drive-field: #eeeeee;
+  --drive-line: #e5e5e5;
+  --drive-focus: #0a76f6;
+}
+
+body#keycloak-bg,
+.login-pf-page,
+.pf-v5-c-login {
+  /* Le thème d'origine peint un fond sombre à facettes. */
+  background: var(--drive-page) none;
+  color: var(--drive-ink);
+  font-family: Marianne, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.pf-v5-c-login__container {
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  grid-gap: 1.75rem;
+}
+
+/* --- L'en-tête : le nom du client cède la place au logo de l'application --- */
+#kc-header-wrapper {
+  font-size: 0;
+  line-height: 0;
+  padding: 0;
+  text-align: center;
+}
+
+#kc-header-wrapper::before {
+  content: "";
+  display: inline-block;
+  width: 9.5rem;
+  height: 3rem;
+  background: url("../img/fichiers.svg") center / contain no-repeat;
+}
+
+/* --- La carte --- */
+.pf-v5-c-login__main {
+  background: #ffffff;
+  border: 1px solid var(--drive-line);
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(22, 22, 22, 0.04);
+  overflow: hidden;
+}
+
+.pf-v5-c-login__main-header,
+.pf-v5-c-login__main-body {
+  padding-inline: 2rem;
+}
+.pf-v5-c-login__main-header {
+  padding-top: 2rem;
+  padding-bottom: 0.25rem;
+}
+.pf-v5-c-login__main-body {
+  padding-bottom: 2rem;
+}
+
+#kc-page-title {
+  font-family: inherit;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--drive-ink);
+  letter-spacing: -0.01em;
+}
+
+/* --- Les champs, à la DSFR : fond gris et trait sous la ligne de saisie --- */
+.pf-v5-c-form__label-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--drive-ink-soft);
+}
+
+.pf-v5-c-form-control {
+  background: var(--drive-field);
+  border: 0;
+  border-radius: 0.25rem 0.25rem 0 0;
+  box-shadow: inset 0 -2px 0 0 var(--drive-ink-soft);
+}
+
+.pf-v5-c-form-control::before,
+.pf-v5-c-form-control::after {
+  border: 0;
+}
+
+.pf-v5-c-form-control > input {
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--drive-ink);
+  padding: 0.6rem 0.75rem;
+}
+
+.pf-v5-c-form-control:focus-within {
+  outline: 2px solid var(--drive-focus);
+  outline-offset: 2px;
+  box-shadow: inset 0 -2px 0 0 var(--drive-blue);
+}
+
+/* Le bouton qui dévoile le mot de passe, aligné sur le champ. */
+.pf-v5-c-input-group__item .pf-v5-c-button.pf-m-control {
+  background: var(--drive-field);
+  border: 0;
+  border-radius: 0 0.25rem 0 0;
+  box-shadow: inset 0 -2px 0 0 var(--drive-ink-soft);
+  color: var(--drive-ink-soft);
+}
+
+/* --- Le bouton principal --- */
+.pf-v5-c-button.pf-m-primary {
+  background: var(--drive-blue);
+  border-radius: 0.25rem;
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 500;
+  padding-block: 0.6rem;
+}
+.pf-v5-c-button.pf-m-primary:hover,
+.pf-v5-c-button.pf-m-primary:focus {
+  background: var(--drive-blue-dark);
+}
+
+/* --- Liens, aide et pied de carte --- */
+.pf-v5-c-login__main a,
+.pf-v5-c-helper-text__item-text a {
+  color: var(--drive-blue);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.pf-v5-c-login__main a:hover {
+  color: var(--drive-blue-dark);
+}
+
+.pf-v5-c-check__label,
+.pf-v5-c-helper-text__item-text {
+  font-size: 0.875rem;
+  color: var(--drive-ink-soft);
+}
+
+.pf-v5-c-login__main-footer-band {
+  background: #fafafa;
+  border-top: 1px solid var(--drive-line);
+  padding: 1rem 2rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+/* Messages d'erreur : le rouge de la DSFR plutôt que celui de PatternFly. */
+.pf-v5-c-alert.pf-m-danger,
+.pf-v5-c-helper-text__item.pf-m-error .pf-v5-c-helper-text__item-text {
+  color: #ce0500;
+}

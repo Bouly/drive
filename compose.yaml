@@ -238,6 +238,9 @@ services:
     image: quay.io/keycloak/keycloak:26.3.2
     volumes:
       - ./docker/auth/realm.json:/opt/keycloak/data/import/realm.json
+      # Le royaume demande le thème « drive » : sans ce montage, Keycloak
+      # retomberait sur le sien en journalisant une erreur.
+      - ./deploy/keycloak-theme:/opt/keycloak/themes
     command:
       - start-dev
       - --features=preview

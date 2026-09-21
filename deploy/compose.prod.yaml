@@ -162,6 +162,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+      # Habillage de la page de connexion : sans lui, Keycloak sert son thème
+      # d'origine, qui n'a rien à voir avec l'application qui l'appelle.
+      - ./keycloak-theme:/opt/keycloak/themes:ro
     command:
       - start-dev
       - --import-realm
