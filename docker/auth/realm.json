@@ -1688,8 +1688,7 @@
     },
     "internationalizationEnabled": true,
     "supportedLocales": [
-      "fr",
-      "en"
+      "fr"
     ],
     "defaultLocale": "fr",
     "loginTheme": "drive",

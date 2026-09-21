@@ -83,6 +83,8 @@ body#keycloak-bg,
   padding-inline: 2rem;
 }
 .pf-v5-c-login__main-header {
+  /* PatternFly coiffe l'en-tête d'un liseré bleu qui n'est pas le nôtre. */
+  border-top: 0;
   padding-top: 2rem;
   padding-bottom: 0.25rem;
 }
@@ -168,6 +170,12 @@ body#keycloak-bg,
 .pf-v5-c-helper-text__item-text {
   font-size: 0.875rem;
   color: var(--drive-ink-soft);
+}
+
+.pf-v5-c-check__input {
+  accent-color: var(--drive-blue);
+  width: 1rem;
+  height: 1rem;
 }
 
 .pf-v5-c-login__main-footer-band {
