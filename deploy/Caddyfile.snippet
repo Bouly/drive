@@ -1,19 +1,21 @@
 # --- Drive (DINUM x 42) : bloc a coller dans /srv/caddy/conf/Caddyfile ---
-# Remplacer BASE par la valeur de deploy/.env (ex. 37-187-129-149.sslip.io).
+# Les quatre noms sont ceux de deploy/.env. Chacun doit avoir un
+# enregistrement A vers ce serveur avant que Caddy puisse obtenir son
+# certificat : un seul joker (*) suffit, les quatre sont au meme niveau.
 drive.BASE {
 	encode zstd gzip
 	reverse_proxy drive-prod-nginx:80
 }
 
-auth.drive.BASE {
+auth.BASE {
 	reverse_proxy drive-prod-keycloak:8080
 }
 
-office.drive.BASE {
+office.BASE {
 	reverse_proxy drive-prod-onlyoffice:80
 }
 
-s3.drive.BASE {
+s3.BASE {
 	request_body {
 		max_size 5GB
 	}

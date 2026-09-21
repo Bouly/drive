@@ -12,8 +12,9 @@ fi
 
 COMPOSE=(docker compose -f compose.prod.yaml)
 
-# Refresh generated config (idempotent: secrets are only created once).
-./setup.sh "$(sed -n 's/^DRIVE_DOMAIN=drive\.//p' .env)"
+# Refresh generated config (idempotent: secrets are only created once, and the
+# domains are read from .env, which is where they are changed).
+./setup.sh
 
 # The build fetches base images: retry a few times so a DNS or registry hiccup
 # on the server does not fail the whole deploy.

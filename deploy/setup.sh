@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
 # One-time server setup: generates deploy/.env, deploy/env/*.env and the
-# Keycloak realm with fresh secrets. Safe to re-run: existing files are kept.
-# Usage: deploy/setup.sh <public-ip-or-base-domain>
+# Keycloak realm with fresh secrets. Safe to re-run: existing files are kept,
+# and the domains are read back from .env rather than guessed again ‒ they
+# are changed by editing that file, which is the only place they live.
+# Usage: deploy/setup.sh [public-ip-or-base-domain]
 #   deploy/setup.sh 37.187.129.149      -> *.37-187-129-149.sslip.io
+#   deploy/setup.sh                     -> reuse the existing deploy/.env
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-BASE="${1:?usage: setup.sh <public-ip-or-base-domain>}"
-if [[ "$BASE" =~ ^[0-9.]+$ ]]; then
-  BASE="${BASE//./-}.sslip.io"
-fi
-
-DRIVE_DOMAIN="drive.${BASE}"
-AUTH_DOMAIN="auth.drive.${BASE}"
-S3_DOMAIN="s3.drive.${BASE}"
-
 secret() { openssl rand -hex "${1:-32}"; }
-
-OFFICE_DOMAIN="office.drive.${BASE}"
 
 if [[ -f .env ]]; then
   echo "deploy/.env already exists, keeping existing secrets."
+  # shellcheck disable=SC1091
+  . ./.env
 else
+  BASE="${1:?usage: setup.sh <public-ip-or-base-domain>}"
+  if [[ "$BASE" =~ ^[0-9.]+$ ]]; then
+    BASE="${BASE//./-}.sslip.io"
+  fi
+
+  # Four names at the same level, so one wildcard record covers them all.
+  DRIVE_DOMAIN="drive.${BASE}"
+  AUTH_DOMAIN="auth.${BASE}"
+  S3_DOMAIN="s3.${BASE}"
+  OFFICE_DOMAIN="office.${BASE}"
 
 mkdir -p env
 DB_PASSWORD="$(secret 24)"
