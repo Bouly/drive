@@ -162,7 +162,7 @@ footer{border-top:1px solid var(--g100);margin-top:80px;padding-top:26px;font-si
  <div class="meta">
   Rédigé le 16 septembre 2026 en relisant le code, commit <code>7d512c83</code>.<br><br>
   <a href="https://github.com/Bouly/drive">github.com/Bouly/drive</a><br>
-  <a href="https://drive.37-187-129-149.sslip.io/">La démo en production</a>
+  <a href="https://drive.ahb-demo.fr/">La démo en production</a>
  </div>
 </nav>
 <main>
@@ -572,11 +572,13 @@ ports en local. Celle de démonstration et de production (<code>deploy/compose.p
 extérieur à la pile qui termine le TLS.</p>
 
 <h3>Les quatre domaines</h3>
-<p>Ils sont dérivés de l'IP publique par <code>sslip.io</code>, donc aucune zone DNS à configurer&nbsp;:
-<code>drive.&lt;ip-tirets&gt;.sslip.io</code> pour l'application, <code>auth.drive.…</code> pour Keycloak,
-<code>office.drive.…</code> pour OnlyOffice, <code>s3.drive.…</code> pour MinIO. Le navigateur dépose les
-fichiers <em>directement</em> sur <code>s3.drive.…</code> par URL présignée&nbsp;: un téléversement ne
-traverse jamais nginx.</p>
+<p>Ils vivent dans <code>deploy/.env</code>, qui est le seul endroit où on les change&nbsp;:
+<code>drive.ahb-demo.fr</code> pour l'application, <code>auth.</code> pour Keycloak,
+<code>office.</code> pour OnlyOffice, <code>s3.</code> pour MinIO. Les quatre sont au même niveau, donc
+un seul enregistrement DNS joker les couvre. Sans nom de domaine, passer une IP à
+<code>deploy/setup.sh</code> les dérive par <code>sslip.io</code> et il n'y a aucune zone à configurer.
+Le navigateur dépose les fichiers <em>directement</em> sur <code>s3.</code> par URL présignée&nbsp;: un
+téléversement ne traverse jamais nginx.</p>
 
 <h3>Pourquoi deux proxys</h3>
 <p>Caddy ne fait que du <code>reverse_proxy</code> par nom de conteneur. nginx reste nécessaire pour le
