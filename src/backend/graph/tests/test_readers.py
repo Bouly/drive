@@ -239,4 +239,4 @@ def test_the_pages_of_a_pdf_can_be_drawn_to_be_read():
 
 def test_drawing_something_that_is_not_a_pdf_gives_nothing():
     """A mislabelled file is reported as unreadable, not crashed on."""
-    assert drawn_pages(BytesIO(b"pas un pdf")) == []
+    assert not drawn_pages(BytesIO(b"pas un pdf"))

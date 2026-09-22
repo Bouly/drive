@@ -11,7 +11,7 @@ sujets choisis par l’utilisateur et interface. La branche historique
 flowchart LR
     A[Upload dans MinIO] --> B[Validation du fichier]
     B --> C[Tâche Celery index_item]
-    C --> D[Extraction Tika / OCR / audio / vision]
+    C --> D[Extraction : lecteurs natifs / OCR / audio / vision]
     D --> E[Passages de texte]
     E --> F[Embeddings Albert]
     F --> G[PostgreSQL + pgvector]

@@ -228,12 +228,13 @@ ajouté une seule chose fonctionnelle, mais elle traverse toute la pile.</p>
 colle entre elles.</p>
 
 <figure>
- <img src="img/02-les-pieces.png" alt="Tika et ffmpeg lisent, Albert comprend, Postgres et pgvector retiennent" loading="lazy">
+ <img src="img/02-les-pieces.png" alt="Les lecteurs natifs et ffmpeg lisent, Albert comprend, Postgres et pgvector retiennent" loading="lazy">
 </figure>
 
 <table>
 <tr><th>Brique</th><th>Version</th><th>Ce qu'elle fait pour le graphe</th></tr>
-<tr><td>Apache Tika</td><td><code>3.3.1.0-full</code></td><td>Extrait le texte de tous les formats bureautiques et fait l'OCR (la variante <em>full</em> embarque tesseract).</td></tr>
+<tr><td>Lecteurs natifs</td><td><code>pypdf</code>, <code>pypdfium2</code>, <code>zipfile</code></td><td>Lisent les documents dans le processus : un .docx ou un .odt est un zip de XML, un PDF se lit avec pypdf et se dessine avec PDFium quand c'est un scan.</td></tr>
+<tr><td>Tesseract</td><td><code>5.5</code></td><td>L'OCR des images et des pages photographiées, appelé comme ffmpeg l'est. C'est le moteur qu'Apache Tika enveloppait : il a remplacé ce serveur de 1,25 Go, qui occupait 1,5 Gio de mémoire en permanence.</td></tr>
 <tr><td>ffmpeg / ffprobe</td><td>image backend</td><td>Vérifie qu'une vidéo a du son, puis en sort la piste audio découpée en segments.</td></tr>
 <tr><td>Albert (DINUM)</td><td>API publique</td><td>Vecteurs <code>bge-m3</code>, description d'images, transcription <code>Whisper large v3</code>.</td></tr>
 <tr><td>Postgres + pgvector</td><td><code>0.8.6-pg16-trixie</code></td><td>Stocke passages, vecteurs, liens et sujets&nbsp;; index HNSW cosinus.</td></tr>
@@ -270,7 +271,7 @@ décrit l'état du projet d'il y a une vingtaine de commits.</p>
 
 <h3 id="six">Les six étapes</h3>
 <ol class="b">
- <li><strong>Extraire</strong> — le fichier devient du texte brut. Tika pour les documents, OCR pour
+ <li><strong>Extraire</strong> — le fichier devient du texte brut. Les lecteurs natifs pour les documents, l'OCR pour
  les images, transcription pour les vidéos, description par un modèle de vision pour les photos
  muettes. À défaut, le nom du fichier.</li>
  <li><strong>Découper</strong> — le texte est normalisé puis coupé par paragraphes en passages de
@@ -295,13 +296,16 @@ décrit l'état du projet d'il y a une vingtaine de commits.</p>
 <h4>Un document</h4>
 <p>Un fichier <code>text/*</code> est lu directement depuis MinIO, au plus
 <code>GRAPH_MAX_TEXT_CHARS × 4</code> octets — un caractère UTF-8 tient en quatre octets au maximum.
-Tout le reste est d'abord recopié par blocs de 8&nbsp;Mio dans un fichier temporaire, puis envoyé en
-<code>PUT</code> au serveur Tika. La copie sur disque n'est pas un caprice&nbsp;: une vidéo peut peser
-plusieurs gigaoctets, et ffmpeg a besoin d'un chemin, pas d'un flux.</p>
+Tout le reste est d'abord recopié par blocs de 8&nbsp;Mio dans un fichier temporaire, puis ouvert
+sur place : un .docx et un .odt sont des zip de XML que la bibliothèque standard sait lire, un PDF se
+lit avec <code>pypdf</code>. La copie sur disque n'est pas un caprice&nbsp;: une vidéo peut peser
+plusieurs gigaoctets, et ffmpeg comme tesseract ont besoin d'un chemin, pas d'un flux.</p>
 
 <h4>Une image ou un scan</h4>
-<p>L'OCR est délégué à Tika par un simple en-tête, <code>X-Tika-OCRLanguage: fra+eng</code>. Si rien
-n'en sort, Albert <em>regarde</em> l'image et écrit une phrase plus six mots-clés, à
+<p>L'OCR est fait par <code>tesseract</code> en <code>fra+eng</code>, appelé comme ffmpeg l'est. Un
+PDF dont la couche texte tient moins de dix mots par page est une page photographiée&nbsp;: PDFium la
+dessine et tesseract lit le dessin, et ce qu'il y trouve s'ajoute au texte au lieu de le remplacer.
+Si rien n'en sort, Albert <em>regarde</em> l'image et écrit une phrase plus six mots-clés, à
 <code>temperature&nbsp;=&nbsp;0</code> pour que la même image revienne toujours avec les mêmes mots.
 Le nom du fichier, la phrase et les mots-clés forment <strong>un seul</strong> passage.</p>
 
@@ -318,8 +322,8 @@ Le nom du fichier, la phrase et les mots-clés forment <strong>un seul</strong> 
 <p><code>ffprobe</code> vérifie d'abord qu'il existe un flux audio&nbsp;: une vidéo muette ne coûte
 alors aucun appel à Albert. Sinon <code>ffmpeg</code> découpe la piste en segments mp3 de dix minutes
 (mono, 16&nbsp;kHz, 32&nbsp;kbit/s — environ 2,4&nbsp;Mo par segment), transcrits quatre par quatre en
-parallèle. Tika tourne en même temps, mais seulement pour les métadonnées&nbsp;: sur une vidéo, il ne
-trouve qu'un titre. Un échec de Tika est avalé, un échec de transcription est fatal — sans la parole,
+parallèle. <code>ffprobe</code> lit en même temps ce que le conteneur déclare — un titre, un
+commentaire. Un échec de ce côté est avalé, un échec de transcription est fatal — sans la parole,
 il n'y a rien à indexer.</p>
 
 <h3 id="decl">Le déclenchement</h3>
@@ -340,7 +344,7 @@ sujets.</p>
  <div class="k">Quatre points de déclenchement, dont deux non protégés</div>
  <p><code>GRAPH_INDEX_ON_UPLOAD=False</code> ne coupe que la voie de l'upload. Renommer un fichier et
  le restaurer de la corbeille appellent <code>index_item.delay()</code> sans condition&nbsp;: en test,
- ces deux chemins appellent vraiment Tika et Albert.</p>
+ ces deux chemins appellent vraiment Albert.</p>
 </div>
 
 <p>Côté corbeille, un unique receveur <code>post_save</code> sur <code>Item</code> réagit aux
@@ -544,14 +548,13 @@ liens.</p>
 <tr><td><code>GRAPH_MAX_FILE_SIZE</code></td><td>2 Gio</td><td>Au-delà, le fichier n'est pas analysé du tout.</td></tr>
 <tr><td><code>GRAPH_TOPIC_MIN_SIMILARITY</code></td><td>0,52</td><td>Le seul seuil du serveur.</td></tr>
 <tr><td><code>GRAPH_VISION_MAX_FILE_SIZE</code></td><td>6 Mio</td><td>Au-delà, l'image n'est pas décrite&nbsp;: elle voyagerait dans la requête.</td></tr>
-<tr><td><code>GRAPH_TIKA_TIMEOUT</code></td><td>120 s</td><td>Attente d'une réponse de Tika.</td></tr>
 <tr><td><code>GRAPH_TRANSCRIPTION_SEGMENT_SECONDS</code></td><td>600 s</td><td>Durée d'un segment audio, transcrit sous un délai de 300 s.</td></tr>
 <tr><td><code>GRAPH_TRANSCRIPTION_WORKERS</code></td><td>4</td><td>Segments transcrits en parallèle.</td></tr>
 <tr><td><code>GRAPH_FFMPEG_TIMEOUT</code></td><td>1 800 s</td><td>Attente de ffmpeg et ffprobe.</td></tr>
 <tr><td><code>EVIDENCE_LINKS</code></td><td>3</td><td>Liens les plus proches qui citent un passage (tronqué à 300 caractères).</td></tr>
 <tr><td><code>MAX_NODES</code></td><td>1 000</td><td>Fichiers renvoyés au maximum. Les liens, eux, ne sont pas plafonnés.</td></tr>
 <tr><td><code>PENDING_GRACE</code></td><td>15 min</td><td>Au-delà, la page arrête de sonder un fichier jamais analysé.</td></tr>
-<tr><td><code>max_retries</code> (<code>index_item</code>)</td><td>5</td><td>Rejeux après l'essai initial, sur <code>AlbertError</code> seulement&nbsp;: soit 6 exécutions au maximum. Un fichier corrompu refusé par Tika ne deviendra pas lisible en le rejouant.</td></tr>
+<tr><td><code>max_retries</code> (<code>index_item</code>)</td><td>5</td><td>Rejeux après l'essai initial, sur <code>AlbertError</code> seulement&nbsp;: soit 6 exécutions au maximum. Un fichier corrompu refusé par le lecteur ne deviendra pas lisible en le rejouant.</td></tr>
 </table>
 <table>
 <tr><th>Constante de la page</th><th>Valeur</th><th>Ce que ça décide</th></tr>
@@ -652,8 +655,6 @@ docker compose exec app-dev python manage.py graph_relink
 
 # amorcer un drive de démonstration depuis le corpus public d'Albert
 docker compose exec app-dev python manage.py graph_seed_albert</code></pre>
-<p>Tika n'est pas démarré par défaut en développement&nbsp;: il est derrière le profil compose
-<code>graph</code>. En production, il tourne en permanence.</p>
 <p>Dans un shell Django&nbsp;:</p>
 <pre><code>from core.models import Item
 from graph.services import storage
@@ -689,8 +690,8 @@ lendemain&nbsp;; le reste de la page reste vrai.</p>
  <li><strong>La banque de démonstration</strong> (<code>graph_seed_albert</code>) écrit trente
  documents de Légifrance et des fiches travail-emploi en trois formats — texte, tableur, page
  scannée — répartis sur trois dossiers aux droits différents, plusieurs auteurs et dix-huit mois de
- dates. Chaque fichier est ensuite lu par le pipeline ordinaire&nbsp;: le scan passe par l'OCR de
- Tika comme n'importe quel dépôt. Elle se lance depuis l'onglet Actions de GitHub
+ dates. Chaque fichier est ensuite lu par le pipeline ordinaire&nbsp;: le scan passe par l'OCR
+ comme n'importe quel dépôt. Elle se lance depuis l'onglet Actions de GitHub
  (<em>Seed demo bank</em>), le serveur n'étant accessible qu'à la clé de déploiement.</li>
  <li><strong>Une collection Albert se lit page par page.</strong> L'API rend une page à la fois quoi
  que dise <code>limit</code>&nbsp;; <code>mediatech-legifrance</code> n'expose en tout que six

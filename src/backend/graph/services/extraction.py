@@ -1,11 +1,15 @@
 """
 Extract the text of an item's file (step 1 of the pipeline).
 
-Plain text files are read directly; everything else (docx, odt, pdf, pptx,
-xlsx, images with OCR, videos, audio...) goes through an Apache Tika server,
-which returns the text of any format it knows. For videos and audio Tika only
-finds the metadata (title, comment): the speech is transcribed by Albert from
-the audio track, cut into segments by ffmpeg and sent side by side.
+Plain text files are read directly; office files and PDFs by ``readers``, in
+this process; pictures and photographed pages by tesseract, called the way
+ffmpeg is. For videos and audio, ffprobe reads what the container says (title,
+comment) and Albert transcribes the speech from the audio track, cut into
+segments by ffmpeg and sent side by side.
+
+This went through an Apache Tika server until the two were compared on a real
+drive: of its 472 documents, 427 came out word for word and 24 more above four
+fifths, and what Tika had over us on the rest was its own metadata.
 
 A file is copied block by block to a temporary file rather than loaded in
 memory: a video can weigh gigabytes.
@@ -20,8 +24,6 @@ from pathlib import Path
 
 from django.conf import settings
 from django.core.files.storage import default_storage
-
-import requests
 
 from core import models
 
@@ -69,38 +71,6 @@ def is_extractable(item):
 def is_media(mimetype):
     """Videos and audio: their text is mostly speech."""
     return (mimetype or "").startswith(MEDIA_PREFIXES)
-
-
-class TikaExtractor:
-    """Text extraction through the Apache Tika REST server."""
-
-    def __init__(self, url=None, timeout=None):
-        self.url = (url or settings.GRAPH_TIKA_URL).rstrip("/")
-        self.timeout = timeout or settings.GRAPH_TIKA_TIMEOUT
-
-    def extract(self, content, mimetype=None, filename=None):
-        """Send raw bytes or an open binary file (streamed) to Tika, return the text."""
-        headers = {"Accept": "text/plain; charset=UTF-8"}
-        if mimetype:
-            headers["Content-Type"] = mimetype
-        if filename:
-            headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-        # OCR applies to images and scanned PDFs: French first, English as backup.
-        headers["X-Tika-OCRLanguage"] = settings.GRAPH_OCR_LANGUAGES
-        headers["X-Tika-PDFextractInlineImages"] = "false"
-
-        try:
-            response = requests.put(
-                f"{self.url}/tika", data=content, headers=headers, timeout=self.timeout
-            )
-        except requests.RequestException as exc:
-            raise ExtractionError(f"Tika is unreachable: {exc}") from exc
-        if response.status_code == 422:
-            raise ExtractionError("Tika cannot parse this file (encrypted or corrupted)")
-        if not response.ok:
-            raise ExtractionError(f"Tika answered {response.status_code}")
-        response.encoding = "utf-8"
-        return response.text
 
 
 def _run(command):
@@ -348,7 +318,7 @@ def _cap(text, item):
     return text[:limit]
 
 
-def extract_text(item, extractor=None, transcriber=None):
+def extract_text(item, transcriber=None):
     """
     Return the text of an item's file.
 
@@ -369,53 +339,37 @@ def extract_text(item, extractor=None, transcriber=None):
         if is_media(mimetype):
             text = _extract_media(path, item, transcriber or Transcriber())
         else:
-            text = _extract_document(path, item, extractor)
+            text = _extract_document(path, item)
     logger.info("Extracted %d characters from item %s (%s)", len(text), item.id, mimetype)
     return _cap(text, item)
 
 
-def _extract_document(path, item, extractor=None):
+def _extract_document(path, item):
     """
-    The text of a document: read here when the format is one we read.
+    The text of a document, read in this process.
 
-    Office files and PDFs are opened in this process. What is left ‒ images to
-    run OCR on, the binary formats of twenty years ago ‒ goes to Tika when a
-    server is configured, and is skipped when there is none.
+    A picture is read by tesseract, an office file and a PDF by their own
+    reader. A format nobody here reads is skipped rather than failed: the file
+    stays in the drive, out of the graph.
     """
     mimetype = item.mimetype or ""
-    if extractor is None and settings.GRAPH_READ_HERE:
-        if mimetype.startswith("image/"):
-            return read_picture(path)
-        try:
-            with open(path, "rb") as content:
-                text = read_document(content, mimetype)
-            if mimetype == "application/pdf":
-                with open(path, "rb") as content:
-                    pages = page_count(content)
-                # A page photographed carries no text layer: what little comes
-                # out is a header or a stamp, and the document is on the image.
-                # What is read off the pictures is added to it, never instead
-                # of it ‒ a scan of sixty-eight pages holds its page numbers
-                # as text and everything else as photographs.
-                if looks_scanned(text, pages):
-                    scanned = _read_scan(path, item)
-                    text = "\n\n".join(part for part in (text, scanned) if part.strip())
-            return text
-        except UnsupportedDocument as exc:
-            logger.info("Item %s is not read here (%s)", item.id, exc)
+    if mimetype.startswith("image/"):
+        return read_picture(path)
+    try:
+        with open(path, "rb") as content:
+            text = read_document(content, mimetype)
+    except UnsupportedDocument as exc:
+        raise ExtractionSkipped(f"Item {item.id} is not read here ({exc})") from exc
 
-    extractor = extractor or tika_extractor()
-    if extractor is None:
-        raise ExtractionSkipped(f"no reader for {mimetype or 'an unknown type'}")
-    with open(path, "rb") as content:
-        return extractor.extract(content, mimetype=mimetype, filename=item.filename)
-
-
-def tika_extractor():
-    """
-    The Tika client, or None when no server is configured.
-
-    Tika is on its way out: it stays for the formats not read here yet, and a
-    deployment that sets no URL simply does without them.
-    """
-    return TikaExtractor() if settings.GRAPH_TIKA_URL else None
+    if mimetype == "application/pdf":
+        with open(path, "rb") as content:
+            pages = page_count(content)
+        # A page photographed carries no text layer: what little comes out is
+        # a header or a stamp, and the document is on the image. What is read
+        # off the pictures is added to it, never instead of it ‒ a scan of
+        # sixty-eight pages holds its page numbers as text and everything else
+        # as photographs.
+        if looks_scanned(text, pages):
+            scanned = _read_scan(path, item)
+            text = "\n\n".join(part for part in (text, scanned) if part.strip())
+    return text

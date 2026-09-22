@@ -145,30 +145,14 @@ class Base(Configuration):
             "application/pdf",
             "application/vnd.openxmlformats-officedocument.",
             "application/vnd.oasis.opendocument.",
-            "application/msword",
-            "application/vnd.ms-excel",
-            "application/vnd.ms-powerpoint",
-            "application/rtf",
             "application/json",
             "image/",
-            # Tika reads the metadata, Albert transcribes the speech.
+            # ffprobe reads the metadata, Albert transcribes the speech.
             "video/",
             "audio/",
         ],
         environ_name="GRAPH_ALLOWED_MIMETYPES",
         environ_prefix=None,
-    )
-    # Read office files and PDFs in this process rather than through Tika.
-    # A transition switch: it is turned on once the two have been compared on
-    # a real drive, and it goes away with the Tika server it replaces.
-    GRAPH_READ_HERE = values.BooleanValue(
-        False, environ_name="GRAPH_READ_HERE", environ_prefix=None
-    )
-    GRAPH_TIKA_URL = values.Value(
-        "http://tika:9998", environ_name="GRAPH_TIKA_URL", environ_prefix=None
-    )
-    GRAPH_TIKA_TIMEOUT = values.IntegerValue(
-        120, environ_name="GRAPH_TIKA_TIMEOUT", environ_prefix=None
     )
     GRAPH_OCR_LANGUAGES = values.Value(
         "fra+eng", environ_name="GRAPH_OCR_LANGUAGES", environ_prefix=None
@@ -1865,7 +1849,7 @@ class Test(Base):
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
 
-    # Eager tasks would call Tika and Albert from every upload test.
+    # Eager tasks would call Albert from every upload test.
     GRAPH_INDEX_ON_UPLOAD = False
 
     FEATURES_INDEXED_SEARCH = True

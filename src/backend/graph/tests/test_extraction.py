@@ -39,22 +39,6 @@ def make_file(mimetype, content=b"content", filename="file.bin", size=None):
     return item
 
 
-class FakeTika:
-    """Records what Tika would receive and answers a fixed text."""
-
-    def __init__(self, text="", error=None):
-        self.text = text
-        self.error = error
-        self.received = None
-
-    def extract(self, content, mimetype=None, filename=None):  # pylint: disable=unused-argument
-        """Read the streamed file like requests would."""
-        self.received = content.read()
-        if self.error:
-            raise self.error
-        return self.text
-
-
 class FakeTranscriber:
     """Answers a fixed speech and records the file it was given."""
 
@@ -118,7 +102,7 @@ def test_extract_text_video_transcription_errors_are_raised():
     transcriber.transcribe.side_effect = ExtractionError("ffmpeg failed")
 
     with pytest.raises(ExtractionError):
-        extract_text(item, extractor=FakeTika("titre"), transcriber=transcriber)
+        extract_text(item, transcriber=transcriber)
 
 
 def test_a_silent_video_is_described_from_one_of_its_frames():
@@ -142,9 +126,8 @@ def test_a_video_that_speaks_is_not_looked_at():
     client = mock.Mock()
     speech = "Bonjour à tous, voici le compte rendu de la réunion de préavis de ce matin."
 
-    text = extract_text(
-        item, extractor=FakeTika(""), transcriber=FakeTranscriber(speech, client=client)
-    )
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=ffprobe()):
+        text = extract_text(item, transcriber=FakeTranscriber(speech, client=client))
 
     assert text == speech
     client.describe_image.assert_not_called()
@@ -164,9 +147,8 @@ def test_a_video_the_model_only_heard_credits_in_is_looked_at():
     assert text == "Un essaim d'abeilles.\n\nSous-titrage ST' 501"
 
 
-def test_a_document_is_read_here_rather_than_served(settings):
+def test_a_document_is_read_here_rather_than_served():
     """With the switch on, an office file never reaches Tika."""
-    settings.GRAPH_READ_HERE = True
     content = BytesIO()
     with zipfile.ZipFile(content, "w") as archive:
         archive.writestr(
@@ -183,10 +165,8 @@ def test_a_document_is_read_here_rather_than_served(settings):
     assert "Le préavis dépend de la convention." in extract_text(item)
 
 
-def test_a_format_nobody_reads_is_skipped_without_a_server(settings):
+def test_a_format_nobody_reads_is_skipped_without_a_server():
     """No Tika, no reader: the file is left out rather than failing the task."""
-    settings.GRAPH_READ_HERE = True
-    settings.GRAPH_TIKA_URL = ""
     item = make_file("application/msword", b"\xd0\xcf\x11\xe0", filename="vieux.doc")
 
     with pytest.raises(ExtractionSkipped):
@@ -195,7 +175,6 @@ def test_a_format_nobody_reads_is_skipped_without_a_server(settings):
 
 def test_a_picture_is_read_by_tesseract(settings):
     """The text on a picture is read here, by the engine Tika wrapped."""
-    settings.GRAPH_READ_HERE = True
     settings.GRAPH_OCR_LANGUAGES = "fra+eng"
     item = make_file("image/png", b"fake png", filename="accord.png")
 
@@ -209,22 +188,20 @@ def test_a_picture_is_read_by_tesseract(settings):
         assert extract_text(item) == "Accord relatif au télétravail"
 
 
-def test_a_picture_with_nothing_on_it_comes_back_empty(settings):
+def test_a_picture_with_nothing_on_it_comes_back_empty():
     """No text found is not a failure: the picture is described instead."""
-    settings.GRAPH_READ_HERE = True
     item = make_file("image/jpeg", b"fake jpeg", filename="photo.jpg")
 
     with mock.patch("graph.services.extraction.subprocess.run", side_effect=FileNotFoundError):
         assert extract_text(item) == ""
 
 
-def test_extract_text_document_streams_the_file_to_tika():
-    """A document is sent to Tika as a file, not loaded in memory first."""
-    item = make_file("application/pdf", b"%PDF-1.7 fake", filename="doc.pdf")
-    tika = FakeTika("Le texte du PDF")
+def test_a_document_of_an_unknown_kind_is_skipped():
+    """A format nobody here reads leaves the file in the drive, out of the graph."""
+    item = make_file("application/x-nonsense", b"\x00\x01", filename="chose.bin")
 
-    assert extract_text(item, extractor=tika) == "Le texte du PDF"
-    assert tika.received == b"%PDF-1.7 fake"
+    with pytest.raises(ExtractionSkipped):
+        extract_text(item)
 
 
 def test_extract_text_caps_long_texts(settings):

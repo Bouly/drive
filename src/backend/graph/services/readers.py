@@ -184,7 +184,8 @@ def drawn_pages(stream, limit=PAGES_SCANNED):
     try:
         stream.seek(0)
         document = pdfium.PdfDocument(stream.read())
-    except Exception as exc:  # noqa: BLE001 - PDFium raises its own errors
+    # PDFium raises errors of its own, outside any hierarchy we know.
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         logger.info("A PDF could not be drawn: %s", exc)
         return []
 
@@ -195,7 +196,8 @@ def drawn_pages(stream, limit=PAGES_SCANNED):
             buffer = io.BytesIO()
             picture.save(buffer, format="PNG")
             pages.append(buffer.getvalue())
-    except Exception as exc:  # noqa: BLE001
+    # The same, page by page: one bad page must not lose the others.
+    except Exception as exc:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         logger.info("A page could not be drawn: %s", exc)
     finally:
         document.close()
