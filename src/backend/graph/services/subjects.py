@@ -17,6 +17,7 @@ unrelated files under labels nobody asked for.
 """
 
 import logging
+import re
 
 from django.conf import settings
 from django.core.cache import cache
@@ -40,6 +41,10 @@ RERANK_CHARS = 900
 # passage was its name scored 0.0002 against the subject it belonged to,
 # and 0.77 once the passages after it were read too.
 RERANK_PASSAGES = 4
+# How many files the model is asked about at once, and how much of each it
+# is shown: a title and a first line are enough to say what a file is.
+CONFIRM_FILES = 20
+CONFIRM_CHARS = 300
 # How many questions a subject may ask. Each one is a call to the reranker,
 # and past a handful a description is prose, not a list of subjects.
 MAX_QUESTIONS = 8
@@ -164,6 +169,53 @@ def answers_to(question, texts):
     if best <= 0 or best < middle * settings.GRAPH_TOPIC_RERANK_STANDOUT:
         return None
     return scores, best
+
+
+def belong_to(topic, candidates):
+    """
+    Among the files the reader ranked first, those a model says are about the
+    subject. Returns the ids it keeps.
+
+    A ranking is relative: it always puts something first, even on a drive
+    holding nothing of the kind. On a drive of Linux headers, "mad max" was
+    answered by a network handshake and "C++" by a kernel one, both at full
+    score, because the reader was asked to sort strangers rather than to
+    recognise anything. A ranking cannot answer "none of these"; asked the
+    question outright, a model can.
+
+    When the model cannot be reached, what was ranked is kept: a subject that
+    worked yesterday must not empty itself because Albert is down.
+    """
+    shown = list(candidates.items())[:CONFIRM_FILES]
+    if not shown:
+        return set()
+
+    listing = "\n".join(
+        f"{number}. {text[:CONFIRM_CHARS]}" for number, (_, text) in enumerate(shown, start=1)
+    )
+    prompt = (
+        "Voici un sujet et des fichiers. Dis lesquels parlent vraiment de ce sujet.\n\n"
+        f"Sujet : {topic.name}\n"
+        + (f"Précisions : {topic.description}\n" if topic.description.strip() else "")
+        + f"\nFichiers :\n{listing}\n\n"
+        "Réponds uniquement par les numéros qui correspondent, séparés par des virgules. "
+        "Si aucun ne correspond, réponds : aucun"
+    )
+    try:
+        answer = AlbertClient().chat(prompt, max_tokens=60, temperature=0)
+    except AlbertError as exc:
+        logger.warning("Albert could not confirm topic %s: %s", topic.id, exc)
+        return {item_id for item_id, _ in shown}
+
+    answer = answer if isinstance(answer, str) else ""
+    if "aucun" in answer.lower():
+        return set()
+    numbers = {int(found) for found in re.findall(r"\d+", answer)}
+    if not numbers:
+        # An answer nobody can read is not a refusal: keep what was ranked.
+        logger.info("Topic %s: unreadable confirmation %r", topic.id, answer[:60])
+        return {item_id for item_id, _ in shown}
+    return {item_id for number, (item_id, _) in enumerate(shown, start=1) if number in numbers}
 
 
 def read_files(topic, items):
@@ -294,6 +346,15 @@ def sort_files_into(topic, candidates=None):
     files = list(indexed_files(candidates))
     shortlist = worth_reading(files, vector, words)
     matched, lead, cut = relevant_by_reading(topic, shortlist)
+    # The ranking put these first; a model now says which of them the subject
+    # is really about. It is the only instrument here able to answer "none".
+    if matched:
+        ranked = sorted(matched, key=lambda item_id: -matched[item_id])
+        beginnings = beginnings_of([item for item in shortlist if item.id in matched])
+        kept = belong_to(
+            topic, {item_id: beginnings[item_id] for item_id in ranked if item_id in beginnings}
+        )
+        matched = {item_id: share for item_id, share in matched.items() if item_id in kept}
     matched = {str(item_id): round(share, 4) for item_id, share in matched.items()}
 
     type(topic).objects.filter(id=topic.id).update(vector=vector, cut=cut, question=lead[:255])

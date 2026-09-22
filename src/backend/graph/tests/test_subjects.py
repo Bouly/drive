@@ -10,6 +10,7 @@ from core import factories, models
 
 from graph.models import ItemTopic, Topic
 from graph.services import storage
+from graph.services.albert import AlbertError
 from graph.services.chunking import Chunk, hash_text
 from graph.services.subjects import sort_files_into, sort_into_subjects, topic_vector
 
@@ -40,13 +41,20 @@ def indexed_file(title, vector, user=None):
 
 
 @contextmanager
-def albert(vector, rerank=None):
-    """Albert answering with one vector for the words, and reranker scores."""
+def albert(vector, rerank=None, confirms=None):
+    """
+    Albert answering with one vector for the words, reranker scores, and a
+    confirmation.
+
+    The default confirmation is unreadable, which is how a real answer nobody
+    can parse is treated: what was ranked is kept. A test that cares says so.
+    """
     with mock.patch("graph.services.subjects.AlbertClient") as client:
         client.return_value.embed.return_value = [vector]
         client.return_value.rerank.side_effect = lambda query, documents: [
             (rerank or {}).get(text.split("\n")[0], 0.0) for text in documents
         ]
+        client.return_value.chat.return_value = confirms if confirms is not None else ""
         yield client
 
 
@@ -441,3 +449,68 @@ def test_the_graph_omits_old_weak_memberships_but_keeps_manual_pins(settings):
         str(good.id),
         str(manual.id),
     }
+
+
+def test_a_file_the_model_says_is_off_topic_is_dropped():
+    """A ranking always puts something first; a question can answer "none".
+
+    On a drive of Linux headers, "C++" was answered by a kernel header at
+    full score: the reader was sorting strangers, not recognising anything.
+    """
+    user = factories.UserFactory()
+    indexed_file("spray.txt", mix({0: 1.0}), user)
+    for title in ("kernel.txt", "malloc.txt"):
+        indexed_file(title, mix({0: 1.0}), user)
+    topic = Topic.objects.create(name="C++", creator=user)
+
+    with mock.patch("graph.services.subjects.AlbertClient") as client:
+        client.return_value.embed.return_value = [mix({0: 1.0})]
+        client.return_value.rerank.side_effect = lambda query, documents: [
+            0.33 if text.startswith("spray") else 0.1 for text in documents
+        ]
+        client.return_value.chat.return_value = "aucun"
+        sort_files_into(topic)
+
+    assert not topic.memberships.exists()
+
+
+def test_the_files_the_model_confirms_are_kept():
+    """What it names by number stays; what it leaves out goes.
+
+    Both files pass the ranking ‒ the second at a third of the first, above
+    the quarter that admits ‒ and only one survives the question.
+    """
+    user = factories.UserFactory()
+    bees = indexed_file("abeilles.pdf", mix({0: 1.0}), user)
+    ruches = indexed_file("ruches.pdf", mix({0: 1.0}), user)
+    indexed_file("kernel.txt", mix({0: 1.0}), user)
+    topic = Topic.objects.create(name="abeille", creator=user)
+
+    answers = {"abeilles.pdf": 0.8, "ruches.pdf": 0.25, "kernel.txt": 0.01}
+    with albert(mix({0: 1.0}), rerank=answers, confirms="1") as client:
+        sort_files_into(topic)
+
+    assert set(topic.memberships.values_list("item_id", flat=True)) == {bees.id}
+    assert ruches.id not in set(topic.memberships.values_list("item_id", flat=True))
+    # The question is asked once, with both candidates in it.
+    prompt = client.return_value.chat.call_args[0][0]
+    assert "abeilles.pdf" in prompt and "ruches.pdf" in prompt
+
+
+def test_a_subject_survives_the_model_being_unreachable():
+    """Albert down must not empty a subject that worked yesterday."""
+    user = factories.UserFactory()
+    bees = indexed_file("abeilles.pdf", mix({0: 1.0}), user)
+    for title in ("kernel.txt", "malloc.txt"):
+        indexed_file(title, mix({0: 1.0}), user)
+    topic = Topic.objects.create(name="abeille", creator=user)
+
+    with mock.patch("graph.services.subjects.AlbertClient") as client:
+        client.return_value.embed.return_value = [mix({0: 1.0})]
+        client.return_value.rerank.side_effect = lambda query, documents: [
+            0.8 if text.startswith("abeilles") else 0.05 for text in documents
+        ]
+        client.return_value.chat.side_effect = AlbertError("Albert answered 401")
+        sort_files_into(topic)
+
+    assert bees.id in set(topic.memberships.values_list("item_id", flat=True))
