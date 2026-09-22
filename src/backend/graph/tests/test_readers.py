@@ -7,6 +7,7 @@ import pytest
 
 from graph.services.readers import (
     UnsupportedDocument,
+    drawn_pages,
     family_of,
     looks_scanned,
     page_count,
@@ -225,3 +226,17 @@ def test_a_pdf_with_almost_no_text_for_its_length_is_a_scan():
 def test_a_file_that_is_not_a_pdf_has_no_pages():
     """Counting the pages of something else says zero rather than raising."""
     assert page_count(BytesIO(b"pas un pdf")) == 0
+
+
+def test_the_pages_of_a_pdf_can_be_drawn_to_be_read():
+    """A scan holds no text: its pages are drawn, and the drawing is read."""
+    pages = drawn_pages(pdf("Le preavis depend de la convention"))
+
+    assert len(pages) == 1
+    # A PNG, which is what tesseract is handed.
+    assert pages[0].startswith(b"\x89PNG")
+
+
+def test_drawing_something_that_is_not_a_pdf_gives_nothing():
+    """A mislabelled file is reported as unreadable, not crashed on."""
+    assert drawn_pages(BytesIO(b"pas un pdf")) == []

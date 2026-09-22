@@ -63,6 +63,9 @@ dependencies = [
     # [fonts] brings fontTools, without which the text of a PDF using a CFF
     # Type 1 font comes out with the wrong characters.
     "pypdf[fonts]==6.19.0",
+    # Draws the pages of a scanned PDF so tesseract can read them: a 3 MB
+    # wheel with the PDFium engine inside, and no Python dependency.
+    "pypdfium2==5.13.0",
     "python-magic==0.4.27",
     "redis<6.0.0",
     "requests==2.33.1",

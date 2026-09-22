@@ -15,9 +15,11 @@ a photograph of a page, hold no text to read. Those go to Albert, which is
 already the project's model provider.
 """
 
+import io
 import logging
 import zipfile
 
+import pypdfium2 as pdfium
 from defusedxml.ElementTree import ParseError, fromstring
 from pypdf import PdfReader
 from pypdf.errors import PyPdfError
@@ -57,6 +59,9 @@ SCAN_WORDS_PER_PAGE = 10
 # How many pages of a scan are read: enough to say what it is about, not so
 # many that one file holds up a burst of uploads.
 PAGES_SCANNED = 20
+# How large the page is drawn before being read. Tesseract wants around 300
+# dots per inch; a PDF point is 1/72 inch, so three times over is 216.
+SCAN_SCALE = 3
 
 
 def family_of(mimetype):
@@ -167,26 +172,34 @@ def page_count(stream):
         return 0
 
 
-def pictures_in_pdf(stream, limit=PAGES_SCANNED):
+def drawn_pages(stream, limit=PAGES_SCANNED):
     """
-    The pictures printed on the first pages of a PDF, as raw bytes.
+    The first pages of a PDF drawn as pictures, in PNG, ready to be read.
 
-    A scan is one picture per page: they are what is left to read when there
-    is no text layer.
+    Taking the pictures a PDF holds is not enough: a page photographed can be
+    stored in an encoding nothing here decodes, and on a real scan of
+    sixty-eight pages pypdf handed back twenty empty images. Drawing the page
+    works whatever is inside it ‒ a photograph, a fax encoding, or lines.
     """
     try:
         stream.seek(0)
-        reader = PdfReader(stream)
-        pictures = []
-        for page in reader.pages[:limit]:
-            for image in page.images:
-                pictures.append(image.data)
-                if len(pictures) >= limit:
-                    return pictures
-        return pictures
-    except (PyPdfError, ValueError, OSError, RecursionError) as exc:
-        logger.info("No picture taken out of a PDF: %s", exc)
+        document = pdfium.PdfDocument(stream.read())
+    except Exception as exc:  # noqa: BLE001 - PDFium raises its own errors
+        logger.info("A PDF could not be drawn: %s", exc)
         return []
+
+    pages = []
+    try:
+        for number in range(min(len(document), limit)):
+            picture = document[number].render(scale=SCAN_SCALE).to_pil()
+            buffer = io.BytesIO()
+            picture.save(buffer, format="PNG")
+            pages.append(buffer.getvalue())
+    except Exception as exc:  # noqa: BLE001
+        logger.info("A page could not be drawn: %s", exc)
+    finally:
+        document.close()
+    return pages
 
 
 def xfa_fields(reader):

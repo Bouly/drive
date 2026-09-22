@@ -28,9 +28,9 @@ from core import models
 from graph.services.albert import AlbertClient, AlbertError
 from graph.services.readers import (
     UnsupportedDocument,
+    drawn_pages,
     looks_scanned,
     page_count,
-    pictures_in_pdf,
     read_document,
 )
 
@@ -243,7 +243,7 @@ def _media_metadata(path, item):
 def _read_scan(path, item):
     """A PDF photographed rather than written: read the pictures it is made of."""
     with open(path, "rb") as content:
-        pictures = pictures_in_pdf(content)
+        pictures = drawn_pages(content)
     if not pictures:
         return ""
 
@@ -394,8 +394,12 @@ def _extract_document(path, item, extractor=None):
                     pages = page_count(content)
                 # A page photographed carries no text layer: what little comes
                 # out is a header or a stamp, and the document is on the image.
+                # What is read off the pictures is added to it, never instead
+                # of it ‒ a scan of sixty-eight pages holds its page numbers
+                # as text and everything else as photographs.
                 if looks_scanned(text, pages):
-                    text = _read_scan(path, item) or text
+                    scanned = _read_scan(path, item)
+                    text = "\n\n".join(part for part in (text, scanned) if part.strip())
             return text
         except UnsupportedDocument as exc:
             logger.info("Item %s is not read here (%s)", item.id, exc)
