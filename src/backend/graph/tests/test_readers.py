@@ -8,6 +8,8 @@ import pytest
 from graph.services.readers import (
     UnsupportedDocument,
     family_of,
+    looks_scanned,
+    page_count,
     read_document,
     text_of_xml,
 )
@@ -207,3 +209,19 @@ def test_an_unknown_type_has_no_reader():
     assert family_of("application/msword") is None
     with pytest.raises(UnsupportedDocument):
         read_document(BytesIO(b""), "application/msword")
+
+
+def test_a_pdf_with_pages_of_text_is_not_taken_for_a_scan():
+    """A written document must not be read twice, once as text and once as pictures."""
+    assert not looks_scanned(" ".join(["mot"] * 400), pages=10)
+
+
+def test_a_pdf_with_almost_no_text_for_its_length_is_a_scan():
+    """Measured on a real drive: forty pages, two hundred words, five thousand on the images."""
+    assert looks_scanned(" ".join(["mot"] * 200), pages=40)
+    assert looks_scanned("", pages=1)
+
+
+def test_a_file_that_is_not_a_pdf_has_no_pages():
+    """Counting the pages of something else says zero rather than raising."""
+    assert page_count(BytesIO(b"pas un pdf")) == 0

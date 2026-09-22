@@ -74,7 +74,9 @@ FROM base AS core
 
 ENV PYTHONUNBUFFERED=1
 
-# Install required system libs (ffmpeg: audio track of videos for the file graph)
+# Install required system libs. For the file graph: ffmpeg reads the audio
+# track of a video, tesseract reads the text on a picture ‒ the same engine
+# Tika wrapped, called directly, for 78 MB instead of a 1.25 GB server.
 RUN apk add --no-cache \
   cairo \
   ffmpeg \
@@ -86,7 +88,10 @@ RUN apk add --no-cache \
   libffi-dev \
   pandoc \
   pango \
-  shared-mime-info
+  shared-mime-info \
+  tesseract-ocr \
+  tesseract-ocr-data-eng \
+  tesseract-ocr-data-fra
 
 COPY ./docker/files/etc/mime.types /etc/mime.types.partial
 RUN wget https://raw.githubusercontent.com/suitenumerique/django-lasuite/refs/heads/main/assets/conf/mime.types -O /etc/mime.types && \

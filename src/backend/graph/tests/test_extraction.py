@@ -193,6 +193,31 @@ def test_a_format_nobody_reads_is_skipped_without_a_server(settings):
         extract_text(item)
 
 
+def test_a_picture_is_read_by_tesseract(settings):
+    """The text on a picture is read here, by the engine Tika wrapped."""
+    settings.GRAPH_READ_HERE = True
+    settings.GRAPH_OCR_LANGUAGES = "fra+eng"
+    item = make_file("image/png", b"fake png", filename="accord.png")
+
+    def run(command, **kwargs):  # pylint: disable=unused-argument
+        assert command[0] == "tesseract"
+        assert command[2] == "stdout"
+        assert command[3:] == ["-l", "fra+eng"]
+        return completed("Accord relatif au télétravail\n")
+
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=run):
+        assert extract_text(item) == "Accord relatif au télétravail"
+
+
+def test_a_picture_with_nothing_on_it_comes_back_empty(settings):
+    """No text found is not a failure: the picture is described instead."""
+    settings.GRAPH_READ_HERE = True
+    item = make_file("image/jpeg", b"fake jpeg", filename="photo.jpg")
+
+    with mock.patch("graph.services.extraction.subprocess.run", side_effect=FileNotFoundError):
+        assert extract_text(item) == ""
+
+
 def test_extract_text_document_streams_the_file_to_tika():
     """A document is sent to Tika as a file, not loaded in memory first."""
     item = make_file("application/pdf", b"%PDF-1.7 fake", filename="doc.pdf")

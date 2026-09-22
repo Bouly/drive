@@ -50,6 +50,13 @@ PARTS = {
 
 # A part of an office file is text: past this it is a zip bomb, not a document.
 MAX_PART_BYTES = 64 * 1024 * 1024
+# Under this many words per page, a PDF is a photograph of a document rather
+# than a document: measured on a real drive, a scan of forty pages came back
+# with two hundred words where its text held five thousand seven hundred.
+SCAN_WORDS_PER_PAGE = 10
+# How many pages of a scan are read: enough to say what it is about, not so
+# many that one file holds up a burst of uploads.
+PAGES_SCANNED = 20
 
 
 def family_of(mimetype):
@@ -135,9 +142,78 @@ def read_pdf(stream):
         pages = [page.extract_text() or "" for page in reader.pages]
         blocks = [page for page in pages if page.strip()]
         blocks.extend(filled_fields(reader))
+        blocks.extend(xfa_fields(reader))
     except (PyPdfError, ValueError, OSError, RecursionError) as exc:
         raise UnsupportedDocument(f"unreadable PDF: {exc}") from exc
     return "\n\n".join(blocks)
+
+
+def looks_scanned(text, pages):
+    """
+    True when a PDF holds too little text for its length to be a document.
+
+    A page photographed rather than written carries no text layer at all, and
+    one scanned among ten leaves the others readable: the measure is per page.
+    """
+    return pages > 0 and len(text.split()) < SCAN_WORDS_PER_PAGE * pages
+
+
+def page_count(stream):
+    """How many pages a PDF has, or 0 when it cannot be opened."""
+    try:
+        stream.seek(0)
+        return len(PdfReader(stream).pages)
+    except (PyPdfError, ValueError, OSError):
+        return 0
+
+
+def pictures_in_pdf(stream, limit=PAGES_SCANNED):
+    """
+    The pictures printed on the first pages of a PDF, as raw bytes.
+
+    A scan is one picture per page: they are what is left to read when there
+    is no text layer.
+    """
+    try:
+        stream.seek(0)
+        reader = PdfReader(stream)
+        pictures = []
+        for page in reader.pages[:limit]:
+            for image in page.images:
+                pictures.append(image.data)
+                if len(pictures) >= limit:
+                    return pictures
+        return pictures
+    except (PyPdfError, ValueError, OSError, RecursionError) as exc:
+        logger.info("No picture taken out of a PDF: %s", exc)
+        return []
+
+
+def xfa_fields(reader):
+    """
+    What was written in an XFA form, the other way Acrobat stores a form.
+
+    A sheet of this kind came back with twenty-eight words out of seven
+    hundred and fifty: everything it holds is in this XML, not in the page.
+    """
+    try:
+        xfa = reader.xfa
+    except (PyPdfError, ValueError, KeyError, AttributeError):
+        return []
+    if not xfa:
+        return []
+    texts = []
+    for part in xfa.values():
+        # The parts come either as a stream object or as the bytes themselves.
+        reader = getattr(part, "get_data", None)
+        raw = reader() if callable(reader) else part
+        if isinstance(raw, bytes):
+            try:
+                texts.append(text_of_xml(raw))
+            except UnsupportedDocument:
+                continue
+    joined = "\n".join(text.strip() for text in texts if text.strip())
+    return [joined] if joined else []
 
 
 def filled_fields(reader):

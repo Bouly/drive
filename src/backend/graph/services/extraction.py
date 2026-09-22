@@ -26,7 +26,13 @@ import requests
 from core import models
 
 from graph.services.albert import AlbertClient, AlbertError
-from graph.services.readers import UnsupportedDocument, read_document
+from graph.services.readers import (
+    UnsupportedDocument,
+    looks_scanned,
+    page_count,
+    pictures_in_pdf,
+    read_document,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +240,40 @@ def _media_metadata(path, item):
     return "\n".join(seen)
 
 
+def _read_scan(path, item):
+    """A PDF photographed rather than written: read the pictures it is made of."""
+    with open(path, "rb") as content:
+        pictures = pictures_in_pdf(content)
+    if not pictures:
+        return ""
+
+    texts = []
+    with tempfile.TemporaryDirectory() as folder:
+        for number, picture in enumerate(pictures):
+            page = Path(folder) / f"page{number:03d}.png"
+            page.write_bytes(picture)
+            texts.append(read_picture(str(page)))
+    text = "\n\n".join(part for part in texts if part.strip())
+    logger.info("Item %s read as a scan: %d characters", item.id, len(text))
+    return text
+
+
+def read_picture(path):
+    """
+    The text written on a picture, read by tesseract, or "" when there is none.
+
+    This is the engine Tika wrapped: the same one, with the same language
+    data, called the way ffmpeg already is. On the demo drive it is what
+    carries a third of the corpus ‒ ministry agreements and rule tables that
+    were uploaded as images rather than as documents.
+    """
+    try:
+        return _run(["tesseract", path, "stdout", "-l", settings.GRAPH_OCR_LANGUAGES]).strip()
+    except ExtractionError as exc:
+        logger.info("Nothing read on the picture %s: %s", path, exc)
+        return ""
+
+
 def _seconds_in(path):
     """Half the length of the file, in seconds, or 1 when it cannot be read."""
     try:
@@ -344,9 +384,19 @@ def _extract_document(path, item, extractor=None):
     """
     mimetype = item.mimetype or ""
     if extractor is None and settings.GRAPH_READ_HERE:
+        if mimetype.startswith("image/"):
+            return read_picture(path)
         try:
             with open(path, "rb") as content:
-                return read_document(content, mimetype)
+                text = read_document(content, mimetype)
+            if mimetype == "application/pdf":
+                with open(path, "rb") as content:
+                    pages = page_count(content)
+                # A page photographed carries no text layer: what little comes
+                # out is a header or a stamp, and the document is on the image.
+                if looks_scanned(text, pages):
+                    text = _read_scan(path, item) or text
+            return text
         except UnsupportedDocument as exc:
             logger.info("Item %s is not read here (%s)", item.id, exc)
 
